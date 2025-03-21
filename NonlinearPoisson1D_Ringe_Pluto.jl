@@ -373,6 +373,10 @@ function u_analytic(x;U=-2,cb=1,εb=80,z=1,ion_method="PB")
     elseif ion_method=="LPB"
         σ=U*εb*κ
         u=σ/εb/κ*exp.(-κ*x)
+	elseif ion_method=="NPB"
+	    α=(8*RT*cb*εb)^(-1/2)
+        σ=1/α*sinh(z*F*U/RT/2)
+        u=atanh.(tanh((σ*F/(4*R*T))exp(-x/α))) * (R*T)/(4*F)
     end
     return u
 end
@@ -543,7 +547,7 @@ function cap(data)
     color=popfirst!(colors)
     #ax2.plot(qmmm_volts,qmmm_caps,color=color,label="QM/MM")
     #for a in [["PB","Dirichlet"],["PB","Robin"],["MPB","Robin"],
-    for a in [["PB","Robin"]] #,["MPB","Robin-SC"]] #,"MPB"] #Robin","Dirichlet"]
+    for a in [["PB","Dirichlet"],["NPB","Dirichlet"]] #,["MPB","Robin-SC"]] #,"MPB"] #Robin","Dirichlet"]
         color=popfirst!(colors)
         ion_method=a[1]
         electrode_boundary=a[2]
