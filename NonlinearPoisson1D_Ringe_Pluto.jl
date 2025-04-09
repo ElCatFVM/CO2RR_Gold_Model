@@ -547,7 +547,7 @@ function cap(data)
     color=popfirst!(colors)
     #ax2.plot(qmmm_volts,qmmm_caps,color=color,label="QM/MM")
     #for a in [["PB","Dirichlet"],["PB","Robin"],["MPB","Robin"],
-    for a in [["PB","Dirichlet"],["NPB","Dirichlet"]] #,["MPB","Robin-SC"]] #,"MPB"] #Robin","Dirichlet"]
+    for a in [["PB","Robin"],["MPB","Robin"]] #,["MPB","Robin-SC"]] #,"MPB"] #Robin","Dirichlet"]
         color=popfirst!(colors)
         ion_method=a[1]
         electrode_boundary=a[2]
@@ -589,9 +589,6 @@ function main()
     data=Data()
     cap(Data())
 end
-
-# ╔═╡ f797f2b4-5388-468f-8f9b-fc0f58061a7b
-a
 
 # ╔═╡ 9cade3cd-48c2-491c-a6a1-32149e04ac03
 main()
@@ -2338,7 +2335,6 @@ version = "17.4.0+2"
 # ╠═0f1b3311-6ac4-4c2a-bf4c-c94131c63975
 # ╠═641fdd93-f408-4670-b70d-94bde842a617
 # ╠═c09cbaeb-a209-4cc5-9a69-88ea8b34fc1a
-# ╠═f797f2b4-5388-468f-8f9b-fc0f58061a7b
 # ╠═9cade3cd-48c2-491c-a6a1-32149e04ac03
 # ╠═e02b9bab-65a4-430d-8506-b56dcd7d6121
 # ╠═79fba8a2-d234-4870-898a-49fb247668c9

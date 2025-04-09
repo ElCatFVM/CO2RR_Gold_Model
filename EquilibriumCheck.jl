@@ -1,28 +1,41 @@
 ### A Pluto.jl notebook ###
-# v0.19.45
+# v0.20.3
 
 using Markdown
 using InteractiveUtils
 
+# ╔═╡ 2b901eca-db3b-4ad2-b0ee-e031854c57fa
+# ╠═╡ skip_as_script = true
+#=╠═╡
+begin
+  using Pkg
+  Pkg.activate(joinpath(@__DIR__, "..", "docs"))
+  using Revise
+  using CairoMakie
+  using GridVisualize
+  using Colors
+end
+  ╠═╡ =#
+
 # ╔═╡ 60941eaa-1aea-11eb-1277-97b991548781
 begin
-    if isdefined(Main, :PlutoRunner)
-        using Pkg
-        Pkg.activate(joinpath(@__DIR__, "..", "docs"))
-        using PlutoUI
-        using VoronoiFVM
-        using ExtendableGrids
-        using LinearAlgebra
-        using NLsolve
-        using Unitful
-        using LessUnitful
-        using LessUnitful.MoreUnitful
-    end
+    using PlutoUI
+    using VoronoiFVM
+    using ExtendableGrids
+    using LinearAlgebra
+    using NLsolve
+    using Unitful
+    using LessUnitful
+    using LessUnitful.MoreUnitful
+    using LiquidElectrolytes
+    using Test
+	using Printf
 end
 
 # ╔═╡ ef660f6f-9de3-4896-a65e-13c60df5de1e
-if isdefined(Main, :PlutoRunner)
-end
+md"""
+# Double layer capcacitance comparison
+"""
 
 # ╔═╡ 4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═╡ skip_as_script = true
@@ -30,14 +43,19 @@ end
 TableOfContents(title="",depth=5)
   ╠═╡ =#
 
+# ╔═╡ 462f512b-9b92-442b-bae6-b4aa168b32ee
+begin
+	mylog=RLog()
+	LiquidElectrolytes.rlog(x::Number)=mylog(x)
+end
+
 # ╔═╡ 920b7d84-56c6-4958-aed9-fc67ba0c43f6
-html"""
-<h1> Intro</h1>
+md"""
+## 1. Intro
 
 This code implements the model described in
-<a href="https://iopscience.iop.org/article/10.1149/1945-7111/ab9cca/meta" target="_blank">
-Müller, R., Fuhrmann, J., & Landstorfer, M. (2020). Modeling polycrystalline electrode-electrolyte interfaces: The differential capacitance. Journal of The Electrochemical Society, 167(10), 106512</a>
-<br>
+[Müller, R., Fuhrmann, J., & Landstorfer, M. (2020). Modeling polycrystalline electrode-electrolyte interfaces: The differential capacitance. Journal of The Electrochemical Society, 167(10), 106512](https://iopscience.iop.org/article/10.1149/1945-7111/ab9cca/meta)
+
 
 The code is part of the LiquidElectrolytes.jl package.
 
@@ -54,7 +72,7 @@ If not stated otherwise, all calculations and calculation results are in coheren
 
 # ╔═╡ 7d77ad32-3df6-4243-8bad-b8df4126e6ea
 md"""
-# Model data
+## 2. Model data
 """
 
 # ╔═╡ 4cabef42-d9f9-43fe-988e-7b54462dc775
@@ -62,9 +80,19 @@ md"""
 #### EquilibriumData
 """
 
+# ╔═╡ ba2428ac-fdf7-4eae-acf5-dc0f20e876ee
+begin
+	@unitfactors mol dm m s K μm bar Pa μA Å;
+	@phconstants N_A c_0 k_B e h
+end
+
 # ╔═╡ 30c6a176-935b-423f-9447-86f78746322f
 md"""
-#### l_debye(data)
+#### debyelength(data)
+
+```math
+L_{Debye}=\sqrt{ \frac{(1+χ)ε_0k_BT}{e^2n_E}}
+```
 """
 
 # ╔═╡ f3049938-2637-401d-9411-4d7be07c19ca
@@ -102,7 +130,7 @@ end;
 
 # ╔═╡ 5eca37ba-f858-45fb-a66a-3795327dfd18
 md"""
-# Model equations
+## 3. Model equations
 """
 
 # ╔═╡ a26cf11b-0ce1-4c1d-a64d-1917178ff676
@@ -281,45 +309,55 @@ function derived(κ, v0, n_E, T)
 end;
 
 # ╔═╡ 0d825f88-cd67-4368-90b3-29f316b72e6e
-"""
-	EquilibriumData
-Data structure containg data for equilibrum calculations
-"""
-Base.@kwdef mutable struct EquilibriumData
-    N::Int64 = 2                     # number of ionic species
-    T::Float64 = 298.15 * ufac"K"        # temperature
-    kT::Float64 = ph"k_B" * T             # temperature
-    p_ref::Float64 = 1.0e5 * ufac"Pa"        # referece pressure
-    pscale::Float64 = 1.0 * ufac"GPa"         # pressure scaling nparameter
-    E_ref::Float64 = 0.0 * ufac"V"           # reference voltage
-    n0_ref::Float64 = 55.508 * ph"N_A" / ufac"dm^3"  # solvent molarity
-    v0::Float64 = 1 / n0_ref              # solvent molecule volume
-    χ::Float64 = 15                    # dielectric susceptibility
-    z::Vector{Int} = [-1, 1]                # ion charge numbers
-    κ::Vector{Int} = [10, 10]               # ion solvation numbers
-    molarity::Float64 = 0.1 * ph"N_A" / ufac"dm^3"
-    n_E::Vector{Float64} = [molarity, molarity, molarity, molarity, molarity, molarity, molarity]  # bulk ion number densities
-    μ_e::Vector{Float64} = [0.0]             # grain facet electron chemical potential
+begin
+    """
+    	EquilibriumData
+    Data structure containg data for equilibrum calculations
+    """
+    Base.@kwdef mutable struct EquilibriumData
+        N::Int64 = 2                     # number of ionic species
+        T::Float64 = 298.15 * ufac"K"        # temperature
+        kT::Float64 = ph"k_B" * T             # temperature
+        p_ref::Float64 = 1.0e5 * ufac"Pa"        # referece pressure
+        pscale::Float64 = 1.0 * ufac"GPa"         # pressure scaling nparameter
+        E_ref::Float64 = 0.0 * ufac"V"           # reference voltage
+        n0_ref::Float64 = 55.508 * ph"N_A" / ufac"dm^3"  # solvent molarity
+        v0::Float64 = 1 / n0_ref              # solvent molecule volume
+        χ::Float64 = 15                    # dielectric susceptibility
+        z::Vector{Int} = [-1, 1]                # ion charge numbers
+        κ::Vector{Int} = [10, 10]               # ion solvation numbers
+        molarity::Float64 = 0.1 * ph"N_A" / ufac"dm^3"
+        n_E::Vector{Float64} = [molarity, molarity]  # bulk ion number densities
+        μ_e::Vector{Float64} = [0.0]             # grain facet electron chemical potential
 
-    e::Float64 = ph"e"
-    ε_0::Float64 = ph"ε_0"
+        e::Float64 = ph"e"
+        ε_0::Float64 = ph"ε_0"
 
-    v::Vector{Float64} = derived(κ, v0, n_E, T).v   # ion volumes
-    y_E::Vector{Float64} = derived(κ, v0, n_E, T).y_E # bulk ion mole fractions
-    y0_E::Float64 = derived(κ, v0, n_E, T).y0_E       # bulk solvent mole fraction
-    U_T::Float64 = derived(κ, v0, n_E, T).U_T     # Temperature voltage k_BT/e0
+        v::Vector{Float64} = derived(κ, v0, n_E, T).v   # ion volumes
+        y_E::Vector{Float64} = derived(κ, v0, n_E, T).y_E # bulk ion mole fractions
+        y0_E::Float64 = derived(κ, v0, n_E, T).y0_E       # bulk solvent mole fraction
+        U_T::Float64 = derived(κ, v0, n_E, T).U_T     # Temperature voltage k_BT/e0
+    end
+
+    function EquilibriumData(electrolyte::AbstractElectrolyteData)
+        return EquilibriumData(;
+            N = electrolyte.nc,
+            T = electrolyte.T,
+            p_ref = electrolyte.p_bulk,
+            pscale = electrolyte.pscale,
+            E_ref = electrolyte.ϕ_bulk,
+            n0_ref = ph"N_A" / electrolyte.v0,
+            χ = electrolyte.ε - 1.0,
+            z = electrolyte.z,
+            κ = electrolyte.κ,
+            molarity = ph"N_A" * electrolyte.c_bulk[1],
+            n_E = ph"N_A" * electrolyte.c_bulk
+        )
+    end
 end
 
 # ╔═╡ 00e536dc-34aa-4a1a-93de-4eb3f5e0a348
-@doc raw"""
-     debyelength(data::EquilibriumData)
-
-Debye length
-```math
-L_{Debye}=\sqrt{ \frac{(1+χ)ε_0k_BT}{e^2n_E}}
-```
-"""
-debyelength(data::EquilibriumData) = sqrt((1 + data.χ) * data.ε_0 * data.kT / (ph"e"^2 * data.n_E[1]))
+LiquidElectrolytes.debyelength(data::EquilibriumData) = sqrt((1 + data.χ) * data.ε_0 * data.kT / (ph"e"^2 * data.n_E[1]))
 
 # ╔═╡ 1065b3e0-60bf-497c-b7fb-c5a065737f77
 # ╠═╡ skip_as_script = true
@@ -330,13 +368,12 @@ debyelength(EquilibriumData(molarity=0.01ph"N_A"/ufac"dm^3"))|>u"nm"
 # ╔═╡ 5d6340c4-2ddd-429b-a60b-3de5570a7398
 function set_molarity!(data::EquilibriumData, M_E)
     n_E = M_E * ph"N_A" / ufac"dm^3"
-    data.molarity = data.molarity
-    return data.n_E = data.n_E
-    #return data.n_E = [n_E, n_E, n_E]
+    data.molarity = n_E
+    return data.n_E = fill(n_E, data.N)
 end
 
 # ╔═╡ 1d22b09e-99c1-4026-9505-07bdffc98582
-dlcap0(data::EquilibriumData) = sqrt(2 * (1 + data.χ) * ph"ε_0" * ph"e"^2 * data.n_E[1] / (ph"k_B" * data.T));
+LiquidElectrolytes.dlcap0(data::EquilibriumData) = sqrt(2 * (1 + data.χ) * ph"ε_0" * ph"e"^2 * data.n_E[1] / (ph"k_B" * data.T));
 
 # ╔═╡ fe704fb4-d07c-4591-b834-d6cf2f4f7075
 # ╠═╡ skip_as_script = true
@@ -351,9 +388,12 @@ end
   ╠═╡ =#
 
 # ╔═╡ 3d9a47b8-2754-4a21-84a4-39cbeab12286
-function update_derived!(data)
-    (; κ, v0, n_E, T) = data
-    return data.v, data.y_E, data.y0_E, data.U_T = derived(κ, v0, n_E, T)
+begin
+    function update_derived!(data::EquilibriumData)
+        (; κ, v0, n_E, T) = data
+        return data.v, data.y_E, data.y0_E, data.U_T = derived(κ, v0, n_E, T)
+    end
+    update_derived!(::ElectrolyteData) = nothing
 end
 
 # ╔═╡ b1e333c0-cdaa-4242-b71d-b54ff71aef83
@@ -411,7 +451,7 @@ Calculate potential boundary value for each facet from applied voltage `E`.
 
 # ╔═╡ 0bbd9482-d17d-4027-8eec-450807cff792
 md"""
-# System setup and solution
+## 4. System setup and solution
 """
 
 # ╔═╡ 04f5584c-14af-4b68-9bcc-7f36b545bef7
@@ -442,7 +482,7 @@ end;
 
 # ╔═╡ 93428d11-a3dc-4e29-ae6d-48ba37082c74
 md"""
-# Postprocessing
+## 5. Postprocessing
 """
 
 # ╔═╡ 7020a6f3-f49d-4fa3-bae2-2a6dad8a1fcd
@@ -572,19 +612,19 @@ We assume that there are no surface reactions, so we assume ``\hat Q_s=0`` and `
 
 # ╔═╡ 77f913ea-f89f-48f6-9dd2-e7cd0b6150b6
 md"""
-# Solution scenarios
+## 6. Solution scenarios
 """
 
 # ╔═╡ bb6ef288-373f-4944-bc85-37ab327dc4d5
 md"""
-#### dlcapsweep(sys)
+#### dlcapsweep_equi(sys)
 
 Calculate double layer capacitance. Return vector of voltages `V` and vector of double layer capacitances `C`.
 """
 
 # ╔═╡ 7a607454-7b75-4313-920a-2dbdad258015
 md"""
-# The pressure Poisson equation
+## 7. The pressure Poisson equation
 """
 
 # ╔═╡ 9cb8324c-896f-40f8-baa8-b7d47a93e9f5
@@ -649,7 +689,7 @@ end;
 # ╔═╡ 6e3dbf34-c1c9-460b-9546-b2ee8ee99d68
 function create_equilibrium_system(
         grid,
-        data::EquilibriumData = default_data();
+        data::EquilibriumData = EquilibriumData();
         Γ_bulk = 0
     )
     update_derived!(data)
@@ -671,11 +711,17 @@ calc_QBL(sol, sys) = VoronoiFVM.integrate(sys, spacecharge_and_ysum!, sol)[iφ, 
 
 # ╔═╡ 77f49da5-ffd2-4148-93a6-f45382ba6d91
 function dlcapsweep_equi(
-        sys; vmax = 2 * ufac"V", molarity = 1, nsteps = 21, δV = 1.0e-3 * ufac"V",
+        sys; vmax = 2 * ufac"V", nsteps = 21, δV = 1.0e-3 * ufac"V",
+        molarity = nothing,
         verbose = false
     )
+
+    if !isnothing(molarity)
+        error("The molarity kwarg of dlcapsweep_equie has been removed. Pass the molarity information with set_molarity!.")
+    end
+
+
     data = sys.physics.data
-    set_molarity!(data, molarity)
     update_derived!(data)
     apply_voltage!(sys, 0)
 
@@ -721,7 +767,7 @@ end
 # ╔═╡ 7bf3a130-3b47-428e-916f-4a0ec1237844
 function create_equilibrium_pp_system(
         grid,
-        data::EquilibriumData = default_data();
+        data::EquilibriumData = EquilibriumData();
         Γ_bulk = 0
     )
     update_derived!(data)
@@ -739,15 +785,446 @@ function create_equilibrium_pp_system(
     return apply_voltage!(sys, 0)
 end;
 
+# ╔═╡ ac27c318-9a00-4287-bd36-3a97d65b5459
+md"""
+## 8. Tests
+"""
+
+# ╔═╡ fe48d05b-99bd-48b4-a044-4dd8e8d18b5d
+begin
+    SI(x) = Float64(Unitful.ustrip(Unitful.upreferred(1 * x)))
+    const V = SI(Unitful.V)
+    const eV = SI(Unitful.eV)
+    const nm = SI(Unitful.nm)
+    const cm = SI(Unitful.cm)
+    const μF = SI(Unitful.μF)
+end
+
+
+# ╔═╡ 5fe96d0b-7bd0-4183-901d-727e966d434b
+begin
+	#const voltages = (-1.0:0.01:1.0) * V
+	
+	# geometrical constants
+	const Γ_we 		= 1
+	const Γ_bulk 	= 2
+	
+	# bulk constants
+	const pH 		= 6.8
+	const T 		= 298.0 * K
+	const Hcp_CO  	= 9.7e-6 * mol/(m^3 * Pa)
+    const Hcp_CO2 	= 3.3e-4 * mol/(m^3 * Pa)
+	# species not involved in reactions
+	const ikplus 	= 1
+	# species involved in buffer reactions but not in surface reactions
+	const ibufferstart = 2
+	const ihplus 	= 2
+	const ihco3 	= 3
+    const ico3 		= 4
+	# species involved in buffer reactions and surface reactions
+    const isurfacestart = 5
+	const ico2 		= 5
+    const iohminus 	= 6
+	const ibufferend = 6
+	# species involved in surface reactions but not in buffer reactions
+	const ico  		= 7
+	const nc 		= 7
+	## reaction rate constants for bulk reactions
+	### CO2 + OH- <=> HCO3-
+	const kbe1 = 4.44e7 / (mol/dm^3)
+	const kbf1 = 5.93e3 / (mol/dm^3) / s
+	const kbr1 = kbf1 / kbe1
+	### HCO3- + OH- <=> CO3-- + H2O
+	const kbe2 = 4.66e3 / (mol/dm^3)
+	const kbf2 = 1.0e8 / (mol/dm^3) / s
+	const kbr2 = kbf2 / kbe2
+	### CO2 + H20 <=> HCO3- + H+
+    const kae1 = 4.44e-7 * (mol/dm^3)
+    const kaf1 = 3.7e-2 / s
+    const kar1 = kaf1 / kae1
+    ### HCO3- <=> CO3-- + H+ 
+    const kae2 = 4.66e-5 / (mol/dm^3)
+    const kaf2 = 59.44e3 / (mol/dm^3) / s
+    const kar2 = kaf2 / kae2
+	### autoprotolyse
+    const kwe  = 1.0e-14 * (mol/dm^3)^2
+    const kwf  = 2.4e-5 * (mol/dm^3) / s
+    const kwr  = kwf / kwe
+	const aH₂O = 1.0 #* mol/dm^3
+	
+	const scheme 	= :μex
+
+	# surface constants
+	const S 		= 9.61e-5 / N_A * (1.0e10)^2 * mol/m^2
+	const C_gap 	= 20 * μF/cm^2
+    const ϕ_pzc 	= 0.16 * V
+	const ico_t 	= 8
+	const icooh_t 	= 9
+	const ico2_t 	= 10
+	const isurfaceend = 10
+	const na 		= 3 # CO_t, CO2_t, COOH_t
+	const M0 		= 18.0153 * ufac"g/mol"
+	const v0        = N_A * (8.2 * Å)^3 # 1 / (55.4 * ufac"M") #
+	
+	const species_dict = Dict(
+		"K⁺" => ikplus,
+		"HCO₃⁻" => ihco3,
+		"CO₃²⁻" => ico3,
+		"CO₂" => ico2,
+		"OH⁻" => iohminus, 
+		"H⁺" => ihplus,
+		"CO" => ico,
+		"CO_t" => ico_t,
+		"COOH_t" => icooh_t,
+		"CO2_t" => ico2_t,
+	)
+
+	const species_dict_catmap = Dict(
+		"OH_g" => iohminus,
+		"CO2_aq" => ico2,
+		"CO_aq" => ico,
+		"CO_t" => ico_t,
+		"COOH_t" => icooh_t,
+		"CO2_t" => ico2_t,
+	)
+end;
+
+# ╔═╡ a23eece5-8e94-4c0b-b487-e742a37e714e
+begin
+	@kwdef struct BulkSpecies
+		name::String 
+		z::Int
+		D::Float64
+		c_bulk::Union{Nothing, Float64}
+		κ::Float64
+		a::Float64
+		v::Float64
+		M::Float64
+		color::Symbol
+	end
+	function BulkSpecies(;name, z, c_bulk=nothing, D, κ=0.0, a=0.0, color)
+		D *= m^2/s
+		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
+		a *= Å
+		v = N_A * a^3
+		M = M0 * v
+		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
+	end
+	function make_eneutral(bulk_species::Vector{BulkSpecies}
+						  ;name, z, D, κ=0.0, a=0.0, v=N_A*(a*Å)^3, M=M0*v, color)
+		a *= Å
+		c_bulk = -mapreduce(x -> x.c_bulk * x.z, +, bulk_species)/z
+		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
+	end
+end;
+
+# ╔═╡ 3be02c97-5c28-4370-97c1-e3f9faaba62a
+begin
+	function create_markdown(bulk::Vector{BulkSpecies})
+		table = """
+| Name | z | D | c_bulk | a | v | M | κ | color |
+|------|---|---|--------|---|---|---|---|-------|
+"""
+		for sp in bulk
+			(; name, z, D, c_bulk, a, v, M, κ, color) = sp
+			table *= @sprintf("| %s | %i | %1.3e | %1.3e | %1.3e | %1.3e | %1.3e | %1.2f | %s |\n", name, z, D, c_bulk, a, v, M, κ, color) 
+		end
+		Markdown.parse(table)
+	end
+	create_markdown(bulk)
+end
+
+# ╔═╡ 595715e5-f108-4167-b104-ac7c6f652e48
+elydata = ElectrolyteData(;
+                               nc = 6,
+							   z     = getproperty.(bulk, :z),
+							   D     = getproperty.(bulk, :D),
+							   eneutral=false,
+							   c_bulk = getproperty.(bulk, :c_bulk),
+				    		   v0 	  = v0,
+							   κ     = getproperty.(bulk, :κ),
+							   v     = getproperty.(bulk, :v),
+							   M0 	  = M0,
+							   M     = getproperty.(bulk, :M),
+					
+                               Γ_we = 1,
+                               Γ_bulk = 2)
+
+# ╔═╡ 00464966-2b1e-455c-a3a1-2af61c6649b7
+dlcap_exact = 0.22846691848825248
+
+# ╔═╡ c53791b6-6c12-483a-910f-6183149fac80
+@test dlcap0(elydata) ≈ dlcap_exact
+
+# ╔═╡ 05334798-a072-41ae-b23e-f884baadb071
+begin
+    equidata = EquilibriumData()
+    set_molarity!(equidata, 0.01)
+    equidata.χ = 78.49 - 1
+end
+
+# ╔═╡ ddb3e60b-8571-465f-acf3-2403fb884363
+@test dlcap0(equidata) |> unitfactor ≈ dlcap_exact
+
+# ╔═╡ 512b631e-93ec-42fc-8416-8d10ca97f23d
+@test dlcap0(EquilibriumData(elydata)) ≈ dlcap_exact
+
+# ╔═╡ a629e8a1-b1d7-42d8-8c17-43475785218e
+begin
+    Vmax = 2 * V
+
+    L = 20nm
+
+    hmin = 0.05 * nm
+
+    hmax = 0.5 * nm
+
+    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
+
+    grid = ExtendableGrids.simplexgrid(X)
+
+    data = EquilibriumData(elydata)
+end
+
+# ╔═╡ cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
+sys_sy = create_equilibrium_system(grid, data)
+
+# ╔═╡ 31a1f686-f0b6-430a-83af-187df411b293
+sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
+
+# ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
+inival = unknowns(sys_sy, inival = 0);
+
+# ╔═╡ 1c0145d5-76b1-48c1-8852-de1a2668285a
+molarities = [0.0001 ,0.001, 0.01, 0.1]
+
+# ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
+function capscalc(sys, molarities)
+    result = []
+    for imol in 1:length(molarities)
+        if isa(sys.physics.data, EquilibriumData)
+            #set_molarity!(sys.physics.data, molarities[imol])
+            t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
+        else
+            #sys.physics.data.c_bulk[1] .= molarities[imol] * ufac"mol/dm^3"
+            t = @elapsed r = dlcapsweep(
+                sys,
+                voltages = range(-1, 1, length = 201)
+            )
+            volts = voltages(r)
+            caps = r.dlcaps
+        end
+        cdl0 = dlcap0(sys.physics.data)
+        @info "elapsed=$(t)"
+        push!(
+            result,
+            (
+                voltages = volts,
+                dlcaps = caps,
+                cdl0 = cdl0,
+                molarity = molarities[imol],
+            )
+        )
+    end
+    return result
+end
+
+# ╔═╡ 38061646-9c66-4f9c-a0b5-5090dc62f8fe
+md"""
+#### Algebraic pressure equation
+"""
+
+# ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
+result_sy = capscalc(sys_sy, molarities)
+
+# ╔═╡ e114ec0d-13d3-4455-b1c9-d1c5d76671d9
+md"""
+#### Pressure poisson problem
+"""
+
+# ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
+result_pp = capscalc(sys_pp, molarities)
+
+# ╔═╡ 9b1dc273-9938-43a0-ac10-1928a80f89d8
+md"""
+#### Poisson Nernst-Planck from LiquidElectrolytes
+"""
+
+# ╔═╡ 53cdf6d7-a025-49e0-af7b-cc0838cfb422
+function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
+    (; iϕ, Γ_we, ϕ_we) = data
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+    return bulkbcondition(f, u, bnode, data)
+end
+
+# ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
+sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata)
+
+# ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
+result_pnp = capscalc(sys_pnp, molarities)
+
+# ╔═╡ 98464285-2bd4-4631-8c4f-8790fe15cb93
+md"""
+#### Poisson-Boltzmann from LiquidElectrolytes
+"""
+
+# ╔═╡ a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
+function pb_bcondition(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+    return boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+end
+
+# ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
+sys_pb = PBSystem(grid; celldata = deepcopy(elydata), bcondition = pb_bcondition)
+
+# ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
+result_pb = capscalc(sys_pb, molarities)
+
+# ╔═╡ 289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
+md"""
+#### Result comparison
+"""
+
+# ╔═╡ 1fcfbad3-2fad-4eee-a1a3-031dc29c9083
+function resultcompare(r1, r2; tol = 1.0e-3)
+    for i in 1:length(r1)
+        for f in fieldnames(typeof(r1[i]))
+            if !isapprox(r1[i][f], r2[i][f]; rtol = tol)
+                return false
+            end
+        end
+    end
+    return true
+end
+
+# ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
+@test resultcompare(result_pp, result_sy; tol = 5.0e-2)
+
+# ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
+@test resultcompare(result_pb, result_pp; tol = 5.0e-3)
+
+# ╔═╡ b43c5e74-5010-4870-a058-d3ad2c1ed548
+@test resultcompare(result_pp, result_pnp; tol = 5.0e-3)
+
+# ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
+@test resultcompare(result_pb, result_pnp; tol = 1.0e-10)
+
+# ╔═╡ 0b6f33b9-41d4-48fd-8026-8a3bddcc1989
+md"""
+#### Result plot
+
+Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.06.004)
+"""
+
+# ╔═╡ a22a5421-05bf-484f-a2d3-91a06a0c6476
+# ╠═╡ skip_as_script = true
+#=╠═╡
+function capsplot(vis, result, title)
+    hmol = 1 / length(result)
+    for imol in 1:length(result)
+        c = RGB(1 - imol * hmol, 0, imol * hmol)
+		
+        scalarplot!(
+            vis, result[imol].voltages, (result[imol].dlcaps / (μF / cm^2)), limits=(-1, 1000),
+            color = c, clear = false, label = "$(result[imol].molarity)M", markershape = :none, title = title, yscale=10
+        )
+        scalarplot!(
+            vis, [0], [result[imol].cdl0] / (μF / cm^2),
+            clear = false, markershape = :circle, markersize = 8, label = "",
+        )
+    end
+    return vis
+end
+
+  ╠═╡ =#
+
+# ╔═╡ 7d50bf4f-e3c7-4c44-a487-872cf45d4274
+#=╠═╡
+vi = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650))
+  ╠═╡ =#
+
+# ╔═╡ 5773e052-e289-407f-8b1b-3a60c82bc071
+#=╠═╡
+function f()
+    a = scalarplot!(vi, result_pnp[1].voltages, (result_pnp[1].dlcaps / (μF / cm^2)); ylimits = (0,10.0))
+        #a = (0, 10)  # 여기서 ylims을 직접 설정해줍니다.
+
+	return a
+end
+  ╠═╡ =#
+
+# ╔═╡ df03c4e4-2bca-4645-8a97-59ef0d1dad63
+#=╠═╡
+f()
+  ╠═╡ =#
+
+# ╔═╡ 85856abf-ee16-424a-ac06-97f76e32e444
+# ╠═╡ skip_as_script = true
+#=╠═╡
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650), ylimits = (0,10.0))
+
+    capsplot(vis[1, 1], result_sy, "Algebraic pressure")
+    capsplot(vis[1, 2], result_pp, "Pressure Poisson")
+    #capsplot(vis[2, 1], result_pb, "Poisson-Boltzmann")
+    capsplot(vis[2, 2], result_pnp, "Poisson-Nernst-Planck")
+
+    reveal(vis)
+end
+  ╠═╡ =#
+
+# ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
+begin
+	const bulk = let 
+		bulk = [
+		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
+		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
+		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
+		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
+		#BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=1.0, color=:gray),
+		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+
+# ╔═╡ b1a470b7-17af-456f-8e58-c64cd697f0bd
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	const bulk = let 
+		bulk = [
+		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
+		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
+		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
+		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
+		BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=0.0, color=:gray),
+		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+  ╠═╡ =#
+
 # ╔═╡ Cell order:
 # ╟─ef660f6f-9de3-4896-a65e-13c60df5de1e
+# ╠═2b901eca-db3b-4ad2-b0ee-e031854c57fa
 # ╠═60941eaa-1aea-11eb-1277-97b991548781
-# ╠═4082c3d3-b728-4bcc-b480-cdee41d9ab99
+# ╟─4082c3d3-b728-4bcc-b480-cdee41d9ab99
+# ╠═462f512b-9b92-442b-bae6-b4aa168b32ee
 # ╟─920b7d84-56c6-4958-aed9-fc67ba0c43f6
 # ╟─87ac16f4-a4fc-4205-8fb9-e5459517e1b8
 # ╟─7d77ad32-3df6-4243-8bad-b8df4126e6ea
-# ╠═4cabef42-d9f9-43fe-988e-7b54462dc775
+# ╟─4cabef42-d9f9-43fe-988e-7b54462dc775
 # ╠═0d825f88-cd67-4368-90b3-29f316b72e6e
+# ╠═ba2428ac-fdf7-4eae-acf5-dc0f20e876ee
 # ╟─30c6a176-935b-423f-9447-86f78746322f
 # ╠═00e536dc-34aa-4a1a-93de-4eb3f5e0a348
 # ╠═1065b3e0-60bf-497c-b7fb-c5a065737f77
@@ -818,3 +1295,46 @@ end;
 # ╠═64e47917-9c61-4d64-a6a1-c6e8c7b28c59
 # ╠═7bf3a130-3b47-428e-916f-4a0ec1237844
 # ╠═48670f54-d303-4c3a-a191-06e6592a2e0a
+# ╟─ac27c318-9a00-4287-bd36-3a97d65b5459
+# ╠═fe48d05b-99bd-48b4-a044-4dd8e8d18b5d
+# ╠═5fe96d0b-7bd0-4183-901d-727e966d434b
+# ╠═a23eece5-8e94-4c0b-b487-e742a37e714e
+# ╠═b1a470b7-17af-456f-8e58-c64cd697f0bd
+# ╠═59855587-c6c2-4af6-a713-0b710cf2b0fe
+# ╠═3be02c97-5c28-4370-97c1-e3f9faaba62a
+# ╠═595715e5-f108-4167-b104-ac7c6f652e48
+# ╠═00464966-2b1e-455c-a3a1-2af61c6649b7
+# ╠═c53791b6-6c12-483a-910f-6183149fac80
+# ╠═05334798-a072-41ae-b23e-f884baadb071
+# ╠═ddb3e60b-8571-465f-acf3-2403fb884363
+# ╠═512b631e-93ec-42fc-8416-8d10ca97f23d
+# ╠═a629e8a1-b1d7-42d8-8c17-43475785218e
+# ╠═cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
+# ╠═31a1f686-f0b6-430a-83af-187df411b293
+# ╠═442fe098-497b-404f-80a0-880bc95d5e02
+# ╠═1c0145d5-76b1-48c1-8852-de1a2668285a
+# ╠═70e1a34b-9041-4151-91aa-4dd7907a5b13
+# ╟─38061646-9c66-4f9c-a0b5-5090dc62f8fe
+# ╠═398b3511-4f7c-4436-9fe8-8edd76e3e0e7
+# ╟─e114ec0d-13d3-4455-b1c9-d1c5d76671d9
+# ╠═ca3bd6ba-1b3d-42c7-b008-8012b06368e4
+# ╟─9b1dc273-9938-43a0-ac10-1928a80f89d8
+# ╠═53cdf6d7-a025-49e0-af7b-cc0838cfb422
+# ╠═cf646a34-bd94-49af-8f8e-ec06446e18ca
+# ╠═966ed6ab-d6fa-43f1-9ddb-45eb024d949c
+# ╟─98464285-2bd4-4631-8c4f-8790fe15cb93
+# ╠═a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
+# ╠═88d38a68-1f8a-425a-bbae-90355a2213d0
+# ╠═f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
+# ╟─289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
+# ╠═1fcfbad3-2fad-4eee-a1a3-031dc29c9083
+# ╠═25a183d9-c6a2-4ac3-a283-a02e4e9231dd
+# ╠═6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
+# ╠═b43c5e74-5010-4870-a058-d3ad2c1ed548
+# ╠═ee76e884-86e6-45f6-bbb2-c8e73daa5883
+# ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
+# ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
+# ╠═7d50bf4f-e3c7-4c44-a487-872cf45d4274
+# ╠═5773e052-e289-407f-8b1b-3a60c82bc071
+# ╠═df03c4e4-2bca-4645-8a97-59ef0d1dad63
+# ╠═85856abf-ee16-424a-ac06-97f76e32e444
