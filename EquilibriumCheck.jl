@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.8
 
 using Markdown
 using InteractiveUtils
@@ -40,21 +40,6 @@ end
 md"""
 # Double layer capcacitance comparison
 """
-
-# ╔═╡ c8baca51-30e4-4db7-a4a4-712eefa747ca
-pkgdir(LiquidElectrolytes)
-
-# ╔═╡ 300b4ac5-cd6f-4d93-9195-b5ccfb5dda37
-pkgdir(CatmapInterface)
-
-# ╔═╡ 374275c1-5983-472a-be4b-d23ac7a30fb7
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	Pkg.add(PackageSpec(name="SimpleNonlinearSolve", version="1.12.3"))
-	Pkg.add(PackageSpec(name="CatmapInterface", version="0.2.0"))
-end
-  ╠═╡ =#
 
 # ╔═╡ 4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═╡ skip_as_script = true
@@ -370,7 +355,7 @@ begin
             E_ref = electrolyte.ϕ_bulk,
             n0_ref = ph"N_A" / electrolyte.v0,
             χ = electrolyte.ε - 1.0,
-            z = electrolyte.z,
+            z = -electrolyte.z,
             κ = electrolyte.κ,
             molarity = ph"N_A" * electrolyte.c_bulk[1],
             n_E = ph"N_A" * electrolyte.c_bulk
@@ -1329,7 +1314,7 @@ function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
 end
 
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
-sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata)
+sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata, reaction=reaction)
 
 # ╔═╡ ae8c0aa7-f66d-43af-85aa-c320bb187075
 1.585e-4-9.100e1-(2 * 2.680e-2)-6.310e-5
@@ -1445,9 +1430,6 @@ end
 # ╟─ef660f6f-9de3-4896-a65e-13c60df5de1e
 # ╠═2b901eca-db3b-4ad2-b0ee-e031854c57fa
 # ╠═60941eaa-1aea-11eb-1277-97b991548781
-# ╠═c8baca51-30e4-4db7-a4a4-712eefa747ca
-# ╠═300b4ac5-cd6f-4d93-9195-b5ccfb5dda37
-# ╠═374275c1-5983-472a-be4b-d23ac7a30fb7
 # ╟─4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═462f512b-9b92-442b-bae6-b4aa168b32ee
 # ╟─920b7d84-56c6-4958-aed9-fc67ba0c43f6
@@ -1561,7 +1543,7 @@ end
 # ╠═ca3bd6ba-1b3d-42c7-b008-8012b06368e4
 # ╟─9b1dc273-9938-43a0-ac10-1928a80f89d8
 # ╠═53cdf6d7-a025-49e0-af7b-cc0838cfb422
-# ╟─cf646a34-bd94-49af-8f8e-ec06446e18ca
+# ╠═cf646a34-bd94-49af-8f8e-ec06446e18ca
 # ╠═ae8c0aa7-f66d-43af-85aa-c320bb187075
 # ╟─966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 # ╟─98464285-2bd4-4631-8c4f-8790fe15cb93
