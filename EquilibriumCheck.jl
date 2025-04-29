@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.3
+# v0.20.6
 
 using Markdown
 using InteractiveUtils
@@ -9,7 +9,7 @@ using InteractiveUtils
 #=╠═╡
 begin
   using Pkg
-  Pkg.activate(joinpath(@__DIR__, "..", "docs"))
+  Pkg.activate(@__DIR__) 
   using Revise
   using CairoMakie
   using GridVisualize
@@ -19,23 +19,42 @@ end
 
 # ╔═╡ 60941eaa-1aea-11eb-1277-97b991548781
 begin
-    using PlutoUI
+    using PlutoUI, Latexify
     using VoronoiFVM
     using ExtendableGrids
     using LinearAlgebra
     using NLsolve
     using Unitful
     using LessUnitful
+	using DelimitedFiles
+	using PreallocationTools
+	using CatmapInterface 
     using LessUnitful.MoreUnitful
     using LiquidElectrolytes
     using Test
 	using Printf
+	using Catalyst
 end
 
 # ╔═╡ ef660f6f-9de3-4896-a65e-13c60df5de1e
 md"""
 # Double layer capcacitance comparison
 """
+
+# ╔═╡ c8baca51-30e4-4db7-a4a4-712eefa747ca
+pkgdir(LiquidElectrolytes)
+
+# ╔═╡ 300b4ac5-cd6f-4d93-9195-b5ccfb5dda37
+pkgdir(CatmapInterface)
+
+# ╔═╡ 374275c1-5983-472a-be4b-d23ac7a30fb7
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	Pkg.add(PackageSpec(name="SimpleNonlinearSolve", version="1.12.3"))
+	Pkg.add(PackageSpec(name="CatmapInterface", version="0.2.0"))
+end
+  ╠═╡ =#
 
 # ╔═╡ 4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═╡ skip_as_script = true
@@ -44,10 +63,13 @@ TableOfContents(title="",depth=5)
   ╠═╡ =#
 
 # ╔═╡ 462f512b-9b92-442b-bae6-b4aa168b32ee
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	mylog=RLog()
 	LiquidElectrolytes.rlog(x::Number)=mylog(x)
 end
+  ╠═╡ =#
 
 # ╔═╡ 920b7d84-56c6-4958-aed9-fc67ba0c43f6
 md"""
@@ -918,6 +940,91 @@ begin
 	end
 end;
 
+# ╔═╡ b1a470b7-17af-456f-8e58-c64cd697f0bd
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	const bulk = let 
+		bulk = [
+		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
+		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
+		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
+		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
+		BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=0.0, color=:gray),
+		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+  ╠═╡ =#
+
+# ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
+begin
+	const bulk = let 
+		bulk = [
+				BulkSpecies(;name = "HCO₃⁻", 
+							z = -1, 
+							D = 1.185e-9, 
+							c_bulk = c_bulk=0.091, 
+							a = 8.2, 
+							κ = 8.0, 
+							color = :brown
+				),
+				BulkSpecies(;name = "CO₃²⁻",
+							z = -2, 
+							D = 0.923e-9, 
+							c_bulk = 2.68e-5,
+							a = 8.2,  
+							κ = 8.0, 
+							color = :violet
+				),
+				BulkSpecies(;name = "CO₂",
+							z = 0, 
+							D = 1.91e-9, 
+							c_bulk = 0.033, 
+							a = 8.2, 
+							κ = 8.0, 
+							color=:red
+				),
+				BulkSpecies(;name = "OH⁻",
+							z = -1, 
+							D = 5.273e-9, 
+							c_bulk = 10^(pH-14), 
+							a = 8.2, 
+							κ = 8.0, 
+							color = :green
+				),
+				BulkSpecies(;name = "H⁺", 
+							z = 1, 
+							D = 9.310e-9, 
+							c_bulk = 10^(-pH), 
+							a = 8.2, 
+							κ = 8.0, 
+							color = :gray
+				),
+				BulkSpecies(;name="CO",
+							z = 0,
+							D = 2.23e-9,
+							c_bulk = 0.0,
+							a = 8.2, 
+							κ = 8.0,  
+							color=:blue
+				)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺", 
+									   z = 1, 
+									   D = 1.957e-9,
+		
+									   a = 8.2, 
+									   κ = 8.0, 
+									   color = :orange
+								  )
+		)
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+
 # ╔═╡ 3be02c97-5c28-4370-97c1-e3f9faaba62a
 begin
 	function create_markdown(bulk::Vector{BulkSpecies})
@@ -936,7 +1043,7 @@ end
 
 # ╔═╡ 595715e5-f108-4167-b104-ac7c6f652e48
 elydata = ElectrolyteData(;
-                               nc = 6,
+                               nc = size(bulk)[1],
 							   z     = getproperty.(bulk, :z),
 							   D     = getproperty.(bulk, :D),
 							   eneutral=false,
@@ -950,11 +1057,164 @@ elydata = ElectrolyteData(;
                                Γ_we = 1,
                                Γ_bulk = 2)
 
+# ╔═╡ 25bafe0e-f2fc-4a5c-828e-89fdccbc250c
+md"""
+### Reaction
+"""
+
+# ╔═╡ 6d1f0f93-876a-4ec9-9763-f1abcb36cc07
+md"""
+#### Boundary Reaction
+"""
+
+# ╔═╡ c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
+begin
+	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_template.mkm")
+	rn 					= create_reaction_network(catmap_params)
+	odesys 				= convert(ODESystem, rn; combinatoric_ratelaws=false)
+	odesys 				= CatmapInterface.liquidize(odesys, catmap_params)
+	vars 				= states(odesys)
+	const f_microkinetics! 	= CatmapInterface.generate_function(
+		odesys;
+		dvs = sort(vars, by=x->species_dict_catmap[string(operation(x))])
+	)
+	const paramsidx = paramsmap(odesys)
+	latexify(odesys)
+end
+
+# ╔═╡ 949d126e-d863-40f4-b902-8b3b4c97b1b5
+md"""
+#### Buffer Reaction
+"""
+
+# ╔═╡ 5ddce46c-22a5-427a-8cb7-f45f216cefe0
+begin
+	@variables t
+	@species HCO₃⁻(t), CO₃²⁻(t), CO₂(t), OH⁻(t),H⁺(t)
+	@parameters γHCO₃⁻ γCO₃²⁻ γCO₂ γOH⁻ γH⁺
+	buffer_rn = @reaction_network buffer begin
+		($kbf1 * γCO₂ * γOH⁻, $kbr1 * γHCO₃⁻), CO₂ + OH⁻ <--> HCO₃⁻
+		($kbf2 * γHCO₃⁻ * γOH⁻, $kbr2 * $aH₂O * γCO₃²⁻), HCO₃⁻ + OH⁻ <--> CO₃²⁻
+		($kaf1 * $aH₂O * γCO₂, $kar1 * γHCO₃⁻ * γH⁺), CO₂ <--> HCO₃⁻ + H⁺
+		($kaf2 * γHCO₃⁻, $kar2 * γCO₃²⁻ * γH⁺), HCO₃⁻ <--> CO₃²⁻ + H⁺
+		($kwf * $aH₂O, $kwr * γH⁺ * γOH⁻), ∅ <--> H⁺ + OH⁻
+	end
+	odesys_buffer = convert(ODESystem, buffer_rn; combinatoric_ratelaws=false)
+	const f_buffer! = CatmapInterface.generate_function(
+		buffer_rn; 
+		dvs = [H⁺, HCO₃⁻, CO₃²⁻, CO₂, OH⁻], 
+		ps = [γH⁺, γHCO₃⁻, γCO₃²⁻, γCO₂, γOH⁻]
+	)
+	latexify(buffer_rn; env=:chemical)
+end
+
+# ╔═╡ e2ab9bb4-a1b5-4d49-a760-013ad0fc4c68
+md"""
+#### Reaction Rates
+"""
+
+# ╔═╡ 3a9940b9-c7e1-484c-bbf2-14c0c69d685b
+md"""
+##### Electrode Reaction
+"""
+
+# ╔═╡ 12cbfb8b-edb6-4335-8d80-0d6fe0eb9d3a
+begin
+	const ps_cache = DiffCache(zeros(8), 13)
+	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
+	
+	function we_breactions(f, 
+			u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
+			bnode, 
+			data
+		) where {Tval, Tv, Tc, Tp, Ti}
+		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we) = data
+		
+		γ_co2 	= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
+		γ_co 	= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
+		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
+		local_pH 	= -log10((u[ihplus] / (mol/dm^3)))
+
+		ps = get_tmp(ps_cache, u[iϕ])
+		for (p, default_value) in odesys.defaults
+			ps[paramsidx[p]] = default_value
+			println(default_value)
+		end
+		
+		ps = get_tmp(ps_cache, u[iϕ])
+		ps[paramsidx[odesys.σ]] = σ
+		ps[paramsidx[odesys.γCO2_aq]] = γ_co2
+		ps[paramsidx[odesys.aH2O_g]] = aH₂O
+		ps[paramsidx[odesys.ϕ]] = u[iϕ]
+		ps[paramsidx[odesys.ϕ_we]] = ϕ_we
+		ps[paramsidx[odesys.local_pH]] = local_pH
+		ps[paramsidx[odesys.γCO_aq]] = γ_co
+		ps[paramsidx[odesys.βCOOHΔH2OΔele_t]] = 0.59
+
+	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
+		#@show size(f)
+
+		if bnode.region == Γ_we && size(f,1) ≥ isurfaceend
+			@views f_microkinetics!(
+				f[isurfacestart:isurfaceend], 
+				u[isurfacestart:isurfaceend],
+				ps,
+				nothing
+			)
+		#elseif bnode.region == Γ_we
+		#	nothing
+		end
+		
+		#f = 0
+		# conversion from turnover frequency (appropriate for change in coverage) to production rate (per unit area) (approprite for change in concentration) by S = number of free catalyst sites in mole per unit area
+		f[ico2] *= S
+		f[iohminus] *= S
+		f[ico] *= S
+		f[ikplus] *= S
+	end
+end
+
+# ╔═╡ 1c94b9ba-429d-44fc-887e-e028ba070cc9
+md"""
+##### Bulk Reaction
+"""
+
+# ╔═╡ 1e52766d-12a9-46cd-be96-5c13a046944f
+begin
+	const γ_cache = DiffCache(zeros(nc), 12)
+	
+	function reaction(
+		f, 
+		u::VoronoiFVM.NodeUnknowns{Tv, Tc, Tp, Ti}, 
+		node, 
+		data
+	) where {Tv, Tc, Tp, Ti}  
+		
+		(; ip, iϕ, v0, v, M0, M, κ, ε_0, ε, RT, nc, pscale, p_bulk) = data
+
+		# compute activity coefficients according to the approach in Ringe et al.
+		γ = get_tmp(γ_cache, u[ico2])
+
+		γ .= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
+
+		@views f_buffer!(
+			f[ibufferstart:ibufferend], 
+			u[ibufferstart:ibufferend],
+			γ[ibufferstart:ibufferend],
+			nothing
+		)
+		nothing
+	end
+end;
+
 # ╔═╡ 00464966-2b1e-455c-a3a1-2af61c6649b7
 dlcap_exact = 0.22846691848825248
 
 # ╔═╡ c53791b6-6c12-483a-910f-6183149fac80
+# ╠═╡ disabled = true
+#=╠═╡
 @test dlcap0(elydata) ≈ dlcap_exact
+  ╠═╡ =#
 
 # ╔═╡ 05334798-a072-41ae-b23e-f884baadb071
 begin
@@ -967,7 +1227,10 @@ end
 @test dlcap0(equidata) |> unitfactor ≈ dlcap_exact
 
 # ╔═╡ 512b631e-93ec-42fc-8416-8d10ca97f23d
+# ╠═╡ disabled = true
+#=╠═╡
 @test dlcap0(EquilibriumData(elydata)) ≈ dlcap_exact
+  ╠═╡ =#
 
 # ╔═╡ a629e8a1-b1d7-42d8-8c17-43475785218e
 begin
@@ -984,7 +1247,7 @@ begin
     grid = ExtendableGrids.simplexgrid(X)
 
     data = EquilibriumData(elydata)
-end
+end;
 
 # ╔═╡ cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
 sys_sy = create_equilibrium_system(grid, data)
@@ -996,12 +1259,15 @@ sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
 inival = unknowns(sys_sy, inival = 0);
 
 # ╔═╡ 1c0145d5-76b1-48c1-8852-de1a2668285a
+# ╠═╡ disabled = true
+#=╠═╡
 molarities = [0.0001 ,0.001, 0.01, 0.1]
+  ╠═╡ =#
 
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
-function capscalc(sys, molarities)
+function capscalc(sys)
     result = []
-    for imol in 1:length(molarities)
+    #for imol in 1:length(molarities)
         if isa(sys.physics.data, EquilibriumData)
             #set_molarity!(sys.physics.data, molarities[imol])
             t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
@@ -1009,7 +1275,8 @@ function capscalc(sys, molarities)
             #sys.physics.data.c_bulk[1] .= molarities[imol] * ufac"mol/dm^3"
             t = @elapsed r = dlcapsweep(
                 sys,
-                voltages = range(-1, 1, length = 201)
+                voltages = range(-1, 1, length = 201),
+				#reaction = reaction ###buffer reaction
             )
             volts = voltages(r)
             caps = r.dlcaps
@@ -1022,10 +1289,10 @@ function capscalc(sys, molarities)
                 voltages = volts,
                 dlcaps = caps,
                 cdl0 = cdl0,
-                molarity = molarities[imol],
+                #molarity = molarities[imol],
             )
         )
-    end
+    #end
     return result
 end
 
@@ -1035,7 +1302,7 @@ md"""
 """
 
 # ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
-result_sy = capscalc(sys_sy, molarities)
+result_sy = capscalc(sys_sy)
 
 # ╔═╡ e114ec0d-13d3-4455-b1c9-d1c5d76671d9
 md"""
@@ -1043,7 +1310,7 @@ md"""
 """
 
 # ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
-result_pp = capscalc(sys_pp, molarities)
+result_pp = capscalc(sys_pp)
 
 # ╔═╡ 9b1dc273-9938-43a0-ac10-1928a80f89d8
 md"""
@@ -1054,6 +1321,9 @@ md"""
 function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
     (; iϕ, Γ_we, ϕ_we) = data
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	#if bnode.region == Γ_we
+	#	we_breactions(f, u, bnode, data)
+	#end
 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
     return bulkbcondition(f, u, bnode, data)
 end
@@ -1061,8 +1331,11 @@ end
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
 sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata)
 
+# ╔═╡ ae8c0aa7-f66d-43af-85aa-c320bb187075
+1.585e-4-9.100e1-(2 * 2.680e-2)-6.310e-5
+
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
-result_pnp = capscalc(sys_pnp, molarities)
+result_pnp = capscalc(sys_pnp)
 
 # ╔═╡ 98464285-2bd4-4631-8c4f-8790fe15cb93
 md"""
@@ -1075,15 +1348,19 @@ function pb_bcondition(f, u, bnode, data)
     ## Dirichlet ϕ=ϕ_we at Γ_we
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-    return boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
 
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+    return bulkbcondition(f, u, bnode, data)
+	#return boundary_robin!(f, u, bnode, iϕ, Γ_bulk, C_gap, C_gap * (ϕ_we - ϕ_pzc))
 end
 
 # ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
 sys_pb = PBSystem(grid; celldata = deepcopy(elydata), bcondition = pb_bcondition)
 
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
-result_pb = capscalc(sys_pb, molarities)
+result_pb = capscalc(sys_pb)
 
 # ╔═╡ 289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
 md"""
@@ -1128,11 +1405,13 @@ function capsplot(vis, result, title)
     hmol = 1 / length(result)
     for imol in 1:length(result)
         c = RGB(1 - imol * hmol, 0, imol * hmol)
-		
-        scalarplot!(
-            vis, result[imol].voltages, (result[imol].dlcaps / (μF / cm^2)), limits=(-1, 1000),
-            color = c, clear = false, label = "$(result[imol].molarity)M", markershape = :none, title = title, yscale=10
+		try
+        	scalarplot!(
+            vis, result[imol].voltages, (result[imol].dlcaps / (μF / cm^2)), limits=(-1, 100), bg = :transparent, color = c, clear = false, label = "Capacitance_Value ", markershape = :none, title = title, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
         )
+		catch 
+			continue
+		end
         scalarplot!(
             vis, [0], [result[imol].cdl0] / (μF / cm^2),
             clear = false, markershape = :circle, markersize = 8, label = "",
@@ -1140,7 +1419,6 @@ function capsplot(vis, result, title)
     end
     return vis
 end
-
   ╠═╡ =#
 
 # ╔═╡ 7d50bf4f-e3c7-4c44-a487-872cf45d4274
@@ -1148,75 +1426,28 @@ end
 vi = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650))
   ╠═╡ =#
 
-# ╔═╡ 5773e052-e289-407f-8b1b-3a60c82bc071
-#=╠═╡
-function f()
-    a = scalarplot!(vi, result_pnp[1].voltages, (result_pnp[1].dlcaps / (μF / cm^2)); ylimits = (0,10.0))
-        #a = (0, 10)  # 여기서 ylims을 직접 설정해줍니다.
-
-	return a
-end
-  ╠═╡ =#
-
-# ╔═╡ df03c4e4-2bca-4645-8a97-59ef0d1dad63
-#=╠═╡
-f()
-  ╠═╡ =#
-
 # ╔═╡ 85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═╡ skip_as_script = true
 #=╠═╡
 let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650), ylimits = (0,10.0))
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650), backgroundcolor = :transparent)
 
     capsplot(vis[1, 1], result_sy, "Algebraic pressure")
     capsplot(vis[1, 2], result_pp, "Pressure Poisson")
-    #capsplot(vis[2, 1], result_pb, "Poisson-Boltzmann")
+    capsplot(vis[2, 1], result_pb, "Poisson-Boltzmann")
     capsplot(vis[2, 2], result_pnp, "Poisson-Nernst-Planck")
 
     reveal(vis)
 end
   ╠═╡ =#
 
-# ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
-begin
-	const bulk = let 
-		bulk = [
-		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
-		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
-		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
-		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
-		#BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=1.0, color=:gray),
-		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
-		sort(bulk, by=x->species_dict[x.name])
-	end
-end;
-
-# ╔═╡ b1a470b7-17af-456f-8e58-c64cd697f0bd
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	const bulk = let 
-		bulk = [
-		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
-		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
-		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
-		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
-		BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=0.0, color=:gray),
-		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
-		sort(bulk, by=x->species_dict[x.name])
-	end
-end;
-  ╠═╡ =#
-
 # ╔═╡ Cell order:
 # ╟─ef660f6f-9de3-4896-a65e-13c60df5de1e
 # ╠═2b901eca-db3b-4ad2-b0ee-e031854c57fa
 # ╠═60941eaa-1aea-11eb-1277-97b991548781
+# ╠═c8baca51-30e4-4db7-a4a4-712eefa747ca
+# ╠═300b4ac5-cd6f-4d93-9195-b5ccfb5dda37
+# ╠═374275c1-5983-472a-be4b-d23ac7a30fb7
 # ╟─4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═462f512b-9b92-442b-bae6-b4aa168b32ee
 # ╟─920b7d84-56c6-4958-aed9-fc67ba0c43f6
@@ -1303,9 +1534,19 @@ end;
 # ╠═59855587-c6c2-4af6-a713-0b710cf2b0fe
 # ╠═3be02c97-5c28-4370-97c1-e3f9faaba62a
 # ╠═595715e5-f108-4167-b104-ac7c6f652e48
-# ╠═00464966-2b1e-455c-a3a1-2af61c6649b7
+# ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
+# ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
+# ╠═c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
+# ╠═949d126e-d863-40f4-b902-8b3b4c97b1b5
+# ╠═5ddce46c-22a5-427a-8cb7-f45f216cefe0
+# ╠═e2ab9bb4-a1b5-4d49-a760-013ad0fc4c68
+# ╠═3a9940b9-c7e1-484c-bbf2-14c0c69d685b
+# ╠═12cbfb8b-edb6-4335-8d80-0d6fe0eb9d3a
+# ╠═1c94b9ba-429d-44fc-887e-e028ba070cc9
+# ╠═1e52766d-12a9-46cd-be96-5c13a046944f
+# ╟─00464966-2b1e-455c-a3a1-2af61c6649b7
 # ╠═c53791b6-6c12-483a-910f-6183149fac80
-# ╠═05334798-a072-41ae-b23e-f884baadb071
+# ╟─05334798-a072-41ae-b23e-f884baadb071
 # ╠═ddb3e60b-8571-465f-acf3-2403fb884363
 # ╠═512b631e-93ec-42fc-8416-8d10ca97f23d
 # ╠═a629e8a1-b1d7-42d8-8c17-43475785218e
@@ -1320,8 +1561,9 @@ end;
 # ╠═ca3bd6ba-1b3d-42c7-b008-8012b06368e4
 # ╟─9b1dc273-9938-43a0-ac10-1928a80f89d8
 # ╠═53cdf6d7-a025-49e0-af7b-cc0838cfb422
-# ╠═cf646a34-bd94-49af-8f8e-ec06446e18ca
-# ╠═966ed6ab-d6fa-43f1-9ddb-45eb024d949c
+# ╟─cf646a34-bd94-49af-8f8e-ec06446e18ca
+# ╠═ae8c0aa7-f66d-43af-85aa-c320bb187075
+# ╟─966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 # ╟─98464285-2bd4-4631-8c4f-8790fe15cb93
 # ╠═a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
 # ╠═88d38a68-1f8a-425a-bbae-90355a2213d0
@@ -1335,6 +1577,4 @@ end;
 # ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
 # ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
 # ╠═7d50bf4f-e3c7-4c44-a487-872cf45d4274
-# ╠═5773e052-e289-407f-8b1b-3a60c82bc071
-# ╠═df03c4e4-2bca-4645-8a97-59ef0d1dad63
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
