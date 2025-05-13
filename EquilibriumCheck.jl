@@ -1500,12 +1500,10 @@ let
     for i in 1:length(results)
         result = results[i]
         try
-            # 비어있는 결과가 아니면 push
             if !(isempty(result))
                 push!(plots, result)
             end
         catch
-            # 비어있거나 예외 발생 시 무시
             continue
         end
     end
@@ -1517,19 +1515,6 @@ end
 
 # ╔═╡ 7afb1a46-2675-4b70-be39-5100fe2c2274
 [result_sy, result_pp, result_pb, result_pnp][4][1]
-
-# ╔═╡ b757aee6-49dc-4ead-abbf-2c60ddfad5a6
-function save_dlcaps_to_csv(result, filepath)
-    # DLCapSweepResult 객체 또는 객체가 담긴 벡터 처리
-    volt = result[1].voltages
-    cdl_vals = result[1].dlcaps / (μF / cm^2)
-    df = DataFrame(voltage = volt, cdl = cdl_vals)
-    CSV.write(filepath, df)
-    println("Results saved to CSV: ", filepath)
-end
-
-# ╔═╡ 576a3999-c408-44b3-851a-d02c9290a374
-save_dlcaps_to_csv(result_pb, "size_modified_pb")
 
 # ╔═╡ 4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 md"""
@@ -1576,7 +1561,7 @@ function capsplot_κ(vis, sys; n::Int=23)
                 backgroundcolor = :gray,
             )
         catch e
-            @warn "caps 실패 at κ=$κ" exception=e
+            @warn "caps failed at κ=$κ" exception=e
         end
         κ += 2.0
         sys.physics.data.κ .= κ
@@ -1741,8 +1726,6 @@ end
 # ╠═970871ac-a5f2-4e30-9420-489acdbe79f9
 # ╠═a90686f1-5f57-43e9-b22a-c8725775864f
 # ╠═7afb1a46-2675-4b70-be39-5100fe2c2274
-# ╠═b757aee6-49dc-4ead-abbf-2c60ddfad5a6
-# ╠═576a3999-c408-44b3-851a-d02c9290a374
 # ╠═4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 # ╠═0e734e72-fc3a-48c7-b1d5-c0a380768eec
 # ╠═fae68c38-be85-4718-8ee6-f900150e2b9a
