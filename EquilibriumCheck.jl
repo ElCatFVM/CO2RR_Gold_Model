@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.8
 
 using Markdown
 using InteractiveUtils
@@ -1305,11 +1305,13 @@ end
 function capscalc(sys)
     result = []
     #for imol in 1:length(molarities)
-        if isa(sys.physics.data, EquilibriumData)
+        if !isa(sys, AbstractElectrochemicalSystem)
+			data=sys.physics.data
             #set_molarity!(sys.physics.data, molarities[imol])
             t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
         else
             #sys.physics.data.c_bulk[1] .= molarities[imol] * ufac"mol/dm^3"
+			data=electrolytedata(sys)
             t = @elapsed r = dlcapsweep(
                 sys,
                 voltages = range(-1, 1, length = 201),
@@ -1317,7 +1319,7 @@ function capscalc(sys)
             volts = voltages(r)
             caps = r.dlcaps
         end
-        cdl0 = dlcap0(sys.physics.data)
+        cdl0 = dlcap0(data)
         @info "elapsed=$(t)"
         push!(
             result,
@@ -1536,7 +1538,7 @@ function capsplot_κ(vis, sys; n::Int=23)
 
     sys = deepcopy(sys)
     κ = 1.0
-    sys.physics.data.κ .= κ
+    electrolytedata(sys).κ .= κ
 
     for j in 1:n
         try
@@ -1564,9 +1566,9 @@ function capsplot_κ(vis, sys; n::Int=23)
             @warn "caps failed at κ=$κ" exception=e
         end
         κ += 2.0
-        sys.physics.data.κ .= κ
+        electrolytedata(sys).κ .= κ
     end
-	sys.physics.data.κ .= κt # Default Value
+	electrolytedata(sys).κ .= κt # Default Value
 end
   ╠═╡ =#
 
