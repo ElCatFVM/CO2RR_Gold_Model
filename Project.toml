@@ -28,5 +28,5 @@ VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"
 [compat]
 CairoMakie = "0.12, 0.13"
 DiffEqBase = "< 6.166.0"
-LiquidElectrolytes = "1.1.0"
+LiquidElectrolytes = "2"
 CatmapInterface = "0.2.0"
