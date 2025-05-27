@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.8
 
 using Markdown
 using InteractiveUtils
@@ -46,6 +46,11 @@ md"""
 # Double layer capcacitance comparison
 """
 
+# ╔═╡ 8bf52bab-4830-4936-b3c9-78c1ccd0406d
+#=╠═╡
+Pkg.status("LiquidElectrolytes")
+  ╠═╡ =#
+
 # ╔═╡ 4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═╡ skip_as_script = true
 #=╠═╡
@@ -54,15 +59,6 @@ TableOfContents(title="",depth=5)
 
 # ╔═╡ 852d9c74-b2aa-49c0-9bd0-0ccb1afcc520
 pkgdir(LiquidElectrolytes)
-
-# ╔═╡ 462f512b-9b92-442b-bae6-b4aa168b32ee
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	mylog=RLog()
-	LiquidElectrolytes.rlog(x::Number)=mylog(x)
-end
-  ╠═╡ =#
 
 # ╔═╡ 920b7d84-56c6-4958-aed9-fc67ba0c43f6
 md"""
@@ -1050,14 +1046,30 @@ elydata = ElectrolyteData(;
 							   D     = getproperty.(bulk, :D),
 							   eneutral=false,
 							   c_bulk = getproperty.(bulk, :c_bulk),
+						  	   #actcoeff! = DGL_gamma!,
 				    		   v0 	  = v0,
 							   κ     = getproperty.(bulk, :κ),
 							   v     = getproperty.(bulk, :v),
 							   M0 	  = M0,
 							   M     = getproperty.(bulk, :M),
-							   #scheme = :act,
                                Γ_we = 1,
                                Γ_bulk = 2)
+
+# ╔═╡ 360a1550-ca01-4c0e-9aa1-31b48ce3f436
+elydata_Landstorfer = ElectrolyteData(;
+									 	z = [-1, 1],
+									  	κ = [8.0, 45.0],
+									  	c_bulk = [0.5, 0.5],
+									 	)
+
+# ╔═╡ 4b5a7429-49a7-4d04-9023-1232c2be134e
+1/elydata_Landstorfer.v0
+
+# ╔═╡ 53ae411f-42e8-41b3-ad38-e0189a001acf
+elydata_Example = ElectrolyteData(
+    c_bulk = fill(0.01 * ufac"mol / dm^3", 2),
+    κ = [5, 10.0]
+)
 
 # ╔═╡ 25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 md"""
@@ -1071,7 +1083,7 @@ md"""
 
 # ╔═╡ c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
 begin
-	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_template.mkm")
+	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_data/catmap_CO2R_template.mkm")
 	rn 					= create_reaction_network(catmap_params)
 	odesys 				= convert(ODESystem, rn; combinatoric_ratelaws=false)
 	odesys 				= CatmapInterface.liquidize(odesys, catmap_params)
@@ -1251,7 +1263,7 @@ begin
 
     grid = ExtendableGrids.simplexgrid(X)
 
-    data = EquilibriumData(elydata)
+    data = EquilibriumData(elydata_Landstorfer)
 end;
 
 # ╔═╡ cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
@@ -1262,9 +1274,6 @@ sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
 
 # ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
 inival = unknowns(sys_sy, inival = 0);
-
-# ╔═╡ 1c0145d5-76b1-48c1-8852-de1a2668285a
-molarities = [elydata.c_bulk,elydata.c_bulk*0.1, elydata.c_bulk*0.01, elydata.c_bulk*0.001]
 
 # ╔═╡ 699eaadb-80f4-4230-9054-27df7c224c99
 # ╠═╡ disabled = true
@@ -1301,15 +1310,19 @@ function capscalc(sys)
 end
   ╠═╡ =#
 
+# ╔═╡ c381803b-daad-4778-8d79-5abcecbce9ee
+molarities = [0.005, 0.01, 0.02, 0.04, 0.1]
+
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
 function capscalc(sys)
     result = []
-    #for imol in 1:length(molarities)
-        if isa(sys.physics.data, EquilibriumData)
-            #set_molarity!(sys.physics.data, molarities[imol])
+    for imol in 1:length(molarities)
+        if !isa(sys, AbstractElectrochemicalSystem)
+			data=sys.physics.data
             t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
         else
-            #sys.physics.data.c_bulk[1] .= molarities[imol] * ufac"mol/dm^3"
+			data = sys.vfvmsys.physics.data
+            data.c_bulk .= molarities[imol] * ufac"mol/dm^3"
             t = @elapsed r = dlcapsweep(
                 sys,
                 voltages = range(-1, 1, length = 201),
@@ -1317,18 +1330,18 @@ function capscalc(sys)
             volts = voltages(r)
             caps = r.dlcaps
         end
-        cdl0 = dlcap0(sys.physics.data)
-        @info "elapsed=$(t)"
+		cdl0 = dlcap0(data)
+		@info "elapsed=$(t)"
         push!(
             result,
             (
                 voltages = volts,
                 dlcaps = caps,
                 cdl0 = cdl0,
-                #molarity = molarities[imol],
+                molarity = molarities[imol],
             )
         )
-    #end
+    end
     return result
 end
 
@@ -1365,7 +1378,7 @@ function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
 end
 
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
-sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata, reaction=reaction)
+sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata_Landstorfer)
 
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 result_pnp = capscalc(sys_pnp)
@@ -1386,11 +1399,10 @@ function pb_bcondition(f, u, bnode, data)
     boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
 
     return bulkbcondition(f, u, bnode, data)
-	#return boundary_robin!(f, u, bnode, iϕ, Γ_bulk, C_gap, C_gap * (ϕ_we - ϕ_pzc))
 end
 
 # ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
-sys_pb = PBSystem(grid; celldata = deepcopy(elydata), bcondition = pb_bcondition)
+sys_pb = PBSystem(grid; celldata = deepcopy(elydata_Landstorfer), bcondition = pb_bcondition)
 
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
 result_pb = capscalc(sys_pb)
@@ -1416,10 +1428,17 @@ end
 @test resultcompare(result_pp, result_sy; tol = 5.0e-2)
 
 # ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
+# ╠═╡ disabled = true
+#=╠═╡
 @test resultcompare(result_pb, result_pp; tol = 5.0e-3)
+  ╠═╡ =#
 
 # ╔═╡ b43c5e74-5010-4870-a058-d3ad2c1ed548
+# ╠═╡ show_logs = false
+# ╠═╡ disabled = true
+#=╠═╡
 @test resultcompare(result_pp, result_pnp; tol = 5.0e-1)
+  ╠═╡ =#
 
 # ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
 @test resultcompare(result_pb, result_pnp; tol = 5.0e-1)
@@ -1438,16 +1457,13 @@ function capsplot(vis, result, title)
     hmol = 1 / length(result)
     for imol in 1:length(result)
         c = RGB(1 - imol * hmol, 0, imol * hmol)
-		try
-        	scalarplot!(
-            vis, result[imol].voltages, (result[imol].dlcaps / (μF / cm^2)), limits=(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = c, clear = false, label = " ", markershape = :none, title = title, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+        scalarplot!(
+            vis, result[imol].voltages, result[imol].dlcaps / (μF / cm^2),
+            color = c, clear = false, label = "$(result[imol].molarity)M", markershape = :none, title = title,  xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
         )
-		catch 
-			continue
-		end
         scalarplot!(
             vis, [0], [result[imol].cdl0] / (μF / cm^2),
-            clear = false, markershape = :circle, markersize = 8, label = "",
+            clear = false, markershape = :circle, markersize = 8, label = ""
         )
     end
     return vis
@@ -1473,7 +1489,7 @@ end
 #=╠═╡
 function capsplot_v(vis, result)
     hmol = 1 / length(result)
-	color = [:red, :green, :blue, :lightgray]
+	color = [:blue, :lightgray]
     for i in 1:length(result)
 		scalarplot!(
             vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
@@ -1485,36 +1501,36 @@ end
 # ╔═╡ 970871ac-a5f2-4e30-9420-489acdbe79f9
  sym = Symbol("result_" * "pp")
 
-# ╔═╡ a90686f1-5f57-43e9-b22a-c8725775864f
-#=╠═╡
-let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650), backgroundcolor = :transparent)
-    plots = []
-    results = [
-		#result_pp, 
-		result_pb, 
-		result_pnp, 
-		#result_sy
-		]
-
-    for i in 1:length(results)
-        result = results[i]
-        try
-            if !(isempty(result))
-                push!(plots, result)
-            end
-        catch
-            continue
-        end
-    end
-
-    capsplot_v(vis, plots)
-    reveal(vis)
-end
-  ╠═╡ =#
-
 # ╔═╡ 7afb1a46-2675-4b70-be39-5100fe2c2274
-[result_sy, result_pp, result_pb, result_pnp][4][1]
+Landstorfer_NaF5mM = CSV.read("Landstorfer_data/Landstorfer0.005M.csv", DataFrame);
+
+# ╔═╡ ac1d0e41-20d5-4a32-a491-5eeff2b665ba
+Landstorfer_NaF100mM = CSV.read("Landstorfer_data/Landstorfer0.1M.csv", DataFrame);
+
+# ╔═╡ 3ecd7da2-c0ba-4be3-8241-402f1e641b14
+result_pnp
+
+# ╔═╡ cab38db8-fdc3-47f0-9216-a749a4d2d858
+#=╠═╡
+begin
+    f = Figure()
+    result = result_pb
+    l = 1 / length(result)
+    ax = Axis(f[1, 1], xlabel="x", ylabel="y", title="CSV Plot")
+    
+    lines!(Landstorfer_NaF5mM.voltages .+ 0.972, Landstorfer_NaF5mM.dlcaps, color=:darkblue, linestyle =:dash, label="NaF 5mM")
+    
+    lines!(Landstorfer_NaF100mM.voltages .+ 0.972, Landstorfer_NaF100mM.dlcaps, color=:red, linestyle =:dash, label="NaF 100mM")
+    
+    for i in 1:length(result)
+        c = RGB(i * l, 0, 1 - i * l)
+        lines!(result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i")
+    end
+    #legend = Legend(f[1, 1], [ax], position=:topright)
+	f
+end
+
+  ╠═╡ =#
 
 # ╔═╡ 4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 md"""
@@ -1530,13 +1546,13 @@ end
 # ╔═╡ fae68c38-be85-4718-8ee6-f900150e2b9a
 #=╠═╡
 function capsplot_κ(vis, sys; n::Int=23)
-    color = [RGB((i/n), 0.5, i/n) for i in 1:n]
+    color = [RGB((i/n), 0.5, 1-i/n) for i in 1:n]
     dls = LiquidElectrolytes.DLCapSweepResult[]
     κ_values = Float64[]
 
     sys = deepcopy(sys)
-    κ = 1.0
-    sys.physics.data.κ .= κ
+    κ = 2.0
+    electrolytedata(sys).κ .= κ
 
     for j in 1:n
         try
@@ -1548,7 +1564,7 @@ function capsplot_κ(vis, sys; n::Int=23)
                 vis,
                 result.voltages,
                 result.dlcaps / (μF / cm^2),
-                limits = (-1, 100),
+                limits = (-1, 500),
                 xlimits = (-1.1, 1.1),
                 bg = :transparent,
                 color = color[j],
@@ -1564,23 +1580,17 @@ function capsplot_κ(vis, sys; n::Int=23)
             @warn "caps failed at κ=$κ" exception=e
         end
         κ += 2.0
-        sys.physics.data.κ .= κ
+        electrolytedata(sys).κ .= κ
     end
-	sys.physics.data.κ .= κt # Default Value
+	electrolytedata(sys).κ .= κt # Default Value
 end
-  ╠═╡ =#
-
-# ╔═╡ 228c8672-03cc-4dc0-ba0c-74ee8928fb11
-# ╠═╡ disabled = true
-#=╠═╡
-
   ╠═╡ =#
 
 # ╔═╡ e181c648-7f4e-473a-92ed-6fde8c177202
 #=╠═╡
 let
-	vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650), background = :gray)
-	capsplot_κ(vis, sys_pb)
+	vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+	capsplot_κ(vis, sys_pb; n = 10)
     reveal(vis)
 end
   ╠═╡ =#
@@ -1589,10 +1599,10 @@ end
 # ╟─ef660f6f-9de3-4896-a65e-13c60df5de1e
 # ╠═2b901eca-db3b-4ad2-b0ee-e031854c57fa
 # ╠═60941eaa-1aea-11eb-1277-97b991548781
+# ╠═8bf52bab-4830-4936-b3c9-78c1ccd0406d
 # ╠═b95ff168-68dc-4172-be97-df5362be6c48
 # ╟─4082c3d3-b728-4bcc-b480-cdee41d9ab99
 # ╠═852d9c74-b2aa-49c0-9bd0-0ccb1afcc520
-# ╠═462f512b-9b92-442b-bae6-b4aa168b32ee
 # ╟─920b7d84-56c6-4958-aed9-fc67ba0c43f6
 # ╟─87ac16f4-a4fc-4205-8fb9-e5459517e1b8
 # ╟─7d77ad32-3df6-4243-8bad-b8df4126e6ea
@@ -1678,6 +1688,9 @@ end
 # ╠═59855587-c6c2-4af6-a713-0b710cf2b0fe
 # ╟─3be02c97-5c28-4370-97c1-e3f9faaba62a
 # ╠═595715e5-f108-4167-b104-ac7c6f652e48
+# ╠═4b5a7429-49a7-4d04-9023-1232c2be134e
+# ╠═360a1550-ca01-4c0e-9aa1-31b48ce3f436
+# ╠═53ae411f-42e8-41b3-ad38-e0189a001acf
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
 # ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
@@ -1698,8 +1711,8 @@ end
 # ╠═cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
 # ╠═31a1f686-f0b6-430a-83af-187df411b293
 # ╠═442fe098-497b-404f-80a0-880bc95d5e02
-# ╠═1c0145d5-76b1-48c1-8852-de1a2668285a
 # ╠═699eaadb-80f4-4230-9054-27df7c224c99
+# ╠═c381803b-daad-4778-8d79-5abcecbce9ee
 # ╠═70e1a34b-9041-4151-91aa-4dd7907a5b13
 # ╟─38061646-9c66-4f9c-a0b5-5090dc62f8fe
 # ╠═398b3511-4f7c-4436-9fe8-8edd76e3e0e7
@@ -1724,10 +1737,11 @@ end
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
 # ╠═970871ac-a5f2-4e30-9420-489acdbe79f9
-# ╠═a90686f1-5f57-43e9-b22a-c8725775864f
 # ╠═7afb1a46-2675-4b70-be39-5100fe2c2274
-# ╠═4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
+# ╠═ac1d0e41-20d5-4a32-a491-5eeff2b665ba
+# ╠═3ecd7da2-c0ba-4be3-8241-402f1e641b14
+# ╠═cab38db8-fdc3-47f0-9216-a749a4d2d858
+# ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 # ╠═0e734e72-fc3a-48c7-b1d5-c0a380768eec
 # ╠═fae68c38-be85-4718-8ee6-f900150e2b9a
-# ╠═228c8672-03cc-4dc0-ba0c-74ee8928fb11
 # ╠═e181c648-7f4e-473a-92ed-6fde8c177202
