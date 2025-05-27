@@ -1316,6 +1316,7 @@ molarities = [0.005, 0.01, 0.02, 0.04, 0.1]
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
 function capscalc(sys)
     result = []
+<<<<<<< HEAD
     for imol in 1:length(molarities)
         if !isa(sys, AbstractElectrochemicalSystem)
 			data=sys.physics.data
@@ -1551,7 +1552,11 @@ function capsplot_κ(vis, sys; n::Int=23)
     κ_values = Float64[]
 
     sys = deepcopy(sys)
+<<<<<<< HEAD
     κ = 2.0
+=======
+    κ = 1.0
+>>>>>>> d6dd1c7a31a94afb7aba5dc836185d309301d899
     electrolytedata(sys).κ .= κ
 
     for j in 1:n
