@@ -1060,6 +1060,7 @@ elydata_Landstorfer = ElectrolyteData(;
 									 	z = [-1, 1],
 									  	κ = [8.0, 45.0],
 									  	c_bulk = [0.5, 0.5],
+									  	#ε = 27.0
 									 	)
 
 # ╔═╡ 4b5a7429-49a7-4d04-9023-1232c2be134e
@@ -1311,12 +1312,11 @@ end
   ╠═╡ =#
 
 # ╔═╡ c381803b-daad-4778-8d79-5abcecbce9ee
-molarities = [0.005, 0.01, 0.02, 0.04, 0.1]
+molarities = [0.005, 0.01, 0.02, 0.04, 0.1] 
 
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
 function capscalc(sys)
     result = []
-<<<<<<< HEAD
     for imol in 1:length(molarities)
         if !isa(sys, AbstractElectrochemicalSystem)
 			data=sys.physics.data
@@ -1517,18 +1517,26 @@ begin
     f = Figure()
     result = result_pb
     l = 1 / length(result)
-    ax = Axis(f[1, 1], xlabel="x", ylabel="y", title="CSV Plot")
     
-    lines!(Landstorfer_NaF5mM.voltages .+ 0.972, Landstorfer_NaF5mM.dlcaps, color=:darkblue, linestyle =:dash, label="NaF 5mM")
+    ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
     
-    lines!(Landstorfer_NaF100mM.voltages .+ 0.972, Landstorfer_NaF100mM.dlcaps, color=:red, linestyle =:dash, label="NaF 100mM")
+    NaF5mM = lines!(ax, Landstorfer_NaF5mM.voltages .+ 0.972, Landstorfer_NaF5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
+    NaF100mM = lines!(ax, Landstorfer_NaF100mM.voltages .+ 0.972, Landstorfer_NaF100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
     
+    k = []  
+    legend_labels = ["NaF 5mM", "NaF 100mM"]  
+
+	
     for i in 1:length(result)
-        c = RGB(i * l, 0, 1 - i * l)
-        lines!(result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i")
+        c = RGB(i * l, 0.0, 1 - i * l)
+        push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
+		m = molarities[i]
+        push!(legend_labels, "LiquidElectrolyte $m M")
     end
-    #legend = Legend(f[1, 1], [ax], position=:topright)
-	f
+    
+    Legend(f[1, 1], [NaF5mM, NaF100mM, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+    
+    f
 end
 
   ╠═╡ =#
@@ -1547,16 +1555,12 @@ end
 # ╔═╡ fae68c38-be85-4718-8ee6-f900150e2b9a
 #=╠═╡
 function capsplot_κ(vis, sys; n::Int=23)
-    color = [RGB((i/n), 0.5, 1-i/n) for i in 1:n]
+    color = [RGB((i/n), 0.0, 1-(i/n)) for i in 1:n]
     dls = LiquidElectrolytes.DLCapSweepResult[]
     κ_values = Float64[]
 
     sys = deepcopy(sys)
-<<<<<<< HEAD
-    κ = 2.0
-=======
-    κ = 1.0
->>>>>>> d6dd1c7a31a94afb7aba5dc836185d309301d899
+    κ = 0.0
     electrolytedata(sys).κ .= κ
 
     for j in 1:n
@@ -1570,7 +1574,7 @@ function capsplot_κ(vis, sys; n::Int=23)
                 result.voltages,
                 result.dlcaps / (μF / cm^2),
                 limits = (-1, 500),
-                xlimits = (-1.1, 1.1),
+                xlimits = (-0.5, 0.5),
                 bg = :transparent,
                 color = color[j],
                 clear = false,
@@ -1584,7 +1588,7 @@ function capsplot_κ(vis, sys; n::Int=23)
         catch e
             @warn "caps failed at κ=$κ" exception=e
         end
-        κ += 2.0
+        κ += 4.0
         electrolytedata(sys).κ .= κ
     end
 	electrolytedata(sys).κ .= κt # Default Value
@@ -1595,7 +1599,7 @@ end
 #=╠═╡
 let
 	vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-	capsplot_κ(vis, sys_pb; n = 10)
+	capsplot_κ(vis, sys_pb; n = 11)
     reveal(vis)
 end
   ╠═╡ =#
