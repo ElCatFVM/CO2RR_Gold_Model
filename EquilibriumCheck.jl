@@ -1236,65 +1236,12 @@ begin
 	end
 end;
 
-# ╔═╡ 00464966-2b1e-455c-a3a1-2af61c6649b7
-dlcap_exact = 0.22846691848825248
-
-# ╔═╡ c53791b6-6c12-483a-910f-6183149fac80
-# ╠═╡ disabled = true
-#=╠═╡
-@test dlcap0(elydata) ≈ dlcap_exact
-  ╠═╡ =#
-
 # ╔═╡ 05334798-a072-41ae-b23e-f884baadb071
 begin
     equidata = EquilibriumData()
     set_molarity!(equidata, 0.01)
     equidata.χ = 78.49 - 1
 end
-
-# ╔═╡ ddb3e60b-8571-465f-acf3-2403fb884363
-@test dlcap0(equidata) |> unitfactor ≈ dlcap_exact
-
-# ╔═╡ 512b631e-93ec-42fc-8416-8d10ca97f23d
-# ╠═╡ disabled = true
-#=╠═╡
-@test dlcap0(EquilibriumData(elydata)) ≈ dlcap_exact
-  ╠═╡ =#
-
-# ╔═╡ 699eaadb-80f4-4230-9054-27df7c224c99
-# ╠═╡ disabled = true
-#=╠═╡
-function capscalc(sys)
-    result = []
-    for imol in 1:length(molarities)
-        if isa(sys.physics.data, EquilibriumData)
-            set_molarity!(sys.physics.data, molarities[imol])
-            t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
-        else
-            #sys.physics.data.c_bulk[1] .= molarities[imol] * ufac"mol/dm^3"
-            t = @elapsed r = dlcapsweep(
-                sys,
-                voltages = range(-1, 1, length = 201),
-				#reaction = reaction ###buffer reaction
-            )
-            volts = voltages(r)
-            caps = r.dlcaps
-        end
-        cdl0 = dlcap0(sys.physics.data)
-        @info "elapsed=$(t)"
-        push!(
-            result,
-            (
-                voltages = volts,
-                dlcaps = caps,
-                cdl0 = cdl0,
-                molarity = molarities[imol],
-            )
-        )
-    end
-    return result
-end
-  ╠═╡ =#
 
 # ╔═╡ c381803b-daad-4778-8d79-5abcecbce9ee
 molarities = [0.005, 0.01, 0.02, 0.04, 0.1] 
@@ -1402,19 +1349,6 @@ function resultcompare(r1, r2; tol = 1.0e-3)
     return true
 end
 
-# ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
-# ╠═╡ disabled = true
-#=╠═╡
-@test resultcompare(result_pb, result_pp; tol = 5.0e-3)
-  ╠═╡ =#
-
-# ╔═╡ b43c5e74-5010-4870-a058-d3ad2c1ed548
-# ╠═╡ show_logs = false
-# ╠═╡ disabled = true
-#=╠═╡
-@test resultcompare(result_pp, result_pnp; tol = 5.0e-1)
-  ╠═╡ =#
-
 # ╔═╡ 0b6f33b9-41d4-48fd-8026-8a3bddcc1989
 md"""
 #### Result plot
@@ -1428,7 +1362,7 @@ Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.
 function capsplot(vis, result, title)
     hmol = 1 / length(result)
     for imol in 1:length(result)
-        c = RGB(1 - imol * hmol, 0, imol * hmol)
+        c = RGB(imol * hmol, 0, 1-imol * hmol)
         scalarplot!(
             vis, result[imol].voltages, result[imol].dlcaps / (μF / cm^2),
             color = c, clear = false, label = "$(result[imol].molarity)M", markershape = :none, title = title,  xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
@@ -1502,7 +1436,7 @@ sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
 result_pp = capscalc(sys_pp, molarities)
 
 # ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
-@test resultcompare(result_pp, result_sy; tol = 5.0e-2)
+@test resultcompare(result_pp, result_sy; tol = 5.0e-3)
 
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
 sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
@@ -1510,8 +1444,9 @@ sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 result_pnp = capscalc(sys_pnp, molarities)
 
-# ╔═╡ 3ecd7da2-c0ba-4be3-8241-402f1e641b14
-result_pnp
+# ╔═╡ b43c5e74-5010-4870-a058-d3ad2c1ed548
+# ╠═╡ show_logs = false
+@test resultcompare(result_pp, result_pnp; tol = 5.0e-3)
 
 # ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
 sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
@@ -1519,8 +1454,11 @@ sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
 result_pb = capscalc(sys_pb, molarities)
 
+# ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
+@test resultcompare(result_pb, result_pp; tol = 5.0e-3)
+
 # ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
-@test resultcompare(result_pb, result_pnp; tol = 5.0e-1)
+@test resultcompare(result_pb, result_pnp; tol = 5.0e-3)
 
 # ╔═╡ 85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═╡ skip_as_script = true
@@ -1545,14 +1483,14 @@ begin
     l = 1 / length(result)
 	ϕ0_pzc = 0.972
 	
-    ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", backgroundcolor =:transparent)
+	ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", backgroundcolor =:transparent)
 
 	if model_choice == "Landstorfer_NaClO₄ model"
-		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaClO₄ 5mM")
-		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color=:red, linestyle=:dash, label="NaClO₄ 5mM")
+		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
 	else	
-		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
-		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
+		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
 	end
 	
     k = []  
@@ -1560,16 +1498,15 @@ begin
 	
     for i in 1:length(result)
         c = RGB(i * l, 0.0, 1 - i * l)
-        push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
+		push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
 		m = molarities[i]
         push!(legend_labels, "LiquidElectrolyte $m M")
     end
     
-    Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+	Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
     
-    f
+	f 
 end
-
   ╠═╡ =#
 
 # ╔═╡ 4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
@@ -1591,7 +1528,7 @@ function capsplot_κ(vis, sys; n::Int=23)
     κ_values = Float64[]
 
     sys = deepcopy(sys)
-    κ = 0.0
+    κ = 2.0
     electrolytedata(sys).κ .= κ
 
     for j in 1:n
@@ -1604,7 +1541,7 @@ function capsplot_κ(vis, sys; n::Int=23)
                 vis,
                 result.voltages,
                 result.dlcaps / (μF / cm^2),
-                limits = (-1, 500),
+                limits = (-1, 300),
                 xlimits = (-0.5, 0.5),
                 bg = :transparent,
                 color = color[j],
@@ -1630,7 +1567,7 @@ end
 #=╠═╡
 let
 	vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-	capsplot_κ(vis, sys_pb; n = 11)
+	capsplot_κ(vis, sys_pb; n = 3)
     reveal(vis)
 end
   ╠═╡ =#
@@ -1741,16 +1678,11 @@ end
 # ╠═12cbfb8b-edb6-4335-8d80-0d6fe0eb9d3a
 # ╟─1c94b9ba-429d-44fc-887e-e028ba070cc9
 # ╠═1e52766d-12a9-46cd-be96-5c13a046944f
-# ╟─00464966-2b1e-455c-a3a1-2af61c6649b7
-# ╠═c53791b6-6c12-483a-910f-6183149fac80
 # ╟─05334798-a072-41ae-b23e-f884baadb071
-# ╠═ddb3e60b-8571-465f-acf3-2403fb884363
-# ╠═512b631e-93ec-42fc-8416-8d10ca97f23d
 # ╠═a629e8a1-b1d7-42d8-8c17-43475785218e
 # ╠═cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
 # ╠═31a1f686-f0b6-430a-83af-187df411b293
 # ╠═442fe098-497b-404f-80a0-880bc95d5e02
-# ╠═699eaadb-80f4-4230-9054-27df7c224c99
 # ╠═c381803b-daad-4778-8d79-5abcecbce9ee
 # ╠═70e1a34b-9041-4151-91aa-4dd7907a5b13
 # ╟─38061646-9c66-4f9c-a0b5-5090dc62f8fe
@@ -1776,8 +1708,7 @@ end
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
 # ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
-# ╠═3ecd7da2-c0ba-4be3-8241-402f1e641b14
-# ╠═c75a852d-e3b8-46e5-bcdd-5c41aef36c64
+# ╟─c75a852d-e3b8-46e5-bcdd-5c41aef36c64
 # ╟─791ccb34-e761-4e65-a9ef-95eac5395376
 # ╠═cab38db8-fdc3-47f0-9216-a749a4d2d858
 # ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
