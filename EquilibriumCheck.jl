@@ -4,6 +4,18 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
 # ╔═╡ 2b901eca-db3b-4ad2-b0ee-e031854c57fa
 # ╠═╡ skip_as_script = true
 #=╠═╡
@@ -1055,21 +1067,20 @@ elydata = ElectrolyteData(;
                                Γ_we = 1,
                                Γ_bulk = 2)
 
-# ╔═╡ 360a1550-ca01-4c0e-9aa1-31b48ce3f436
-elydata_Landstorfer = ElectrolyteData(;
-									 	z = [-1, 1],
-									  	κ = [8.0, 45.0],
-									  	c_bulk = [0.5, 0.5],
-									  	#ε = 27.0
-									 	)
-
-# ╔═╡ 4b5a7429-49a7-4d04-9023-1232c2be134e
-1/elydata_Landstorfer.v0
-
 # ╔═╡ 53ae411f-42e8-41b3-ad38-e0189a001acf
-elydata_Example = ElectrolyteData(
-    c_bulk = fill(0.01 * ufac"mol / dm^3", 2),
-    κ = [5, 10.0]
+elydata_NaF = ElectrolyteData(
+	 	z = [-1, 1],
+		κ = [8.0, 25.0],
+		c_bulk = [0.5, 0.5],
+		ε = 26.0
+)
+
+# ╔═╡ 6b69df37-8754-457c-93cc-e9bacfa47d9a
+elydata_NaClO₄ = ElectrolyteData(
+ 		z = [-1, 1],
+		κ = [8.0, 15.0],
+		c_bulk = [0.5, 0.5],
+		ε = 31.0
 )
 
 # ╔═╡ 25bafe0e-f2fc-4a5c-828e-89fdccbc250c
@@ -1250,32 +1261,6 @@ end
 @test dlcap0(EquilibriumData(elydata)) ≈ dlcap_exact
   ╠═╡ =#
 
-# ╔═╡ a629e8a1-b1d7-42d8-8c17-43475785218e
-begin
-    Vmax = 2 * V
-
-    L = 20nm
-
-    hmin = 0.05 * nm
-
-    hmax = 0.5 * nm
-
-    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
-
-    grid = ExtendableGrids.simplexgrid(X)
-
-    data = EquilibriumData(elydata_Landstorfer)
-end;
-
-# ╔═╡ cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
-sys_sy = create_equilibrium_system(grid, data)
-
-# ╔═╡ 31a1f686-f0b6-430a-83af-187df411b293
-sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
-
-# ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
-inival = unknowns(sys_sy, inival = 0);
-
 # ╔═╡ 699eaadb-80f4-4230-9054-27df7c224c99
 # ╠═╡ disabled = true
 #=╠═╡
@@ -1351,16 +1336,10 @@ md"""
 #### Algebraic pressure equation
 """
 
-# ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
-result_sy = capscalc(sys_sy)
-
 # ╔═╡ e114ec0d-13d3-4455-b1c9-d1c5d76671d9
 md"""
 #### Pressure poisson problem
 """
-
-# ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
-result_pp = capscalc(sys_pp)
 
 # ╔═╡ 9b1dc273-9938-43a0-ac10-1928a80f89d8
 md"""
@@ -1370,19 +1349,19 @@ md"""
 # ╔═╡ 53cdf6d7-a025-49e0-af7b-cc0838cfb422
 function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
     (; iϕ, Γ_we, ϕ_we) = data
+
+    ## Dirichlet ϕ=ϕ_we at Γ_we
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	
 	#if bnode.region == Γ_we
 	#	we_breactions(f, u, bnode, data)
 	#end
-	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+
     return bulkbcondition(f, u, bnode, data)
 end
-
-# ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
-sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata_Landstorfer)
-
-# ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
-result_pnp = capscalc(sys_pnp)
 
 # ╔═╡ 98464285-2bd4-4631-8c4f-8790fe15cb93
 md"""
@@ -1392,21 +1371,18 @@ md"""
 # ╔═╡ a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
 function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+	
     ## Dirichlet ϕ=ϕ_we at Γ_we
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-
-	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
     boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+
 
     return bulkbcondition(f, u, bnode, data)
 end
-
-# ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
-sys_pb = PBSystem(grid; celldata = deepcopy(elydata_Landstorfer), bcondition = pb_bcondition)
-
-# ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
-result_pb = capscalc(sys_pb)
 
 # ╔═╡ 289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
 md"""
@@ -1425,9 +1401,6 @@ function resultcompare(r1, r2; tol = 1.0e-3)
     return true
 end
 
-# ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
-@test resultcompare(result_pp, result_sy; tol = 5.0e-2)
-
 # ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
 # ╠═╡ disabled = true
 #=╠═╡
@@ -1440,9 +1413,6 @@ end
 #=╠═╡
 @test resultcompare(result_pp, result_pnp; tol = 5.0e-1)
   ╠═╡ =#
-
-# ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
-@test resultcompare(result_pb, result_pnp; tol = 5.0e-1)
 
 # ╔═╡ 0b6f33b9-41d4-48fd-8026-8a3bddcc1989
 md"""
@@ -1471,6 +1441,86 @@ function capsplot(vis, result, title)
 end
   ╠═╡ =#
 
+# ╔═╡ 87f2b4c4-b163-4ae2-86b6-0266dff1da19
+#=╠═╡
+function capsplot_v(vis, result)
+    hmol = 1 / length(result)
+	color = [:blue, :lightgray]
+    for i in 1:length(result)
+		scalarplot!(
+            vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
+    end
+    return vis
+end
+  ╠═╡ =#
+
+# ╔═╡ d18fe756-b0b9-44d7-8872-6b7812108c16
+begin
+	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
+	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+end;
+
+# ╔═╡ c75a852d-e3b8-46e5-bcdd-5c41aef36c64
+@bind model_choice Select(["Landstorfer_NaClO₄ model", "Landstorfer_NaF model"])
+
+# ╔═╡ 791ccb34-e761-4e65-a9ef-95eac5395376
+model = model_choice == "Landstorfer_NaClO₄ model" ? elydata_NaClO₄ : elydata_NaF;
+
+# ╔═╡ a629e8a1-b1d7-42d8-8c17-43475785218e
+begin
+    Vmax = 2 * V
+
+    L = 20nm
+
+    hmin = 0.05 * nm
+
+    hmax = 0.5 * nm
+
+    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
+
+    grid = ExtendableGrids.simplexgrid(X)
+
+    data = EquilibriumData(model)
+end;
+
+# ╔═╡ cdb7e8a1-dcdf-4e7a-9ecf-121f51b485c3
+sys_sy = create_equilibrium_system(grid, data)
+
+# ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
+inival = unknowns(sys_sy, inival = 0);
+
+# ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
+result_sy = capscalc(sys_sy)
+
+# ╔═╡ 31a1f686-f0b6-430a-83af-187df411b293
+sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
+
+# ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
+result_pp = capscalc(sys_pp)
+
+# ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
+@test resultcompare(result_pp, result_sy; tol = 5.0e-2)
+
+# ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
+sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
+
+# ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
+result_pnp = capscalc(sys_pnp)
+
+# ╔═╡ 3ecd7da2-c0ba-4be3-8241-402f1e641b14
+result_pnp
+
+# ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
+sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
+
+# ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
+result_pb = capscalc(sys_pb)
+
+# ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
+@test resultcompare(result_pb, result_pnp; tol = 5.0e-1)
+
 # ╔═╡ 85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═╡ skip_as_script = true
 #=╠═╡
@@ -1486,31 +1536,6 @@ let
 end
   ╠═╡ =#
 
-# ╔═╡ 87f2b4c4-b163-4ae2-86b6-0266dff1da19
-#=╠═╡
-function capsplot_v(vis, result)
-    hmol = 1 / length(result)
-	color = [:blue, :lightgray]
-    for i in 1:length(result)
-		scalarplot!(
-            vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
-    end
-    return vis
-end
-  ╠═╡ =#
-
-# ╔═╡ 970871ac-a5f2-4e30-9420-489acdbe79f9
- sym = Symbol("result_" * "pp")
-
-# ╔═╡ 7afb1a46-2675-4b70-be39-5100fe2c2274
-Landstorfer_NaF5mM = CSV.read("Landstorfer_data/Landstorfer0.005M.csv", DataFrame);
-
-# ╔═╡ ac1d0e41-20d5-4a32-a491-5eeff2b665ba
-Landstorfer_NaF100mM = CSV.read("Landstorfer_data/Landstorfer0.1M.csv", DataFrame);
-
-# ╔═╡ 3ecd7da2-c0ba-4be3-8241-402f1e641b14
-result_pnp
-
 # ╔═╡ cab38db8-fdc3-47f0-9216-a749a4d2d858
 #=╠═╡
 begin
@@ -1518,14 +1543,18 @@ begin
     result = result_pb
     l = 1 / length(result)
     
-    ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
-    
-    NaF5mM = lines!(ax, Landstorfer_NaF5mM.voltages .+ 0.972, Landstorfer_NaF5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
-    NaF100mM = lines!(ax, Landstorfer_NaF100mM.voltages .+ 0.972, Landstorfer_NaF100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
-    
-    k = []  
-    legend_labels = ["NaF 5mM", "NaF 100mM"]  
+    ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", backgroundcolor =:transparent)
 
+	if model_choice == "Landstorfer_NaClO₄ model"
+		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ 0.972, Landstorfer_NaClO₄_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaClO₄ 5mM")
+		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ 0.972, Landstorfer_NaClO₄_100mM.dlcaps, color=:red, linestyle=:dash, label="NaClO₄ 5mM")
+	else	
+		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ 0.972, Landstorfer_NaF_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
+		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ 0.972, Landstorfer_NaF_100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
+	end
+	
+    k = []  
+    legend_labels = [model_choice*"\t 5mM", model_choice*"\t 100mM"]  
 	
     for i in 1:length(result)
         c = RGB(i * l, 0.0, 1 - i * l)
@@ -1534,7 +1563,7 @@ begin
         push!(legend_labels, "LiquidElectrolyte $m M")
     end
     
-    Legend(f[1, 1], [NaF5mM, NaF100mM, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+    Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
     
     f
 end
@@ -1555,7 +1584,7 @@ end
 # ╔═╡ fae68c38-be85-4718-8ee6-f900150e2b9a
 #=╠═╡
 function capsplot_κ(vis, sys; n::Int=23)
-    color = [RGB((i/n), 0.0, 1-(i/n)) for i in 1:n]
+    color = [RGB((i/n), 0.5, 0.5-(i/n)*0.5) for i in 1:n]
     dls = LiquidElectrolytes.DLCapSweepResult[]
     κ_values = Float64[]
 
@@ -1697,9 +1726,8 @@ end
 # ╠═59855587-c6c2-4af6-a713-0b710cf2b0fe
 # ╟─3be02c97-5c28-4370-97c1-e3f9faaba62a
 # ╠═595715e5-f108-4167-b104-ac7c6f652e48
-# ╠═4b5a7429-49a7-4d04-9023-1232c2be134e
-# ╠═360a1550-ca01-4c0e-9aa1-31b48ce3f436
 # ╠═53ae411f-42e8-41b3-ad38-e0189a001acf
+# ╠═6b69df37-8754-457c-93cc-e9bacfa47d9a
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
 # ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
@@ -1745,10 +1773,10 @@ end
 # ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
-# ╠═970871ac-a5f2-4e30-9420-489acdbe79f9
-# ╠═7afb1a46-2675-4b70-be39-5100fe2c2274
-# ╠═ac1d0e41-20d5-4a32-a491-5eeff2b665ba
+# ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
 # ╠═3ecd7da2-c0ba-4be3-8241-402f1e641b14
+# ╠═c75a852d-e3b8-46e5-bcdd-5c41aef36c64
+# ╟─791ccb34-e761-4e65-a9ef-95eac5395376
 # ╠═cab38db8-fdc3-47f0-9216-a749a4d2d858
 # ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 # ╠═0e734e72-fc3a-48c7-b1d5-c0a380768eec
