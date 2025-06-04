@@ -1300,24 +1300,25 @@ end
 molarities = [0.005, 0.01, 0.02, 0.04, 0.1] 
 
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
-function capscalc(sys)
+function capscalc(sys, molarities)
     result = []
     for imol in 1:length(molarities)
         if !isa(sys, AbstractElectrochemicalSystem)
-			data=sys.physics.data
+            data = sys.physics.data
+            set_molarity!(data, molarities[imol])
             t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
         else
-			data = sys.vfvmsys.physics.data
+            data = sys.vfvmsys.physics.data
             data.c_bulk .= molarities[imol] * ufac"mol/dm^3"
             t = @elapsed r = dlcapsweep(
                 sys,
-                voltages = range(-1, 1, length = 201),
+                voltages = range(-1, 1, length = 201)
             )
             volts = voltages(r)
             caps = r.dlcaps
         end
-		cdl0 = dlcap0(data)
-		@info "elapsed=$(t)"
+        cdl0 = dlcap0(data)
+        @info "elapsed=$(t)"
         push!(
             result,
             (
@@ -1492,13 +1493,13 @@ sys_sy = create_equilibrium_system(grid, data)
 inival = unknowns(sys_sy, inival = 0);
 
 # ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
-result_sy = capscalc(sys_sy)
+result_sy = capscalc(sys_sy, molarities)
 
 # ╔═╡ 31a1f686-f0b6-430a-83af-187df411b293
 sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
 
 # ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
-result_pp = capscalc(sys_pp)
+result_pp = capscalc(sys_pp, molarities)
 
 # ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
 @test resultcompare(result_pp, result_sy; tol = 5.0e-2)
@@ -1507,7 +1508,7 @@ result_pp = capscalc(sys_pp)
 sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
 
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
-result_pnp = capscalc(sys_pnp)
+result_pnp = capscalc(sys_pnp, molarities)
 
 # ╔═╡ 3ecd7da2-c0ba-4be3-8241-402f1e641b14
 result_pnp
@@ -1516,7 +1517,7 @@ result_pnp
 sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
 
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
-result_pb = capscalc(sys_pb)
+result_pb = capscalc(sys_pb, molarities)
 
 # ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
 @test resultcompare(result_pb, result_pnp; tol = 5.0e-1)
@@ -1542,15 +1543,16 @@ begin
     f = Figure()
     result = result_pb
     l = 1 / length(result)
-    
+	ϕ0_pzc = 0.972
+	
     ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", backgroundcolor =:transparent)
 
 	if model_choice == "Landstorfer_NaClO₄ model"
-		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ 0.972, Landstorfer_NaClO₄_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaClO₄ 5mM")
-		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ 0.972, Landstorfer_NaClO₄_100mM.dlcaps, color=:red, linestyle=:dash, label="NaClO₄ 5mM")
+		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaClO₄ 5mM")
+		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color=:red, linestyle=:dash, label="NaClO₄ 5mM")
 	else	
-		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ 0.972, Landstorfer_NaF_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
-		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ 0.972, Landstorfer_NaF_100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
+		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color=:darkblue, linestyle=:dash, label="NaF 5mM")
+		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color=:red, linestyle=:dash, label="NaF 100mM")
 	end
 	
     k = []  
