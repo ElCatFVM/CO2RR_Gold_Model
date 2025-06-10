@@ -1071,8 +1071,10 @@ elydata = ElectrolyteData(;
 elydata_NaF = ElectrolyteData(
 	 	z = [-1, 1],
 		κ = [8.0, 25.0],
-		c_bulk = [0.5, 0.5],
-		ε = 26.0
+		c_bulk = [0.01, 0.01],
+		ε = 26.0,
+		vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
+
 )
 
 # ╔═╡ 6b69df37-8754-457c-93cc-e9bacfa47d9a
@@ -1080,7 +1082,13 @@ elydata_NaClO₄ = ElectrolyteData(
  		z = [-1, 1],
 		κ = [8.0, 15.0],
 		c_bulk = [0.5, 0.5],
-		ε = 31.0
+		ε = 26.0,
+		vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
+)
+
+# ╔═╡ 045573a4-aff5-4262-aca2-ead598a37bf2
+elydata_Default = ElectrolyteData(
+	 	z = [-1, 1],
 )
 
 # ╔═╡ 25bafe0e-f2fc-4a5c-828e-89fdccbc250c
@@ -1391,10 +1399,14 @@ end
 
 # ╔═╡ d18fe756-b0b9-44d7-8872-6b7812108c16
 begin
+	#computed capacitance plot(Fig 13 & Fig 14)
 	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
 	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+	#Solvation number plot(Fig 7)
+	Landstorfer_Low_κ = CSV.read("Landstorfer_data/Landstorfer_kappa0.csv", DataFrame);
+	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
 end;
 
 # ╔═╡ c75a852d-e3b8-46e5-bcdd-5c41aef36c64
@@ -1438,6 +1450,9 @@ result_pp = capscalc(sys_pp, molarities)
 # ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
 @test resultcompare(result_pp, result_sy; tol = 5.0e-3)
 
+# ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
+sys_Default = PBSystem(grid; celldata = deepcopy(elydata_Default), bcondition = pb_bcondition)
+
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
 sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
 
@@ -1448,7 +1463,7 @@ result_pnp = capscalc(sys_pnp, molarities)
 # ╠═╡ show_logs = false
 @test resultcompare(result_pp, result_pnp; tol = 5.0e-3)
 
-# ╔═╡ 88d38a68-1f8a-425a-bbae-90355a2213d0
+# ╔═╡ b8608787-6f71-44e1-90c9-bad6544bc4c0
 sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
 
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
@@ -1522,53 +1537,70 @@ end
 
 # ╔═╡ fae68c38-be85-4718-8ee6-f900150e2b9a
 #=╠═╡
-function capsplot_κ(vis, sys; n::Int=23)
-    color = [RGB((i/n), 0.5, 0.5-(i/n)*0.5) for i in 1:n]
+function capsplot_κ(vis, sys; n::Int=7)
+    color = [RGB(0, 0, (i/n)*0.5) for i in 1:n]
     dls = LiquidElectrolytes.DLCapSweepResult[]
-    κ_values = Float64[]
+    κ_values = [0, 1, 5, 10, 20, 30, 40]
 
     sys = deepcopy(sys)
-    κ = 2.0
-    electrolytedata(sys).κ .= κ
+    κ_original = deepcopy(electrolytedata(sys).κ)
 
     for j in 1:n
+        electrolytedata(sys).κ .= κ_values[j]
+        electrolytedata(sys).c_bulk .= [50, 50]
+
         try
             result = caps(sys)
             push!(dls, result)
-            push!(κ_values, κ)
-
+            
             scalarplot!(
                 vis,
                 result.voltages,
                 result.dlcaps / (μF / cm^2),
-                limits = (-1, 300),
-                xlimits = (-0.5, 0.5),
-                bg = :transparent,
+			    linestyle = :solid,
                 color = color[j],
                 clear = false,
-                label = "κ = $κ",
-                markershape = :none,
-                yscale = 10,
-                xlabel = "φ / (V vs φ_pzc)",
-                ylabel = "dlcaps / (μF / cm²)",
-                backgroundcolor = :gray,
+                label = "κ = $(κ_values[j])"
             )
         catch e
-            @warn "caps failed at κ=$κ" exception=e
+            @warn "caps failed at κ=$(κ_values[j])" exception=e
         end
-        κ += 4.0
-        electrolytedata(sys).κ .= κ
     end
-	electrolytedata(sys).κ .= κt # Default Value
+	electrolytedata(sys)
+	
+    electrolytedata(sys).κ .= κt # 복구
 end
+
   ╠═╡ =#
 
 # ╔═╡ e181c648-7f4e-473a-92ed-6fde8c177202
 #=╠═╡
-let
-	vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-	capsplot_κ(vis, sys_pb; n = 3)
-    reveal(vis)
+begin
+	vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+	Low_κ = scalarplot!(
+	    vis_κ,
+	    Landstorfer_Low_κ.voltages,
+	    Landstorfer_Low_κ.dlcaps,
+	    color = :darkblue,
+	    linestyle = :dash,
+	    label = "κ = 0",
+		xlimits = (-0.5, 0.5),
+        xlabel = "φ / (V vs φ_pzc)",
+        ylabel = "dlcaps / (μF / cm²)",
+	    clear = true,  
+	)
+	
+	High_κ = scalarplot!(
+	    vis_κ,
+	    Landstorfer_High_κ.voltages,
+	    Landstorfer_High_κ.dlcaps,
+	    color = :red,
+	    linestyle = :dash,
+	    label = "κ = 40",
+	    clear = false,
+	)
+	capsplot_κ(vis_κ, sys_pb)
+	reveal(vis_κ)
 end
   ╠═╡ =#
 
@@ -1667,6 +1699,7 @@ end
 # ╠═595715e5-f108-4167-b104-ac7c6f652e48
 # ╠═53ae411f-42e8-41b3-ad38-e0189a001acf
 # ╠═6b69df37-8754-457c-93cc-e9bacfa47d9a
+# ╠═045573a4-aff5-4262-aca2-ead598a37bf2
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
 # ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
@@ -1695,6 +1728,7 @@ end
 # ╠═966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 # ╟─98464285-2bd4-4631-8c4f-8790fe15cb93
 # ╠═a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
+# ╠═b8608787-6f71-44e1-90c9-bad6544bc4c0
 # ╠═88d38a68-1f8a-425a-bbae-90355a2213d0
 # ╠═f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
 # ╟─289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
@@ -1709,7 +1743,7 @@ end
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
 # ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
 # ╟─c75a852d-e3b8-46e5-bcdd-5c41aef36c64
-# ╟─791ccb34-e761-4e65-a9ef-95eac5395376
+# ╠═791ccb34-e761-4e65-a9ef-95eac5395376
 # ╠═cab38db8-fdc3-47f0-9216-a749a4d2d858
 # ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 # ╠═0e734e72-fc3a-48c7-b1d5-c0a380768eec
