@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.8
+# v0.20.9
 
 using Markdown
 using InteractiveUtils
@@ -33,6 +33,7 @@ end
 begin
     using PlutoUI, Latexify
     using VoronoiFVM
+    using Catalyst
     using ExtendableGrids
     using LinearAlgebra
     using NLsolve
@@ -941,99 +942,10 @@ begin
 	end
 end;
 
-# ╔═╡ b1a470b7-17af-456f-8e58-c64cd697f0bd
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	const bulk = let 
-		bulk = [
-		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
-		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
-		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
-		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
-		BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=0.0, color=:gray),
-		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
-		sort(bulk, by=x->species_dict[x.name])
-	end
-end;
-  ╠═╡ =#
-
 # ╔═╡ 1afdcbff-29d9-4e09-b791-54c4ce55a30d
 md"""
 #### Size of BulkSpecies(Tempo)
 """
-
-# ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
-begin
-	const at = 8.2
-	const κt = 8.0
-	const ak = 8.2
-	const κk = 8.0
-	const bulk = let 
-		bulk = [
-				BulkSpecies(;name = "HCO₃⁻", 
-							z = -1, 
-							D = 1.185e-9, 
-							c_bulk = 0.091, 
-							a = at, 
-							κ = κt, 
-							color = :brown
-				),
-				BulkSpecies(;name = "CO₃²⁻",
-							z = -2, 
-							D = 0.923e-9, 
-							c_bulk = 2.68e-5,
-							a = at,  
-							κ = κt, 
-							color = :violet
-				),
-				BulkSpecies(;name = "CO₂",
-							z = 0, 
-							D = 1.91e-9, 
-							c_bulk = 0.033, 
-							a = at, 
-							κ = κt, 
-							color=:red
-				),
-				BulkSpecies(;name = "OH⁻",
-							z = -1, 
-							D = 5.273e-9, 
-							c_bulk = 10^(pH-14), 
-							a = at, 
-							κ = κt, 
-							color = :green
-				),
-				BulkSpecies(;name = "H⁺", 
-							z = 1, 
-							D = 9.310e-9, 
-							c_bulk = 10^(-pH), 
-							a = at, 
-							κ = κt, 
-							color = :gray
-				),
-				BulkSpecies(;name="CO",
-							z = 0,
-							D = 2.23e-9,
-							c_bulk = 0.0,
-							a = at, 
-							κ = κt,  
-							color=:blue
-				)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺", 
-									   z = 1, 
-									   D = 1.957e-9,
-		
-									   a = ak, 
-									   κ = κk, 
-									   color = :orange
-								  )
-		)
-		sort(bulk, by=x->species_dict[x.name])
-	end
-end;
 
 # ╔═╡ 3be02c97-5c28-4370-97c1-e3f9faaba62a
 begin
@@ -1107,7 +1019,7 @@ begin
 	rn 					= create_reaction_network(catmap_params)
 	odesys 				= convert(ODESystem, rn; combinatoric_ratelaws=false)
 	odesys 				= CatmapInterface.liquidize(odesys, catmap_params)
-	vars 				= states(odesys)
+	vars 				= Catalyst.unknowns(odesys)
 	const f_microkinetics! 	= CatmapInterface.generate_function(
 		odesys;
 		dvs = sort(vars, by=x->species_dict_catmap[string(operation(x))])
@@ -1436,7 +1348,7 @@ end;
 sys_sy = create_equilibrium_system(grid, data)
 
 # ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
-inival = unknowns(sys_sy, inival = 0);
+inival = VoronoiFVM.unknowns(sys_sy, inival = 0);
 
 # ╔═╡ 398b3511-4f7c-4436-9fe8-8edd76e3e0e7
 result_sy = capscalc(sys_sy, molarities)
@@ -1603,6 +1515,92 @@ begin
 	reveal(vis_κ)
 end
   ╠═╡ =#
+
+# ╔═╡ b1a470b7-17af-456f-8e58-c64cd697f0bd
+begin
+	const bulk = let 
+		bulk = [
+		BulkSpecies(;name="HCO₃⁻", z=-1, D=1.185e-9, c_bulk=0.091, color=:brown),
+		BulkSpecies(;name="CO₃²⁻", z=-2, D=0.923e-9, c_bulk=2.68e-5, color=:violet),
+		BulkSpecies(;name="CO₂", z=0, D=1.91e-9, c_bulk=0.033, a=0.0, color=:red),
+		BulkSpecies(;name="OH⁻", z=-1, D=5.273e-9, c_bulk=10^(pH-14), color=:green),
+		BulkSpecies(;name="H⁺", z=1, D=9.310e-9, c_bulk=10^(-pH), a=0.0, color=:gray),
+		BulkSpecies(;name="CO", z=0, D=2.23e-9, c_bulk=0.0, a=0.0, color=:blue)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺",z=1, D=1.957e-9, a=8.2, color=:orange))
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+
+# ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
+begin
+	const at = 8.2
+	const κt = 8.0
+	const ak = 8.2
+	const κk = 8.0
+	const bulk = let 
+		bulk = [
+				BulkSpecies(;name = "HCO₃⁻", 
+							z = -1, 
+							D = 1.185e-9, 
+							c_bulk = 0.091, 
+							a = at, 
+							κ = κt, 
+							color = :brown
+				),
+				BulkSpecies(;name = "CO₃²⁻",
+							z = -2, 
+							D = 0.923e-9, 
+							c_bulk = 2.68e-5,
+							a = at,  
+							κ = κt, 
+							color = :violet
+				),
+				BulkSpecies(;name = "CO₂",
+							z = 0, 
+							D = 1.91e-9, 
+							c_bulk = 0.033, 
+							a = at, 
+							κ = κt, 
+							color=:red
+				),
+				BulkSpecies(;name = "OH⁻",
+							z = -1, 
+							D = 5.273e-9, 
+							c_bulk = 10^(pH-14), 
+							a = at, 
+							κ = κt, 
+							color = :green
+				),
+				BulkSpecies(;name = "H⁺", 
+							z = 1, 
+							D = 9.310e-9, 
+							c_bulk = 10^(-pH), 
+							a = at, 
+							κ = κt, 
+							color = :gray
+				),
+				BulkSpecies(;name="CO",
+							z = 0,
+							D = 2.23e-9,
+							c_bulk = 0.0,
+							a = at, 
+							κ = κt,  
+							color=:blue
+				)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺", 
+									   z = 1, 
+									   D = 1.957e-9,
+		
+									   a = ak, 
+									   κ = κk, 
+									   color = :orange
+								  )
+		)
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
 
 # ╔═╡ Cell order:
 # ╟─ef660f6f-9de3-4896-a65e-13c60df5de1e
