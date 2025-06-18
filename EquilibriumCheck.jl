@@ -1371,7 +1371,7 @@ end;
 sys_sy = create_equilibrium_system(grid, data)
 
 # ╔═╡ 442fe098-497b-404f-80a0-880bc95d5e02
-inival = unknowns(sys_sy, inival = 0);
+inival = VoronoiFVM.unknowns(sys_sy, inival = 0);
 
 # ╔═╡ 31a1f686-f0b6-430a-83af-187df411b293
 sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
@@ -1514,6 +1514,27 @@ let
     capsplot(vis[2, 1], result_pb, "Poisson-Boltzmann")
     capsplot(vis[2, 2], result_pnp, "Poisson-Nernst-Planck")
 
+    reveal(vis)
+end
+  ╠═╡ =#
+
+# ╔═╡ c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
+#=╠═╡
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650), backgroundcolor = :transparent)
+    plots = []
+    results = [result_pb, result_pnp]
+    for i in 1:length(results)
+        result = results[i]
+        try
+            if !(isempty(result))
+                push!(plots, result)
+            end
+        catch
+            continue
+        end
+    end
+    capsplot_v(vis, plots)
     reveal(vis)
 end
   ╠═╡ =#
@@ -1771,6 +1792,7 @@ end
 # ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
+# ╠═c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
 # ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
 # ╟─c75a852d-e3b8-46e5-bcdd-5c41aef36c64
 # ╟─791ccb34-e761-4e65-a9ef-95eac5395376
