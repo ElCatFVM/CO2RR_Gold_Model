@@ -967,10 +967,10 @@ md"""
 
 # ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
 begin
-	const at = 4.0
-	const κt = 4.0
-	const ak = 4.0
-	const κk = 4.0
+	const at = 8.0
+	const κt = 8.0
+	const ak = 8.0
+	const κk = 8.0
 	const bulk = let 
 		bulk = [
 				BulkSpecies(;name = "HCO₃⁻", 
@@ -1122,6 +1122,12 @@ end
 # ╔═╡ e9f29b23-0f46-4515-9ba3-06cd25c1d741
 rn
 
+# ╔═╡ c8694de6-d575-4b78-bd36-c44680781aeb
+Catalyst.parameters(rn)
+
+# ╔═╡ 0ac05a73-46a2-470b-b459-5e59eae83623
+Symbolics.rename(odesys.σ, :σ)
+
 # ╔═╡ 949d126e-d863-40f4-b902-8b3b4c97b1b5
 md"""
 #### Buffer Reaction
@@ -1182,14 +1188,14 @@ begin
 		end
 		
 		ps = get_tmp(ps_cache, u[iϕ])
-		ps[paramsidx[odesys.σ]] = σ
-		ps[paramsidx[odesys.γCO2_aq]] = γ_co2
-		ps[paramsidx[odesys.aH2O_g]] = aH₂O
-		ps[paramsidx[odesys.ϕ]] = u[iϕ]
-		ps[paramsidx[odesys.ϕ_we]] = ϕ_we
-		ps[paramsidx[odesys.local_pH]] = local_pH
-		ps[paramsidx[odesys.γCO_aq]] = γ_co
-		ps[paramsidx[odesys.βCOOHΔH2OΔele_t]] = 0.59
+		ps[paramsidx[Symbolics.rename(odesys.σ, :σ)]] = σ
+		ps[paramsidx[Symbolics.rename(odesys.γCO2_aq, :γCO2_aq)]] = γ_co2 
+		ps[paramsidx[Symbolics.rename(odesys.aH2O_g, :aH2O_g)]] = aH₂O 
+		ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ] 
+		ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we 
+		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
+		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co 
+		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
 
 	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
 		#@show size(f)
@@ -1201,8 +1207,8 @@ begin
 				ps,
 				nothing
 			)
-		#elseif bnode.region == Γ_we
-		#	nothing
+		elseif bnode.region == Γ_we
+			nothing
 		end
 		
 		#f = 0
@@ -1321,10 +1327,10 @@ Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.
 #=╠═╡
 function capsplot_v(vis, result)
     hmol = 1 / length(result)
-	color = [:blue, :lightgray]
+	color = [:magenta, :blue]
     for i in 1:length(result)
 		scalarplot!(
-            vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
+            vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
     end
     return vis
 end
@@ -1454,7 +1460,7 @@ function capsplot(vis, result, title)
     	end
 	else
 		scalarplot!(
-            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = :lightgray, 				clear = false, label = "result", markershape = :none, yscale=10, xlabel 			= "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
+            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = :green, 				clear = false, label = "result", markershape = :none, yscale=10, xlabel 			= "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
 		scalarplot!(
             vis, [0], [result[1].cdl0] / (μF / cm^2),
             clear = false, markershape = :circle, markersize = 8, label = ""
@@ -1482,7 +1488,10 @@ function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
 end
 
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
-sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model)
+begin
+	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
+	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
+end
 
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 result_pnp = capscalc(sys_pnp, molarities)
@@ -1623,7 +1632,6 @@ end
   ╠═╡ =#
 
 # ╔═╡ e181c648-7f4e-473a-92ed-6fde8c177202
-# ╠═╡ disabled = true
 #=╠═╡
 begin
 	vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
@@ -1752,9 +1760,11 @@ end
 # ╠═045573a4-aff5-4262-aca2-ead598a37bf2
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
-# ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
+# ╠═e9f29b23-0f46-4515-9ba3-06cd25c1d741
 # ╠═c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
-# ╟─949d126e-d863-40f4-b902-8b3b4c97b1b5
+# ╠═c8694de6-d575-4b78-bd36-c44680781aeb
+# ╠═0ac05a73-46a2-470b-b459-5e59eae83623
+# ╠═949d126e-d863-40f4-b902-8b3b4c97b1b5
 # ╟─5ddce46c-22a5-427a-8cb7-f45f216cefe0
 # ╟─e2ab9bb4-a1b5-4d49-a760-013ad0fc4c68
 # ╟─3a9940b9-c7e1-484c-bbf2-14c0c69d685b
