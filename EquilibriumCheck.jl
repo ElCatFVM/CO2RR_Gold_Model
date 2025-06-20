@@ -1122,12 +1122,6 @@ end
 # ╔═╡ e9f29b23-0f46-4515-9ba3-06cd25c1d741
 rn
 
-# ╔═╡ c8694de6-d575-4b78-bd36-c44680781aeb
-Catalyst.parameters(rn)
-
-# ╔═╡ 0ac05a73-46a2-470b-b459-5e59eae83623
-Symbolics.rename(odesys.σ, :σ)
-
 # ╔═╡ 949d126e-d863-40f4-b902-8b3b4c97b1b5
 md"""
 #### Buffer Reaction
@@ -1197,9 +1191,6 @@ begin
 		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co 
 		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
 
-	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
-		#@show size(f)
-
 		if bnode.region == Γ_we && size(f,1) ≥ isurfaceend
 			@views f_microkinetics!(
 				f[isurfacestart:isurfaceend], 
@@ -1211,7 +1202,6 @@ begin
 			nothing
 		end
 		
-		#f = 0
 		# conversion from turnover frequency (appropriate for change in coverage) to production rate (per unit area) (approprite for change in concentration) by S = number of free catalyst sites in mole per unit area
 		f[ico2] *= S
 		f[iohminus] *= S
@@ -1325,12 +1315,16 @@ Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.
 
 # ╔═╡ 87f2b4c4-b163-4ae2-86b6-0266dff1da19
 #=╠═╡
-function capsplot_v(vis, result)
-    hmol = 1 / length(result)
-	color = [:magenta, :blue]
-    for i in 1:length(result)
-		scalarplot!(
-            vis, result[i][1].voltages, result[i][1].dlcaps / (μF / cm^2), limits=(-1, 100), xlimits=(-1.1, 1.1), color = color[i], clear = false, label = "result", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
+function capsplot_v(vis, result_named)
+    color = [:magenta, :blue]
+    for (i, (name, res)) in enumerate(result_named)
+        scalarplot!(
+            vis, res[1].voltages, res[1].dlcaps / (μF / cm^2);
+            limits = (-1, 100), xlimits = (-1.1, 1.1),
+            color = color[i], clear = false, label = name,
+            markershape = :none, yscale = 10,
+            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+        )
     end
     return vis
 end
@@ -1338,11 +1332,13 @@ end
 
 # ╔═╡ d18fe756-b0b9-44d7-8872-6b7812108c16
 begin
+	
 	#computed capacitance plot(Fig 13 & Fig 14)
 	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
 	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+	
 	#Solvation number plot(Fig 7)
 	Landstorfer_Low_κ = CSV.read("Landstorfer_data/Landstorfer_kappa0.csv", DataFrame);
 	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
@@ -1460,7 +1456,7 @@ function capsplot(vis, result, title)
     	end
 	else
 		scalarplot!(
-            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), bg = :transparent, color = :green, 				clear = false, label = "result", markershape = :none, yscale=10, xlabel 			= "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
+            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), color = :green, 				clear = false, label = "$title", markershape = :none, yscale=10, xlabel 			= "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
 		scalarplot!(
             vis, [0], [result[1].cdl0] / (μF / cm^2),
             clear = false, markershape = :circle, markersize = 8, label = ""
@@ -1516,7 +1512,7 @@ result_pb = capscalc(sys_pb, molarities)
 # ╠═╡ skip_as_script = true
 #=╠═╡
 let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = (650, 650), backgroundcolor = :transparent)
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (2, 2), size = 	(650, 650))
 
     capsplot(vis[1, 1], result_sy, "Algebraic pressure")
     capsplot(vis[1, 2], result_pp, "Pressure Poisson")
@@ -1530,19 +1526,23 @@ end
 # ╔═╡ c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
 #=╠═╡
 let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650), backgroundcolor = :transparent)
-    plots = []
-    results = [result_pb, result_pnp]
-    for i in 1:length(results)
-        result = results[i]
-        try
-            if !(isempty(result))
-                push!(plots, result)
-            end
-        catch
-            continue
-        end
-    end
+	results = [
+	    ("Poisson-Boltzmann", result_pb),
+	    ("Poisson-Nernst-Planck", result_pnp)
+	]
+	plots = []
+	
+	for (name, result) in results
+	    try
+	        if !isempty(result)
+	            push!(plots, (name, result))
+	        end
+	    catch
+	        continue
+	    end
+	end
+	
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
     capsplot_v(vis, plots)
     reveal(vis)
 end
@@ -1556,7 +1556,7 @@ begin
     l = 1 / length(result)
 	ϕ0_pzc = 0.972
 	
-	ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", backgroundcolor =:transparent)
+	ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
 
 	if model_choice == "Landstorfer_NaClO₄ model"
 		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
@@ -1634,31 +1634,34 @@ end
 # ╔═╡ e181c648-7f4e-473a-92ed-6fde8c177202
 #=╠═╡
 begin
-	vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-	Low_κ = scalarplot!(
-	    vis_κ,
-	    Landstorfer_Low_κ.voltages,
-	    Landstorfer_Low_κ.dlcaps,
-	    color = :darkblue,
-	    linestyle = :dash,
-	    label = "κ = 0",
-		xlimits = (-0.5, 0.5),
-        xlabel = "φ / (V vs φ_pzc)",
-        ylabel = "dlcaps / (μF / cm²)",
-	    clear = true,  
-	)
-	
-	High_κ = scalarplot!(
-	    vis_κ,
-	    Landstorfer_High_κ.voltages,
-	    Landstorfer_High_κ.dlcaps,
-	    color = :red,
-	    linestyle = :dash,
-	    label = "κ = 40",
-	    clear = false,
-	)
-	capsplot_κ(vis_κ, sys_pb)
-	reveal(vis_κ)
+	try
+		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+		Low_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_Low_κ.voltages,
+		    Landstorfer_Low_κ.dlcaps,
+		    color = :darkblue,
+		    linestyle = :dash,
+		    label = "κ = 0",
+			xlimits = (-0.5, 0.5),
+	        xlabel = "φ / (V vs φ_pzc)",
+	        ylabel = "dlcaps / (μF / cm²)",
+		    clear = true,  
+		)
+		
+		High_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_High_κ.voltages,
+		    Landstorfer_High_κ.dlcaps,
+		    color = :red,
+		    linestyle = :dash,
+		    label = "κ = 40",
+		    clear = false,
+		)
+		capsplot_κ(vis_κ, sys_pb)
+		reveal(vis_κ)
+	catch
+	end
 end
   ╠═╡ =#
 
@@ -1760,11 +1763,9 @@ end
 # ╠═045573a4-aff5-4262-aca2-ead598a37bf2
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
-# ╠═e9f29b23-0f46-4515-9ba3-06cd25c1d741
+# ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
 # ╠═c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
-# ╠═c8694de6-d575-4b78-bd36-c44680781aeb
-# ╠═0ac05a73-46a2-470b-b459-5e59eae83623
-# ╠═949d126e-d863-40f4-b902-8b3b4c97b1b5
+# ╟─949d126e-d863-40f4-b902-8b3b4c97b1b5
 # ╟─5ddce46c-22a5-427a-8cb7-f45f216cefe0
 # ╟─e2ab9bb4-a1b5-4d49-a760-013ad0fc4c68
 # ╟─3a9940b9-c7e1-484c-bbf2-14c0c69d685b
