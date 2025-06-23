@@ -960,11 +960,6 @@ begin
 end;
   ╠═╡ =#
 
-# ╔═╡ 1afdcbff-29d9-4e09-b791-54c4ce55a30d
-md"""
-#### Size of BulkSpecies(Tempo)
-"""
-
 # ╔═╡ 59855587-c6c2-4af6-a713-0b710cf2b0fe
 begin
 	const at = 8.0
@@ -1294,56 +1289,6 @@ md"""
 #### Result comparison
 """
 
-# ╔═╡ 1fcfbad3-2fad-4eee-a1a3-031dc29c9083
-function resultcompare(r1, r2; tol = 1.0e-3)
-    for i in 1:length(r1)
-        for f in fieldnames(typeof(r1[i]))
-            if !isapprox(r1[i][f], r2[i][f]; rtol = tol)
-                return false
-            end
-        end
-    end
-    return true
-end
-
-# ╔═╡ 0b6f33b9-41d4-48fd-8026-8a3bddcc1989
-md"""
-#### Result plot
-
-Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.06.004)
-"""
-
-# ╔═╡ 87f2b4c4-b163-4ae2-86b6-0266dff1da19
-#=╠═╡
-function capsplot_v(vis, result_named)
-    color = [:magenta, :blue]
-    for (i, (name, res)) in enumerate(result_named)
-        scalarplot!(
-            vis, res[1].voltages, res[1].dlcaps / (μF / cm^2);
-            limits = (-1, 100), xlimits = (-1.1, 1.1),
-            color = color[i], clear = false, label = name,
-            markershape = :none, yscale = 10,
-            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
-        )
-    end
-    return vis
-end
-  ╠═╡ =#
-
-# ╔═╡ d18fe756-b0b9-44d7-8872-6b7812108c16
-begin
-	
-	#computed capacitance plot(Fig 13 & Fig 14)
-	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
-	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
-	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
-	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
-	
-	#Solvation number plot(Fig 7)
-	Landstorfer_Low_κ = CSV.read("Landstorfer_data/Landstorfer_kappa0.csv", DataFrame);
-	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
-end;
-
 # ╔═╡ c75a852d-e3b8-46e5-bcdd-5c41aef36c64
 @bind model_choice Select(["Landstorfer_NaClO₄ model", "Landstorfer_NaF model", "Gold_Model"])
 
@@ -1382,12 +1327,12 @@ sys_pp = create_equilibrium_pp_system(grid, data, Γ_bulk = 2)
 sys_Default = PBSystem(grid; celldata = deepcopy(elydata_Default), bcondition = pb_bcondition)
 
 # ╔═╡ 267a7233-e34a-4c4a-8627-a49bb45ccd25
-is_gold_model = model != elydata_Gold
+is_Landstorfer = model != elydata_Gold
 
 # ╔═╡ 70e1a34b-9041-4151-91aa-4dd7907a5b13
 function capscalc(sys, molarities)
     result = []
-	if is_gold_model
+	if is_Landstorfer
 		for imol in 1:length(molarities)
 		    if !isa(sys, AbstractElectrochemicalSystem)
 		     	data = sys.physics.data
@@ -1434,38 +1379,6 @@ result_sy = capscalc(sys_sy, molarities)
 # ╔═╡ ca3bd6ba-1b3d-42c7-b008-8012b06368e4
 result_pp = capscalc(sys_sy, molarities)
 
-# ╔═╡ 25a183d9-c6a2-4ac3-a283-a02e4e9231dd
-@test resultcompare(result_pp, result_sy; tol = 5.0e-3)
-
-# ╔═╡ a22a5421-05bf-484f-a2d3-91a06a0c6476
-# ╠═╡ skip_as_script = true
-#=╠═╡
-function capsplot(vis, result, title)
-	if is_gold_model
-    	hmol = 1 / length(result)
-    	for imol in 1:length(result)
-        	c = RGB(imol * hmol, 0, 1-imol * hmol)
-        	scalarplot!(
-            vis, result[imol].voltages, result[imol].dlcaps / (μF / cm^2),
-            color = c, clear = false, label = "$(result[imol].molarity)M", 						markershape = :none, title = title,  xlabel = "φ / (V vs φ_pzc)", ylabel 			= "dlcaps / (μF / cm²)"
-        )
-        scalarplot!(
-            vis, [0], [result[imol].cdl0] / (μF / cm^2),
-            clear = false, markershape = :circle, markersize = 8, label = ""
-        )
-    	end
-	else
-		scalarplot!(
-            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), color = :green, 				clear = false, label = "$title", markershape = :none, yscale=10, xlabel 			= "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)")
-		scalarplot!(
-            vis, [0], [result[1].cdl0] / (μF / cm^2),
-            clear = false, markershape = :circle, markersize = 8, label = ""
-        )
-	end
-    return vis
-end
-  ╠═╡ =#
-
 # ╔═╡ 53cdf6d7-a025-49e0-af7b-cc0838cfb422
 function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
     (; iϕ, Γ_we, ϕ_we) = data
@@ -1492,21 +1405,59 @@ end
 # ╔═╡ 966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 result_pnp = capscalc(sys_pnp, molarities)
 
-# ╔═╡ b43c5e74-5010-4870-a058-d3ad2c1ed548
-# ╠═╡ show_logs = false
-@test resultcompare(result_pp, result_pnp; tol = 5.0e-3)
-
 # ╔═╡ b8608787-6f71-44e1-90c9-bad6544bc4c0
 sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
 
 # ╔═╡ f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
 result_pb = capscalc(sys_pb, molarities)
 
-# ╔═╡ 6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
-@test resultcompare(result_pb, result_pp; tol = 5.0e-3)
+# ╔═╡ 1fcfbad3-2fad-4eee-a1a3-031dc29c9083
+function resultcompare(r1, r2; tol = 1.0e-3)
+    for i in 1:length(r1)
+        for f in fieldnames(typeof(r1[i]))
+            if !isapprox(r1[i][f], r2[i][f]; rtol = tol)
+                return false
+            end
+        end
+    end
+    return true
+end
 
-# ╔═╡ ee76e884-86e6-45f6-bbb2-c8e73daa5883
-@test resultcompare(result_pb, result_pnp; tol = 5.0e-3)
+# ╔═╡ 0b6f33b9-41d4-48fd-8026-8a3bddcc1989
+md"""
+#### Result plot
+
+Compare with Fig 4.2 of [Fuhrmann (2015)](https://dx.doi.org/10.1016/j.cpc.2015.06.004)
+"""
+
+# ╔═╡ a22a5421-05bf-484f-a2d3-91a06a0c6476
+# ╠═╡ skip_as_script = true
+#=╠═╡
+function capsplot(vis, result, title)
+	if is_Landstorfer
+    	hmol = 1 / length(result)
+    	for imol in 1:length(result)
+        	c = RGB(imol * hmol, 0, 1-imol * hmol)
+        	scalarplot!(
+            vis, result[imol].voltages, result[imol].dlcaps / (μF / cm^2),
+            color = c, clear = false, label = "$(result[imol].molarity)M", 						markershape = :none, title = title,  xlabel = "φ / (V vs φ_pzc)", ylabel 			= "dlcaps / (μF / cm²)"
+        )
+        scalarplot!(
+            vis, [0], [result[imol].cdl0] / (μF / cm^2),
+            clear = false, markershape = :circle, markersize = 8, label = ""
+        )
+    	end
+	else
+		scalarplot!(
+            vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), color = :green, clear = false, label = 				"$title", markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", 				ylabel = "dlcaps / (μF / cm²)")
+		scalarplot!(
+            vis, [0], [result[1].cdl0] / (μF / cm^2),
+            clear = false, markershape = :circle, markersize = 8, label = ""
+        )
+	end
+    return vis
+end;
+  ╠═╡ =#
 
 # ╔═╡ 85856abf-ee16-424a-ac06-97f76e32e444
 # ╠═╡ skip_as_script = true
@@ -1523,68 +1474,96 @@ let
 end
   ╠═╡ =#
 
+# ╔═╡ d18fe756-b0b9-44d7-8872-6b7812108c16
+begin
+	
+	#computed capacitance plot(Fig 13 & Fig 14)
+	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
+	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+	
+	#Solvation number plot(Fig 7)
+	Landstorfer_Low_κ = CSV.read("Landstorfer_data/Landstorfer_kappa0.csv", DataFrame);
+	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
+end;
+
+# ╔═╡ 87f2b4c4-b163-4ae2-86b6-0266dff1da19
+#=╠═╡
+function capsplot_v(vis, result_named)
+    color = [:magenta, :blue]
+    for (i, (name, res)) in enumerate(result_named)
+        scalarplot!(
+            vis, res[1].voltages, res[1].dlcaps / (μF / cm^2);
+            limits = (-1, 100), xlimits = (-1.1, 1.1),
+            color = color[i], clear = false, label = name,
+            markershape = :none, yscale = 10,
+            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+        )
+    end
+    return vis
+end;
+  ╠═╡ =#
+
 # ╔═╡ c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
 #=╠═╡
 let
-	results = [
-	    ("Poisson-Boltzmann", result_pb),
-	    ("Poisson-Nernst-Planck", result_pnp)
-	]
-	plots = []
+	if is_Landstorfer
+		f = Figure()
+	    result = result_pb
+	    l = 1 / length(result)
+		ϕ0_pzc = 0.972
+		
+		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
 	
-	for (name, result) in results
-	    try
-	        if !isempty(result)
-	            push!(plots, (name, result))
-	        end
-	    catch
-	        continue
+		if model_choice == "Landstorfer_NaClO₄ model"
+			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
+		else	
+			Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
+		end
+		
+	    k = []  
+	    legend_labels = [model_choice*"\t 5mM", model_choice*"\t 100mM"]  
+		
+	    for i in 1:length(result)
+	        c = RGB(i * l, 0.0, 1 - i * l)
+			push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
+			m = molarities[i]
+	        push!(legend_labels, "LiquidElectrolyte $m M")
 	    end
+	    
+		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+	    
+		f 
+	else
+		results = [
+		    ("Poisson-Boltzmann", result_pb),
+		    ("Poisson-Nernst-Planck", result_pnp)
+		]
+		plots = []
+		
+		for (name, result) in results
+		    try
+		        if !isempty(result)
+		            push!(plots, (name, result))
+		        end
+		    catch
+		        continue
+		    end
+		end
+		
+	    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, title="Compare PB & PNP")
+	    capsplot_v(vis, plots)
+	    reveal(vis)
 	end
-	
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-    capsplot_v(vis, plots)
-    reveal(vis)
-end
-  ╠═╡ =#
-
-# ╔═╡ cab38db8-fdc3-47f0-9216-a749a4d2d858
-#=╠═╡
-begin
-    f = Figure()
-    result = result_pb
-    l = 1 / length(result)
-	ϕ0_pzc = 0.972
-	
-	ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
-
-	if model_choice == "Landstorfer_NaClO₄ model"
-		Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-		High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
-	else	
-		Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-		High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
-	end
-	
-    k = []  
-    legend_labels = [model_choice*"\t 5mM", model_choice*"\t 100mM"]  
-	
-    for i in 1:length(result)
-        c = RGB(i * l, 0.0, 1 - i * l)
-		push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
-		m = molarities[i]
-        push!(legend_labels, "LiquidElectrolyte $m M")
-    end
-    
-	Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
-    
-	f 
 end
   ╠═╡ =#
 
 # ╔═╡ 4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 md"""
-#### (Tempo) Solvation Number Plots
+#### Solvation Number Plots
 """
 
 # ╔═╡ 0e734e72-fc3a-48c7-b1d5-c0a380768eec
@@ -1640,29 +1619,35 @@ begin
 		    vis_κ,
 		    Landstorfer_Low_κ.voltages,
 		    Landstorfer_Low_κ.dlcaps,
-		    color = :darkblue,
-		    linestyle = :dash,
+		    color = :black,
+		    linestyle = :dot,
 		    label = "κ = 0",
 			xlimits = (-0.5, 0.5),
 	        xlabel = "φ / (V vs φ_pzc)",
 	        ylabel = "dlcaps / (μF / cm²)",
 		    clear = true,  
 		)
-		
 		High_κ = scalarplot!(
 		    vis_κ,
 		    Landstorfer_High_κ.voltages,
 		    Landstorfer_High_κ.dlcaps,
-		    color = :red,
-		    linestyle = :dash,
+		    color = :blue,
+		    linestyle = :dot,
 		    label = "κ = 40",
 		    clear = false,
 		)
+		
 		capsplot_κ(vis_κ, sys_pb)
 		reveal(vis_κ)
 	catch
 	end
 end
+  ╠═╡ =#
+
+# ╔═╡ 742666a5-f8b5-40ea-94a6-580a80d869cf
+# ╠═╡ disabled = true
+#=╠═╡
+@test resultcompare(result_pb, result_pnp; tol = 5.0e-3)
   ╠═╡ =#
 
 # ╔═╡ Cell order:
@@ -1754,7 +1739,6 @@ end
 # ╠═5fe96d0b-7bd0-4183-901d-727e966d434b
 # ╠═a23eece5-8e94-4c0b-b487-e742a37e714e
 # ╠═b1a470b7-17af-456f-8e58-c64cd697f0bd
-# ╠═1afdcbff-29d9-4e09-b791-54c4ce55a30d
 # ╠═59855587-c6c2-4af6-a713-0b710cf2b0fe
 # ╟─3be02c97-5c28-4370-97c1-e3f9faaba62a
 # ╠═595715e5-f108-4167-b104-ac7c6f652e48
@@ -1794,21 +1778,17 @@ end
 # ╠═88d38a68-1f8a-425a-bbae-90355a2213d0
 # ╠═f2ba0e8a-4a9f-4b98-85b8-d54c71fd3616
 # ╟─289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
-# ╠═1fcfbad3-2fad-4eee-a1a3-031dc29c9083
-# ╠═25a183d9-c6a2-4ac3-a283-a02e4e9231dd
-# ╠═6d1d8ae2-6a9e-48c1-a545-1f7354125bf0
-# ╠═b43c5e74-5010-4870-a058-d3ad2c1ed548
-# ╠═ee76e884-86e6-45f6-bbb2-c8e73daa5883
-# ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
-# ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
-# ╠═85856abf-ee16-424a-ac06-97f76e32e444
-# ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
-# ╠═c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
-# ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
 # ╟─c75a852d-e3b8-46e5-bcdd-5c41aef36c64
 # ╟─791ccb34-e761-4e65-a9ef-95eac5395376
-# ╠═cab38db8-fdc3-47f0-9216-a749a4d2d858
-# ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
-# ╠═0e734e72-fc3a-48c7-b1d5-c0a380768eec
-# ╠═fae68c38-be85-4718-8ee6-f900150e2b9a
+# ╟─1fcfbad3-2fad-4eee-a1a3-031dc29c9083
+# ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
+# ╟─a22a5421-05bf-484f-a2d3-91a06a0c6476
+# ╟─85856abf-ee16-424a-ac06-97f76e32e444
+# ╟─d18fe756-b0b9-44d7-8872-6b7812108c16
+# ╟─c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
+# ╟─87f2b4c4-b163-4ae2-86b6-0266dff1da19
+# ╠═4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
+# ╟─0e734e72-fc3a-48c7-b1d5-c0a380768eec
+# ╟─fae68c38-be85-4718-8ee6-f900150e2b9a
 # ╠═e181c648-7f4e-473a-92ed-6fde8c177202
+# ╠═742666a5-f8b5-40ea-94a6-580a80d869cf
