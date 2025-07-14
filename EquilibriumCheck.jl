@@ -1749,6 +1749,9 @@ end;
 # ╔═╡ 88f8d0a0-e5bb-4e1f-89ed-425bcc9a93b1
 cell, result = simulate_CO2R(grid, elydata_Gold; voltages)
 
+# ╔═╡ 07799331-eb72-4a25-aa41-1b431bce6f59
+cm^2/mA
+
 # ╔═╡ 4056a626-86d3-4884-ac54-886dbb23e6d8
 md"""
 #### Plotting Functions
@@ -1773,11 +1776,14 @@ begin
 							 
 	    scalarplot!(vis,
 	                volts,
-	                curr(result.j_we, iohminus)[result.voltages .< -0.4] .* cm^2/mA;
+	                curr(result.j_we, iohminus)[result.voltages .< -0.4] .* mA/cm^2
+					#10^4 Demension Error
+					,
 	                color = :green,
 	                clear = false,
 	                linestyle = :solid,
 	                label = "e⁻, we")
+		
 		if !isnothing(df)
 			scalarplot!(vis,
 						df[:voltage],
@@ -1861,7 +1867,7 @@ md"""
   __User Data__	``\quad CO_2 + ne^- \leftrightharpoons OH^-``
  - ``z_R``: $(Child("zR", NumberField(-2:2;default=-1))) 
    ``\quad n:`` $(Child("n", NumberField(0:2;default=1)))
-   ``\quad κ:`` $(Child("κ", NumberField(0:10;default=10)))
+   ``\quad κ:`` $(Child("κ", NumberField(0:10;default=0)))
  - scanrate/``(V/s)``: $(Child("scanrate", TextField(6;default="0.1")))
    nperiods: $(Child("nperiods", NumberField(1:10;default=1)))
  - ``L``: 80/μm
@@ -2272,6 +2278,7 @@ html"""<hr>"""
 # ╠═88f8d0a0-e5bb-4e1f-89ed-425bcc9a93b1
 # ╠═558b7dcf-4e50-4f1f-a1d5-dc6d1c611ea5
 # ╠═31de65c0-7611-4dcb-ad84-530cbff717fd
+# ╠═07799331-eb72-4a25-aa41-1b431bce6f59
 # ╟─4056a626-86d3-4884-ac54-886dbb23e6d8
 # ╟─7ea1c62c-a606-426c-94c0-f3d5778207f6
 # ╠═a29478aa-139d-4367-bf05-a2a82bd44163
