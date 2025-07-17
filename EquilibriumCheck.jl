@@ -984,6 +984,26 @@ md"""
 #### Boundary Reaction
 """
 
+# ╔═╡ a2718c29-e6b7-480f-a270-d416262e0c52
+md"""
+A microkinetic modeling approach is taken:
+
+The reaction mechanism for the $CO_2$ reduction is divided into four elementary reactions at the electrode surface:
+
+1. Adsorption of $CO_2$ molecules at the oxygen atoms
+${CO_2}_{(aq)} + * \rightleftharpoons {CO_2 *}_{(ad)}$
+
+2. First proton-coupled electron transfer
+${CO_2*}_{(ad)} + H_2O_{(l)} + e^- \rightleftharpoons COOH*_{(ad)} + OH^-_{(aq)}$
+
+3. Second proton-coupled electron transfer
+$COOH*_{(ad)} + e^- \rightleftharpoons CO*_{(ad)} + OH^{-}_{(aq)}$
+with the transition state: $*CO-OH^{TS}$
+
+4. Desorption of $CO$
+$*CO_{(ad)} \rightleftharpoons CO_{(aq)} + *$
+"""
+
 # ╔═╡ c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
 begin
 	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_data/catmap_CO2R_template.mkm")
@@ -1171,8 +1191,27 @@ function DGML_γ!(γ, c, p, electrolyte)
     return γ
 end
 
+# ╔═╡ f60e2234-289e-4f8a-adb2-43497683575d
+md"""
+    Stefan_gamma!(γ, c, p, electrolyte)
+
+Activity coefficients according to Nat Commun 11, 33 __(2020)__.
+
+```math
+γ_i = \frac{1}{1-\Sigma_1^i c_i v_i}
+```
+
+**Input**:
+- c_i: concentration of species i 
+- v_i: volume of species i
+- electrolyte: instance of `ElectrolyteData`
+
+**Output**: 
+- γ (mutated) activity coefficients
+"""
+
 # ╔═╡ d745a4d0-d7c0-4a97-8089-60b14096dc56
-function S_γ!(γ, c, p, electrolyte)
+function Stefan_γ!(γ, c, p, electrolyte)
 	
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
@@ -1197,8 +1236,7 @@ md"""
 #### Poisson Nernst-Planck from LiquidElectrolytes
 """
 
-# ╔═╡ af0749ff-ee8a-4bfc-8f70-d4c3e8503f46
-@show reaction
+# ╔═╡ 53cdf6d7-a025-49e0-af7b-cc0838cfb422
 
 
 # ╔═╡ 98464285-2bd4-4631-8c4f-8790fe15cb93
@@ -1211,12 +1249,12 @@ function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
 	
     ## Dirichlet ϕ=ϕ_we at Γ_we
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-    #boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
 
 	## Robin ϕ=dϕ₀/dx
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
 
 
     return bulkbcondition(f, u, bnode, data)
@@ -1323,9 +1361,6 @@ md"""
 ### CV Result
 """
 
-# ╔═╡ 47294439-04fd-4e09-b1f6-b56530c8d5fa
-
-
 # ╔═╡ 1f7971ad-80cc-4bc1-a2f7-a912186537f7
 function zstr(z::Int)
     if z == -1
@@ -1393,14 +1428,22 @@ end
 
 # ╔═╡ 702e5265-8ea0-4480-8019-357d3b4ddb19
 #=╠═╡
-function CVPlot!(result, species)
+function CVPlot!(result, model)
+    ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1])
-    lines!(ax, voltages(result), currents(result, species), color = RGBf.(range(0, 1, length(voltages(result))), 0.0, 0.0)
-    )
-    #ylims!(-0.001, 0.01)
+	
+    total_current = zero(currents(result, ic[1]))
+    for s in ic
+        total_current .+= currents(result, s)
+    end
+
+    lines!(ax, voltages(result), total_current,
+           color = RGBf.(range(0, 1, length(voltages(result))), 0.0, 0.0))
+
     fig
 end
+
   ╠═╡ =#
 
 # ╔═╡ f88ca8d4-ecbb-4eee-b4af-5854fbd16e33
@@ -1423,9 +1466,6 @@ cm^2/mA
 md"""
 #### Plotting Functions
 """
-
-# ╔═╡ d44032f3-d94f-41cd-9e83-a13c2b6b76af
-cu_rr(J, ix) = [F * abs(j[ix]) for j in J]
 
 # ╔═╡ a29478aa-139d-4367-bf05-a2a82bd44163
 #=╠═╡
@@ -1675,7 +1715,7 @@ aside_data.mode
 # ╔═╡ 3ed7dc19-ac9f-4b1e-ba62-bb8973806494
 begin
 	γ_key = aside_data.mode 
-	γ_mode = γ_key == "Stefan_γ" ? S_γ! : DGML_γ!
+	γ_mode = γ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
 end
 
 # ╔═╡ 595715e5-f108-4167-b104-ac7c6f652e48
@@ -1818,21 +1858,20 @@ function capsplot(vis, result, title)
 end;
   ╠═╡ =#
 
-# ╔═╡ 53cdf6d7-a025-49e0-af7b-cc0838cfb422
+# ╔═╡ a6cd1992-53d8-4f5d-b9b7-9587ed4f77e7
 function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
-	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
-	
+    (; iϕ, Γ_we, ϕ_we) = data
+
     ## Dirichlet ϕ=ϕ_we at Γ_we
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
 	
 	## Robin ϕ=dϕ₀/dx
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
 	
 	if model == elydata_Gold && bnode.region == Γ_we
-		we_breactions(f, u, bnode, data)
+			we_breactions(f, u, bnode, data)
 	end
-		
-	return bulkbcondition(f, u, bnode, data)
+    return bulkbcondition(f, u, bnode, data)
 end
 
 # ╔═╡ 07c4aa03-7be0-483e-a108-0eb3faeb7d88
@@ -1842,6 +1881,18 @@ function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 	ivresult    = ivsweep(cell; voltages = (-1.5:0.1:0.0), store_solutions=true, kwargs...)
 	cell, ivresult
 end;
+
+# ╔═╡ 88f8d0a0-e5bb-4e1f-89ed-425bcc9a93b1
+cell, result = simulate_CO2R(grid, elydata_Gold; voltages)
+
+# ╔═╡ 31de65c0-7611-4dcb-ad84-530cbff717fd
+#=╠═╡
+let
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	df = Dict(:voltage => table[:,1], :current => table[:,2])
+	plotcurr(result; df=df)
+end
+  ╠═╡ =#
 
 # ╔═╡ cf646a34-bd94-49af-8f8e-ec06446e18ca
 begin
@@ -1964,33 +2015,18 @@ begin
 end
   ╠═╡ =#
 
-# ╔═╡ 4e295435-6e29-4319-92f4-e7362d3f4b4b
-model
-
-# ╔═╡ 88f8d0a0-e5bb-4e1f-89ed-425bcc9a93b1
-cell, result = simulate_CO2R(grid, elydata_Gold; voltages)
-
-# ╔═╡ 31de65c0-7611-4dcb-ad84-530cbff717fd
-#=╠═╡
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	plotcurr(result; df=df)
-end
-  ╠═╡ =#
-
 # ╔═╡ e32e89bd-005e-4af3-a6f3-8ebd7730471c
 floataside(
     @bind guidata confirm(
         #! format: off
         PlutoUI.combine() do Child
 md"""
-  __User Data__	``\quad CO_2 + ne^- \leftrightharpoons OH^-``
+  __User Data__	``\quad CO_2 + H_2O + 2e^- \leftrightharpoons CO + 2OH^-``
  - ``z_R``: $(Child("zR", NumberField(-2:2;default=-1))) 
-   ``\quad n:`` $(Child("n", NumberField(0:2;default=1)))
-   ``\quad κ:`` $(Child("κ", NumberField(0:10;default=0)))
+   ``\quad n:`` $(Child("n", NumberField(0:2;default=2)))
+   ``\quad κ:`` $(Child("κ", NumberField(0:10;default=8)))
  - scanrate/``(V/s)``: $(Child("scanrate", TextField(6;default="0.1")))
-   nperiods: $(Child("nperiods", NumberField(1:10;default=1)))
+   nperiods: $(Child("nperiods", NumberField(1:10;default=2)))
  - ``L``: 80/μm
  - Double64: $(Child("double64",CheckBox()))
  - tunnel: $(Child("tunnel", CheckBox()))
@@ -2032,9 +2068,6 @@ end
 # ╠═╡ show_logs = false
 pnpresult = sweep(elydata_Gold; eneutral = false, tunnel = false)
 
-# ╔═╡ b8a8579a-a619-4c76-a090-65a7166f0f18
-pnpresult.times
-
 # ╔═╡ e1d3786d-d80b-46e9-8450-c9b25cdffc5e
 #=╠═╡
 let
@@ -2049,36 +2082,17 @@ end
 
 # ╔═╡ 5eb6ec5d-39f8-4dc5-b309-8a948519247e
 #=╠═╡
-CVPlot!(pnpresult, ico2)
-  ╠═╡ =#
-
-# ╔═╡ efb027a8-385e-48e8-938b-ed20c99d75f8
-#=╠═╡
-plot_concentration_profile(pnpresult, X, bulk)
+CVPlot!(pnpresult, model)
   ╠═╡ =#
 
 # ╔═╡ e8af7132-3b5d-4cc6-860d-1951822bede4
 # ╠═╡ show_logs = false
 nnpresult = sweep(elydata_Gold; eneutral = true, tunnel = false)
 
-# ╔═╡ 498162e8-63a9-4f39-a841-f60ec7cbdb36
+# ╔═╡ efb027a8-385e-48e8-938b-ed20c99d75f8
 #=╠═╡
-COPlot = CVPlot!(nnpresult, ico)
+plot_concentration_profile(nnpresult, X, bulk)
   ╠═╡ =#
-
-# ╔═╡ 84c0c523-e5df-4399-93b3-25c7fb7558d8
-#=╠═╡
-let
-    fig = Figure()
-    ax = Axis(fig[1, 1])
-    T = 0:1.0e-3:(abs(sawtooth.vmax-sawtooth.vmin) ./ sawtooth.scanrate)*guidata.nperiods
-    lines!(ax, T, sawtooth.(T))
-    fig
-end
-  ╠═╡ =#
-
-# ╔═╡ 1a28fe9c-0449-445a-aa12-665080c9bb83
-guidata.scanrate
 
 # ╔═╡ ba2d77f3-2f8d-43af-a4ac-aebc551189e8
 floataside(
@@ -2157,7 +2171,7 @@ begin
 								 xscale = :log,)
 	
 		vrange = result.voltages[end:-5:1]
-		movie(vis, file="concentrations.gif", framerate=3) do vis
+		movie(vis, file="concentrations.gif", framerate=6) do vis
 		for vshow_it in vrange
 			addplot(vis, tsol(vshow_it), vshow_it)
 			reveal(vis)
@@ -2330,6 +2344,7 @@ html"""<hr>"""
 # ╠═6b69df37-8754-457c-93cc-e9bacfa47d9a
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
+# ╟─a2718c29-e6b7-480f-a270-d416262e0c52
 # ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
 # ╠═c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
 # ╟─949d126e-d863-40f4-b902-8b3b4c97b1b5
@@ -2351,7 +2366,9 @@ html"""<hr>"""
 # ╟─6df5efba-c6bc-4bc9-ae86-514e8171c8f1
 # ╟─237a3b9e-60bc-48c8-b5d1-ea954e65c401
 # ╠═72f17b01-34cc-4196-99ae-a64af3f864c4
+# ╟─f60e2234-289e-4f8a-adb2-43497683575d
 # ╠═d745a4d0-d7c0-4a97-8089-60b14096dc56
+# ╠═3ed7dc19-ac9f-4b1e-ba62-bb8973806494
 # ╟─38061646-9c66-4f9c-a0b5-5090dc62f8fe
 # ╠═267a7233-e34a-4c4a-8627-a49bb45ccd25
 # ╠═398b3511-4f7c-4436-9fe8-8edd76e3e0e7
@@ -2359,8 +2376,8 @@ html"""<hr>"""
 # ╠═ca3bd6ba-1b3d-42c7-b008-8012b06368e4
 # ╟─9b1dc273-9938-43a0-ac10-1928a80f89d8
 # ╠═53cdf6d7-a025-49e0-af7b-cc0838cfb422
+# ╠═a6cd1992-53d8-4f5d-b9b7-9587ed4f77e7
 # ╠═cf646a34-bd94-49af-8f8e-ec06446e18ca
-# ╠═af0749ff-ee8a-4bfc-8f70-d4c3e8503f46
 # ╠═966ed6ab-d6fa-43f1-9ddb-45eb024d949c
 # ╟─98464285-2bd4-4631-8c4f-8790fe15cb93
 # ╠═a8e26e1a-a9ac-4d51-b09c-7951acd4b4b7
@@ -2372,8 +2389,6 @@ html"""<hr>"""
 # ╟─2fb75c2a-c877-4c78-abf8-6f89706a58fe
 # ╟─289d2c59-e920-47fe-b9ad-cb0a33ef0c9c
 # ╠═791ccb34-e761-4e65-a9ef-95eac5395376
-# ╠═3ed7dc19-ac9f-4b1e-ba62-bb8973806494
-# ╠═4e295435-6e29-4319-92f4-e7362d3f4b4b
 # ╟─1fcfbad3-2fad-4eee-a1a3-031dc29c9083
 # ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
@@ -2383,7 +2398,7 @@ html"""<hr>"""
 # ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
 # ╟─a4a01dcb-8c02-441b-ba25-8e8c062d7d58
 # ╟─c4c62b30-6e5b-40ba-b922-4ed40d04f1ea
-# ╠═7cb51a9b-6357-4ec6-af6a-9113dea61661
+# ╟─7cb51a9b-6357-4ec6-af6a-9113dea61661
 # ╠═87f2b4c4-b163-4ae2-86b6-0266dff1da19
 # ╟─4c1f6b31-ce09-4fba-b827-460e8a0d7e1a
 # ╟─0e734e72-fc3a-48c7-b1d5-c0a380768eec
@@ -2392,13 +2407,8 @@ html"""<hr>"""
 # ╟─43a3d5f4-16ce-4402-bb95-d759b07bd573
 # ╠═bcfc1095-b478-4f52-84ed-65b9513129e7
 # ╠═e8af7132-3b5d-4cc6-860d-1951822bede4
-# ╠═84c0c523-e5df-4399-93b3-25c7fb7558d8
-# ╠═b8a8579a-a619-4c76-a090-65a7166f0f18
-# ╠═1a28fe9c-0449-445a-aa12-665080c9bb83
-# ╠═e1d3786d-d80b-46e9-8450-c9b25cdffc5e
-# ╠═47294439-04fd-4e09-b1f6-b56530c8d5fa
+# ╟─e1d3786d-d80b-46e9-8450-c9b25cdffc5e
 # ╠═5eb6ec5d-39f8-4dc5-b309-8a948519247e
-# ╠═498162e8-63a9-4f39-a841-f60ec7cbdb36
 # ╟─7896e772-4390-4653-afcf-d7abb8063598
 # ╠═efb027a8-385e-48e8-938b-ed20c99d75f8
 # ╟─1f7971ad-80cc-4bc1-a2f7-a912186537f7
@@ -2413,13 +2423,12 @@ html"""<hr>"""
 # ╠═31de65c0-7611-4dcb-ad84-530cbff717fd
 # ╠═07799331-eb72-4a25-aa41-1b431bce6f59
 # ╟─4056a626-86d3-4884-ac54-886dbb23e6d8
-# ╟─d44032f3-d94f-41cd-9e83-a13c2b6b76af
 # ╟─7ea1c62c-a606-426c-94c0-f3d5778207f6
 # ╟─a29478aa-139d-4367-bf05-a2a82bd44163
 # ╟─7ee0629e-a1de-456a-9627-956f92806ed6
 # ╟─0e39eaab-836e-487d-bcf2-3d4ca59ebc6a
-# ╟─e32e89bd-005e-4af3-a6f3-8ebd7730471c
-# ╟─ba2d77f3-2f8d-43af-a4ac-aebc551189e8
-# ╟─c5107d7a-383f-40bf-bdb7-5bc8a6d79681
+# ╠═e32e89bd-005e-4af3-a6f3-8ebd7730471c
+# ╠═ba2d77f3-2f8d-43af-a4ac-aebc551189e8
+# ╠═c5107d7a-383f-40bf-bdb7-5bc8a6d79681
 # ╟─d6f9f77a-948b-4583-86a5-ef91be3477ee
 # ╟─ecde8a95-f660-4b53-9296-cd4d4022c95f
