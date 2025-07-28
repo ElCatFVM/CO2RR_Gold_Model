@@ -984,26 +984,6 @@ md"""
 #### Boundary Reaction
 """
 
-# ╔═╡ a2718c29-e6b7-480f-a270-d416262e0c52
-md"""
-A microkinetic modeling approach is taken:
-
-The reaction mechanism for the $CO_2$ reduction is divided into four elementary reactions at the electrode surface:
-
-1. Adsorption of $CO_2$ molecules at the oxygen atoms
-${CO_2}_{(aq)} + * \rightleftharpoons {CO_2 *}_{(ad)}$
-
-2. First proton-coupled electron transfer
-${CO_2*}_{(ad)} + H_2O_{(l)} + e^- \rightleftharpoons COOH*_{(ad)} + OH^-_{(aq)}$
-
-3. Second proton-coupled electron transfer
-$COOH*_{(ad)} + e^- \rightleftharpoons CO*_{(ad)} + OH^{-}_{(aq)}$
-with the transition state: $*CO-OH^{TS}$
-
-4. Desorption of $CO$
-$*CO_{(ad)} \rightleftharpoons CO_{(aq)} + *$
-"""
-
 # ╔═╡ c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
 begin
 	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_data/catmap_CO2R_template.mkm")
@@ -1053,65 +1033,10 @@ md"""
 #### Reaction Rates
 """
 
-# ╔═╡ a2c59e48-ffbb-4f8b-9433-0975a46623d3
-
-
 # ╔═╡ 3a9940b9-c7e1-484c-bbf2-14c0c69d685b
 md"""
 ##### Electrode Reaction
 """
-
-# ╔═╡ 12cbfb8b-edb6-4335-8d80-0d6fe0eb9d3a
-begin
-	const ps_cache = DiffCache(zeros(8), 13)
-	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
-	
-	function we_breactions(f, 
-			u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti},
-			bnode, 
-			data
-		) where {Tval, Tv, Tc, Tp, Ti}
-		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, c_bulk) = data
-		
-		γ_co2 	= 1.0 / (1 - sum(data.c_bulk[i] * data.v[i] for i in 1:nc) / (mol/dm^3))
-		γ_co 	= 1.0 / (1 - sum(data.c_bulk[i] * data.v[i] for i in 1:nc) / (mol/dm^3))
-		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
-		local_pH 	= -log10((u[ihplus] / (mol/dm^3)))
-
-		ps = get_tmp(ps_cache, u[iϕ])
-		for (p, default_value) in odesys.defaults
-			ps[paramsidx[p]] = default_value
-			println(default_value)
-		end
-		
-		ps = get_tmp(ps_cache, u[iϕ])
-		ps[paramsidx[Symbolics.rename(odesys.σ, :σ)]] = σ
-		ps[paramsidx[Symbolics.rename(odesys.γCO2_aq, :γCO2_aq)]] = γ_co2
-		ps[paramsidx[Symbolics.rename(odesys.aH2O_g, :aH2O_g)]] = aH₂O 
-		ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ] 
-		ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we 
-		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
-		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co
-		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
-
-		if bnode.region == Γ_we && size(f,1) ≥ isurfaceend
-			@views f_microkinetics!(
-				f[isurfacestart:isurfaceend], 
-				u[isurfacestart:isurfaceend],
-				ps,
-				nothing
-			)
-		elseif bnode.region == Γ_we
-			nothing
-		end
-		
-		# conversion from turnover frequency (appropriate for change in coverage) to production rate (per unit area) (approprite for change in concentration) by S = number of free catalyst sites in mole per unit area
-		f[ico2] *= S
-		f[iohminus] *= S
-		f[ico] *= S
-		f[ikplus] *= S
-	end
-end
 
 # ╔═╡ 1c94b9ba-429d-44fc-887e-e028ba070cc9
 md"""
@@ -1249,9 +1174,9 @@ function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
 	
     ## Dirichlet ϕ=ϕ_we at Γ_we
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+   # boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+    #boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
 
 	## Robin ϕ=dϕ₀/dx
 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
@@ -1361,6 +1286,13 @@ md"""
 ### CV Result
 """
 
+# ╔═╡ e8af7132-3b5d-4cc6-860d-1951822bede4
+# ╠═╡ show_logs = false
+# ╠═╡ disabled = true
+#=╠═╡
+nnpresult = sweep(elydata_Gold; eneutral = true, tunnel = false)
+  ╠═╡ =#
+
 # ╔═╡ 1f7971ad-80cc-4bc1-a2f7-a912186537f7
 function zstr(z::Int)
     if z == -1
@@ -1403,7 +1335,7 @@ function plot_concentration_profile(result, X, bulk; filename = "concentration_p
         xscale = :log,
     )
 
-    movie(vis; file=filename, framerate=20) do vis
+    movie(vis; file=filename, framerate=50) do vis
         for it in 1:length(voltages)
             title = "V = $(round(voltages[it], digits=2)) V"
             for i in 1:7
@@ -1426,16 +1358,23 @@ end
 
   ╠═╡ =#
 
+# ╔═╡ 910a52f7-07b7-443d-b7b3-d8436c28ad0f
+mA/cm^2
+
 # ╔═╡ 702e5265-8ea0-4480-8019-357d3b4ddb19
 #=╠═╡
 function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
-    ax = Axis(fig[1, 1])
+    ax = Axis(fig[1, 1], 
+              limits = ((-1.0, 1.5),(-30, 50)),
+			  ylabel = "Current Density(mA/cm²)",
+			  xlabel = "Voltage (ϕ-ϕₚ)"
+			 )
 	
     total_current = zero(currents(result, ic[1]))
     for s in ic
-        total_current .+= currents(result, s)
+        total_current .+= (currents(result, s) * mA / cm^2)
     end
 
     lines!(ax, voltages(result), total_current,
@@ -1576,7 +1515,7 @@ __Model Selection__
 ---
 
 __Activity Coefficient__
-- Mode: $(Child("mode", Select(["Stefan_γ", "DGML_γ"])))
+- Mode: $(Child("mode", Select(["DGML_γ", "Stefan_γ"])))
 """
         end,
         label = "Submit"
@@ -1614,7 +1553,7 @@ begin
 							D = 1.91e-9, 
 							c_bulk = 0.033, 
 							a = at, 
-							κ = κt, 
+							κ = 0, 
 							color=:red
 				),
 				BulkSpecies(;name = "OH⁻",
@@ -1638,7 +1577,7 @@ begin
 							D = 2.23e-9,
 							c_bulk = 0.0,
 							a = at, 
-							κ = κt,  
+							κ = 0,  
 							color=:blue
 				)
 		]
@@ -1709,8 +1648,37 @@ end
 
   ╠═╡ =#
 
+# ╔═╡ e8561b2b-5117-4b0e-845f-2864bd16f805
+#=╠═╡
+function conc_time_func(result, scan)
+    species = getproperty.(bulk, :name)
+    colors = getproperty.(bulk, :color)
+    times = result.tsol.t
+    nt = length(times)
+    nspecies = 7
+
+    conc_at_electrode = [result.tsol[i, 1, t] / (mol / dm^3) for i in 1:nspecies, t in 1:nt]
+
+    fig = Figure(size = (650, 400))
+    ax = Axis(
+        fig[1, 1];
+        xlabel = L"time / s",
+        ylabel = L"c_{i,\,\text{electrode}} / (mol/dm^3)",
+        yscale = log10
+    )
+
+    for i in 1:nspecies
+        lines!(ax, times, conc_at_electrode[i, :], color = colors[i], label = species[i])
+    end
+
+    Legend(fig[1, 2], ax; labelsize = 10, backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5))
+    fig
+end
+
+  ╠═╡ =#
+
 # ╔═╡ e47d66ca-8982-4023-939e-8a805969d7d1
-aside_data.mode 
+γ_s = aside_data.mode 
 
 # ╔═╡ 3ed7dc19-ac9f-4b1e-ba62-bb8973806494
 begin
@@ -1737,8 +1705,69 @@ elydata_Gold = ElectrolyteData(;
 							   	actcoeff! = γ_mode
 							   )
 
+# ╔═╡ a2c59e48-ffbb-4f8b-9433-0975a46623d3
+elydata_Gold.actcoeff!
+
 # ╔═╡ 7c82de25-44cf-4763-957d-001ea033cf53
 sum(elydata_Gold.c_bulk[i] * elydata_Gold.v[i] for i in 1:elydata_Gold.nc)
+
+# ╔═╡ 12cbfb8b-edb6-4335-8d80-0d6fe0eb9d3a
+begin
+	const ps_cache = DiffCache(zeros(8), 13)
+	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
+	
+	function we_breactions(f, 
+			u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti},
+			bnode, 
+			data
+		) where {Tval, Tv, Tc, Tp, Ti}
+		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, c_bulk) = data
+		γ = zeros(length(elydata_Gold.cspecies))
+		#γ = elydata_Gold.actcoeff!(γ, u{c_bulk::Tc}, p::Tp, elydata_Gold)
+
+		
+		γ_co2 	= 1.0 / (1 - sum(data.c_bulk[i] * data.v[i] for i in 1:nc) / (mol/dm^3))
+		#γ_co2 	= γ[ico2]
+		γ_co 	= 1.0 / (1 - sum(data.c_bulk[i] * data.v[i] for i in 1:nc) / (mol/dm^3))
+		#γ_co2 	= γ[ico]
+
+		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
+		local_pH 	= -log10((u[ihplus] / (mol/dm^3)))
+
+		ps = get_tmp(ps_cache, u[iϕ])
+		for (p, default_value) in odesys.defaults
+			ps[paramsidx[p]] = default_value
+			println(default_value)
+		end
+		
+		ps = get_tmp(ps_cache, u[iϕ])
+		ps[paramsidx[Symbolics.rename(odesys.σ, :σ)]] = σ
+		ps[paramsidx[Symbolics.rename(odesys.γCO2_aq, :γCO2_aq)]] = γ_co2
+		ps[paramsidx[Symbolics.rename(odesys.aH2O_g, :aH2O_g)]] = aH₂O 
+		ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ] 
+		ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we 
+		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
+		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co
+		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
+
+		if bnode.region == Γ_we && size(f,1) ≥ isurfaceend
+			@views f_microkinetics!(
+				f[isurfacestart:isurfaceend], 
+				u[isurfacestart:isurfaceend],
+				ps,
+				nothing
+			)
+		elseif bnode.region == Γ_we
+			nothing
+		end
+		
+		# conversion from turnover frequency (appropriate for change in coverage) to production rate (per unit area) (approprite for change in concentration) by S = number of free catalyst sites in mole per unit area
+		f[ico2] *= S
+		f[iohminus] *= S
+		f[ico] *= S
+		f[ikplus] *= S
+	end
+end
 
 # ╔═╡ 791ccb34-e761-4e65-a9ef-95eac5395376
 begin
@@ -1849,10 +1878,10 @@ function capsplot(vis, result, title)
 	else
 		scalarplot!(
             vis, result[1].voltages, result[1].dlcaps / (μF / cm^2), limits=					(-1, 100), xlimits=(-1.1, 1.1), color = :green, clear = false, label = 				"$title", title = title, markershape = :none, yscale=10, xlabel = "φ / (V vs φ_pzc)", 				ylabel = "dlcaps / (μF / cm²)")
-		scalarplot!(
-            vis, [0], [result[1].cdl0] / (μF / cm^2),
-            clear = false, markershape = :circle, markersize = 8, label = ""
-        )
+		#scalarplot!(
+        #    vis, [0], [result[1].cdl0] / (μF / cm^2),
+        #    clear = false, markershape = :circle, markersize = 8, label = ""
+        #)
 	end
     return vis
 end;
@@ -1863,10 +1892,10 @@ function pnp_bcondition(f, u, bnode, data::ElectrolyteData)
     (; iϕ, Γ_we, ϕ_we) = data
 
     ## Dirichlet ϕ=ϕ_we at Γ_we
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
 	
 	## Robin ϕ=dϕ₀/dx
-	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
 	
 	if model == elydata_Gold && bnode.region == Γ_we
 			we_breactions(f, u, bnode, data)
@@ -2024,13 +2053,11 @@ md"""
   __User Data__	``\quad CO_2 + H_2O + 2e^- \leftrightharpoons CO + 2OH^-``
  - ``z_R``: $(Child("zR", NumberField(-2:2;default=-1))) 
    ``\quad n:`` $(Child("n", NumberField(0:2;default=2)))
-   ``\quad κ:`` $(Child("κ", NumberField(0:10;default=8)))
- - scanrate/``(V/s)``: $(Child("scanrate", TextField(6;default="0.1")))
+ - scanrate/``(V/s)``: $(Child("scanrate", TextField(6;default="0.5")))
    nperiods: $(Child("nperiods", NumberField(1:10;default=2)))
  - ``L``: 80/μm
  - Double64: $(Child("double64",CheckBox()))
  - tunnel: $(Child("tunnel", CheckBox()))
-   ``\quad β/cm^{-1}``: $(Child("β", TextField(10;default="1.0e8")))
 """
         end,
         #! format: on
@@ -2043,7 +2070,7 @@ md"""
 begin 
 	sawtooth = SawTooth(
         scanrate = parse(Float64, guidata.scanrate),
-        vmin = -1.5, vmax = 0.3
+        vmin = -1.5, vmax = 1.5
     )
 	    const nperiods = guidata.nperiods
 
@@ -2085,13 +2112,14 @@ end
 CVPlot!(pnpresult, model)
   ╠═╡ =#
 
-# ╔═╡ e8af7132-3b5d-4cc6-860d-1951822bede4
-# ╠═╡ show_logs = false
-nnpresult = sweep(elydata_Gold; eneutral = true, tunnel = false)
-
 # ╔═╡ efb027a8-385e-48e8-938b-ed20c99d75f8
 #=╠═╡
-plot_concentration_profile(nnpresult, X, bulk)
+plot_concentration_profile(pnpresult, X, bulk)
+  ╠═╡ =#
+
+# ╔═╡ 919289d1-a18f-42a0-8c55-4597217d695a
+#=╠═╡
+conc_time_func(pnpresult, sawtooth)
   ╠═╡ =#
 
 # ╔═╡ ba2d77f3-2f8d-43af-a4ac-aebc551189e8
@@ -2344,7 +2372,6 @@ html"""<hr>"""
 # ╠═6b69df37-8754-457c-93cc-e9bacfa47d9a
 # ╟─25bafe0e-f2fc-4a5c-828e-89fdccbc250c
 # ╟─6d1f0f93-876a-4ec9-9763-f1abcb36cc07
-# ╟─a2718c29-e6b7-480f-a270-d416262e0c52
 # ╟─e9f29b23-0f46-4515-9ba3-06cd25c1d741
 # ╠═c11fdb45-b46e-40b6-b5a7-9c115aa5fee5
 # ╟─949d126e-d863-40f4-b902-8b3b4c97b1b5
@@ -2365,9 +2392,9 @@ html"""<hr>"""
 # ╠═70e1a34b-9041-4151-91aa-4dd7907a5b13
 # ╟─6df5efba-c6bc-4bc9-ae86-514e8171c8f1
 # ╟─237a3b9e-60bc-48c8-b5d1-ea954e65c401
-# ╠═72f17b01-34cc-4196-99ae-a64af3f864c4
+# ╟─72f17b01-34cc-4196-99ae-a64af3f864c4
 # ╟─f60e2234-289e-4f8a-adb2-43497683575d
-# ╠═d745a4d0-d7c0-4a97-8089-60b14096dc56
+# ╟─d745a4d0-d7c0-4a97-8089-60b14096dc56
 # ╠═3ed7dc19-ac9f-4b1e-ba62-bb8973806494
 # ╟─38061646-9c66-4f9c-a0b5-5090dc62f8fe
 # ╠═267a7233-e34a-4c4a-8627-a49bb45ccd25
@@ -2393,7 +2420,7 @@ html"""<hr>"""
 # ╟─0b6f33b9-41d4-48fd-8026-8a3bddcc1989
 # ╠═85856abf-ee16-424a-ac06-97f76e32e444
 # ╟─a7677fc3-a83d-4fab-8d00-b5c2454056c9
-# ╟─d18fe756-b0b9-44d7-8872-6b7812108c16
+# ╠═d18fe756-b0b9-44d7-8872-6b7812108c16
 # ╟─4fe01b26-ad9f-44b8-8900-916a5aeb5ad6
 # ╠═a22a5421-05bf-484f-a2d3-91a06a0c6476
 # ╟─a4a01dcb-8c02-441b-ba25-8e8c062d7d58
@@ -2409,11 +2436,14 @@ html"""<hr>"""
 # ╠═e8af7132-3b5d-4cc6-860d-1951822bede4
 # ╟─e1d3786d-d80b-46e9-8450-c9b25cdffc5e
 # ╠═5eb6ec5d-39f8-4dc5-b309-8a948519247e
-# ╟─7896e772-4390-4653-afcf-d7abb8063598
+# ╠═7896e772-4390-4653-afcf-d7abb8063598
+# ╠═919289d1-a18f-42a0-8c55-4597217d695a
 # ╠═efb027a8-385e-48e8-938b-ed20c99d75f8
 # ╟─1f7971ad-80cc-4bc1-a2f7-a912186537f7
 # ╟─05703d80-3299-4692-9d23-f44c2f371f7b
 # ╠═24407773-5c22-4a93-9c9d-70e9284d8661
+# ╠═e8561b2b-5117-4b0e-845f-2864bd16f805
+# ╠═910a52f7-07b7-443d-b7b3-d8436c28ad0f
 # ╠═702e5265-8ea0-4480-8019-357d3b4ddb19
 # ╟─f88ca8d4-ecbb-4eee-b4af-5854fbd16e33
 # ╠═7ab1de97-81f8-4e1d-b585-6cda82139959
@@ -2428,7 +2458,7 @@ html"""<hr>"""
 # ╟─7ee0629e-a1de-456a-9627-956f92806ed6
 # ╟─0e39eaab-836e-487d-bcf2-3d4ca59ebc6a
 # ╠═e32e89bd-005e-4af3-a6f3-8ebd7730471c
-# ╠═ba2d77f3-2f8d-43af-a4ac-aebc551189e8
-# ╠═c5107d7a-383f-40bf-bdb7-5bc8a6d79681
+# ╟─ba2d77f3-2f8d-43af-a4ac-aebc551189e8
+# ╟─c5107d7a-383f-40bf-bdb7-5bc8a6d79681
 # ╟─d6f9f77a-948b-4583-86a5-ef91be3477ee
 # ╟─ecde8a95-f660-4b53-9296-cd4d4022c95f
