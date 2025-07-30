@@ -189,11 +189,6 @@ begin
 	end
 end;
 
-# ╔═╡ ca22e3fe-5cb7-4910-b9fa-890fd2d20e4b
-md"""
-### Solver Control
-"""
-
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
 ### Reaction Description
@@ -337,12 +332,11 @@ begin
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
 
     grid = ExtendableGrids.simplexgrid(X)
-
 end;
 
 # ╔═╡ 6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 md"""
-### Nernst-Planck Half-Cell
+### Electrolyte Data
 """
 
 # ╔═╡ 848b7aeb-968f-4116-8038-b61276f02b6c
@@ -476,14 +470,14 @@ md"""
 """
 
 # ╔═╡ 952a26ce-2610-48cc-9158-eda816da3a1c
-molarities = [0.005, 0.01, 0.02, 0.04, 0.1, 0.5, 1] 
+molarities = [0.005, 0.01, 0.05, 0.1, 0.5] 
 
 # ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
 function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
 	
     ## Dirichlet ϕ=ϕ_we at Γ_we
-   # boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
     #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
     #boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
 
@@ -550,6 +544,12 @@ md"""
 ### System Setup
 """
 
+# ╔═╡ 39c8ef0d-aac2-4c7f-8004-4166c460ebc5
+# ╠═╡ disabled = true
+#=╠═╡
+nnpresult = sweep(model; eneutral = true, tunnel = false)
+  ╠═╡ =#
+
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 md"""
 ### Result Plots
@@ -596,10 +596,10 @@ function plot_concentration_profile(result, X, bulk; filename = "concentration_p
         xscale = :log,
     )
 
-    movie(vis; file=filename, framerate=50) do vis
+    movie(vis; file=filename, framerate=10) do vis
         for it in 1:length(voltages)
             title = "V = $(round(voltages[it], digits=2)) V"
-            for i in 1:7
+            for i in 1: nc
                 yvals = log10.([c > 0 ? c : NaN for c in ru_all[i, 2:end, it]])
                 scalarplot!(
                     vis,
@@ -623,16 +623,18 @@ function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1], 
-              #limits = ((-1.0, 1.5),(-30, 50)),
+              limits = ((-1.0, 1.5),(-0.50, 7)),
 			  ylabel = "Current Density(mA/cm²)",
 			  xlabel = "Voltage (ϕ-ϕₚ)"
 			 )
 	
     total_current = zero(currents(result, ic[1]))
-    for s in ic
-        total_current .+= (currents(result, s) * mA / cm^2)
-    end
+    #for s in ic
+    #    total_current .+= (currents(result, s) * mA / cm^2)
+    #end
+	total_current = currents(result, ico)
 
+	
     lines!(ax, result.voltages, total_current,
            color = RGBf.(range(0, 1, length(result.voltages)), 0.0, 0.0))
 
@@ -648,9 +650,6 @@ md"""
 md"""
 ### System Setup
 """
-
-# ╔═╡ a1ebe9f4-571a-4d65-99c9-c693e520288e
-CatmapInterface.paramsidx
 
 # ╔═╡ 72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 solver_control = (; max_round 	= 4,
@@ -783,7 +782,7 @@ begin
             	position:fixed;
             	left: 1rem;
             	top: $(top)px;
-            	width: 400px;
+            	width: 350px;
             	padding: 10px;
             	border: 3px solid rgba(0, 0, 0, 0.15);
             	border-radius: 10px;
@@ -821,8 +820,9 @@ floataside(
 	md"""
 	##### __User Data__  
 	``CO_2 + H_2O + 2e^- \leftrightharpoons CO + 2OH^-``
-	
-	- ``z_R``: $(Child("zR", NumberField(-2:2; default = -1)))  
+			
+	- ``V_\mathrm{min}``: $(Child("vmin", NumberField(-2.0:0.1:0.0; default = -1.5)))  ``V_\mathrm{max}``: $(Child("vmax", NumberField(0.0:0.1:2.0; default = 1.5)))
+	- ``z_R``: $(Child("zR", NumberField(-2:2; default = -1)))   
 	  ``n``: $(Child("n", NumberField(0:2; default = 2)))
 	
 	- Scan rate ``(V/s)``: $(Child("scanrate", TextField(6; default = "0.3")))  
@@ -1048,50 +1048,6 @@ begin
 			end
 		end
 	end
-
-	# function addplot(vis, df)
-		
-	# 	function extract_interpolation(df, i)
-	# 		X = collect(skipmissing(df[!, 2*i-1]))
-	# 		I = sortperm(X)
-	# 		X .= X[I]
-	# 		Y = collect(skipmissing(df[!, 2*i]))[I]
-	# 		linear_interpolation(X, Y, extrapolation_bc=Line())
-	# 	end
-		
-	# 	species = getproperty(bulk, :name)
-	# 	colors = [:orange, :brown, :violet, :red, :blue, :green, :gray]
-
-	# 	knots = grid.components[XCoordinates] .+ 1.0e-14
-	# 	sol = [extract_interpolation(df, i) for i in 1:nc]
-		
-	# 	if useonly_pH
-	# 		scalarplot!(vis, 
-	# 				    knots, 
-	# 				    log10.(sol[ihplus].(knots)), 
-	# 				    color = colors[ihplus],
-	# 				    clear = false,
-	# 					linewidth = 0,
-	# 					label = "",
-	# 					markershape = :cross,
-	# 					markersize = 8,
-	# 					markevery = 20)
-	# 	else
-	# 		for ia = 1:nc			
-	# 			scalarplot!(vis, 
-	# 					    knots, 
-	# 					    log10.(sol[ia].(knots)), 
-	# 					    color = colors[ia],
-	# 					    clear = false,
-	# 						linewidth = 0,
-	# 						label = "",
-	# 						markershape = :cross,
-	# 						markersize = 8,
-	# 						markevery = 20)
-	# 		end
-	# 	end
-	# end
-
 	function plot1d(result, celldata, vshow; df_compare = nothing)
 		tsol 	= LiquidElectrolytes.voltages_solutions(result)
 		vis 	= GridVisualizer(;
@@ -1155,7 +1111,7 @@ begin
 
 		γ = get_tmp(γ_cache, u[ico2])
 		# compute activity coefficients according to the approach in Ringe et al.
-		activity_coefficient!(γ, u,  data, γ_mode)
+		activity_coefficient!(γ, u, data, γ_mode)
 		
 		# compute activity coefficients according to the approach in Dreyer et al.
 		# p = u[ip] * pscale-p_bulk
@@ -1193,8 +1149,8 @@ begin
 		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we) = data
 				
 		γ = get_tmp(γ_cache, u[ico2])
-		γ_co2 	= activity_coefficient!(γ, u, data, γ_mode; idxs=[ico2])[1]
-		γ_co 	= activity_coefficient!(γ, u, data, γ_mode; idxs=[ico])[1]
+		γ_co2 	= activity_coefficient!(γ, u, data, γ_mode; idxs=[ico2])[ico2]
+		γ_co 	= activity_coefficient!(γ, u, data, γ_mode; idxs=[ico])[ico]
 		#γ_co 	= 1.0
 		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
 		local_pH 	= -log10(u[ihplus] / (mol/dm^3))
@@ -1242,36 +1198,6 @@ begin
 	end
 end
 
-# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
-function pnp_bcondition(
-	f,
-	u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
-	bnode,
-	data
-) where {Tval, Tv, Tc, Tp, Ti}
-	
-	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
-
-	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
-
-	# Robin b.c. for the Poisson equation
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-
-	if bnode.region == Γ_we
-			we_breactions(f, u, bnode, data)
-	end
-	nothing
-end;
-
-# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
-function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
-    kwargs 	 	= merge(solver_control, kwargs) 
-    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
-	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
-
-	cell, ivresult
-end;
-
 # ╔═╡ e510bce3-d33f-47bb-98d6-121eee8f2252
 elydata_Gold = ElectrolyteData(;
                                	nc = size(bulk)[1],
@@ -1300,6 +1226,39 @@ begin
 	        model_key == "Landstorfer_NaF model" ? elydata_NaF :
 	        error("Unknown model choice: $model_key")
 end
+
+# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
+function pnp_bcondition(
+	f,
+	u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
+	bnode,
+	data
+) where {Tval, Tv, Tc, Tp, Ti}
+	
+	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
+
+	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
+
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)	
+	
+	# Robin b.c. for the Poisson equation
+	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+
+	if bnode.region == Γ_we && model == elydata_Gold
+			we_breactions(f, u, bnode, data)
+	end
+	nothing
+end;
+
+# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
+function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
+    kwargs 	 	= merge(solver_control, kwargs) 
+    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
+
+	cell, ivresult
+end;
 
 # ╔═╡ 45451a14-17b9-4754-b56b-c9b8e8cce1b4
 begin
@@ -1407,7 +1366,7 @@ let
 		
 		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
 	
-		if model_choice == "Landstorfer_NaClO₄ model"
+		if model_key == "Landstorfer_NaClO₄ model"
 			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
 			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
 		else	
@@ -1416,14 +1375,19 @@ let
 		end
 		
 	    k = []  
-	    legend_labels = [model_choice*"\t 5mM", model_choice*"\t 100mM"]  
+	    legend_labels = [model_key*"\t 5mM", model_key*"\t 100mM"]  
 		
-	    for i in 1:length(result)
-	        c = RGB(i * l, 0.0, 1 - i * l)
-			push!(k, lines!(ax, result_pb[i].voltages, result_pb[i].dlcaps / (μF / cm^2), color=c, label="Result $i"))
-			m = molarities[i]
-	        push!(legend_labels, "LiquidElectrolyte $m M")
-	    end
+		for i in 1:length(result)
+		    c = RGB(i * l, 0.0, 1 - i * l)
+		    v = result_pb[i].voltage_range
+		    cdl = result_pb[i].dlcaps / (μF / cm^2)
+		    
+		    minlength = min(length(v), length(cdl))
+		    push!(k, lines!(ax, v[1:minlength], cdl[1:minlength], color=c, label="Result $i"))
+		
+		    m = molarities[i]
+		    push!(legend_labels, "LiquidElectrolyte $m M")
+		end
 	    
 		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
 	    
@@ -1506,20 +1470,6 @@ cell, result = simulate_CO2R(grid, model; voltages)
 # ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
 (~, default_index) = findmin(abs, result.voltages .+ 0.9 * ufac"V");
 
-# ╔═╡ 3bcb8261-5b98-4f4d-a9fe-fb71d5c5b476
-md"""
-$(@bind vindex PlutoUI.Slider(1:5:length(result.voltages), default=default_index))
-"""
-
-# ╔═╡ c4876d26-e841-4e28-8303-131d4635fc23
-md"""
-Potential at the working electrode 
-$(vshow = result.voltages[vindex]; @sprintf("%+1.4f", vshow))
-"""
-
-# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
-plot1d(result, celldata, vshow)
-
 # ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 plot1d(result, celldata)
 
@@ -1568,7 +1518,7 @@ end;
 begin 
 	sawtooth = SawTooth(
         scanrate = parse(Float64, user_input.scanrate),
-        vmin = -1.5, vmax = 1.5
+        vmin = user_input.vmin , vmax = user_input.vmax
     )
 	    const nperiods = user_input.nperiods
 
@@ -1614,8 +1564,11 @@ plot_concentration_profile(pnpresult, X, bulk)
 # ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
 floataside(
     md"""
-    __Time:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
-    """, top = 395
+    __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(result.voltages), default=default_index))
+
+    __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
+    """,
+    top = 700
 )
 
 
@@ -1644,34 +1597,38 @@ let
     xlims!(ax1, XX[1], L / nm)
     ylims!(ax1, 1.0e-25, 1.0e2)
 
-    for i in 1:7
-    lines!(ax1, XX, ru[i, 2:end], color = colors[i], linestyle = :solid, label = 		species[i])
+	for i in 1:nc
+	    yvals = [c > 0 ? log10(c) : NaN for c in ru[i, 2:end]]
+	    lines!(ax1, XX, 10 .^ yvals, color = colors[i], linestyle = :solid, label = species[i])
 	end
+
 
     Legend(
         fig[1, 2], ax1; labelsize = 10,
         backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5)
 
-    )
-	"""
-	vrange = [-1.5:-0.5:1.5]
-	movie(vis, file="concentrations.gif", framerate=3) do vis
-	for vshow_it in vrange
-		(vis, tsol(vshow_it), vshow_it)
-		reveal(vis)
-	end
-	end
-	"""
-
+    ) 
     fig
 	#println(species, colors)
 end
 
-# ╔═╡ 39c8ef0d-aac2-4c7f-8004-4166c460ebc5
-# ╠═╡ disabled = true
-#=╠═╡
-nnpresult = sweep(model; eneutral = true, tunnel = false)
-  ╠═╡ =#
+# ╔═╡ c4876d26-e841-4e28-8303-131d4635fc23
+md"""
+Potential at the working electrode 
+$(vshow = result.voltages[vindex]; @sprintf("%+1.4f", vshow))
+"""
+
+# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
+plot1d(result, celldata, vshow)
+
+# ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
+floataside(
+	md"""
+	**Voltage:** $(round(result.voltages[vindex], digits=3)) V    
+	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
+	""",
+	top = 649
+)
 
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
@@ -1684,7 +1641,6 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
-# ╟─ca22e3fe-5cb7-4910-b9fa-890fd2d20e4b
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
 # ╟─de2c826d-6c05-47cf-b5f5-44a00ea9889c
 # ╟─d8f00649-e2ed-4bdd-853f-05268f0d5353
@@ -1725,9 +1681,9 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
 # ╠═1ff59725-ba1e-4309-9b8c-19a30adb36db
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
-# ╟─50ccc291-3625-4639-afd1-5209899d904e
+# ╠═50ccc291-3625-4639-afd1-5209899d904e
 # ╠═5df5ee46-b0d3-47a8-835b-b3f21a3cab34
-# ╠═783e2058-c720-4f31-8e51-7c313813924c
+# ╟─783e2058-c720-4f31-8e51-7c313813924c
 # ╠═f8e6c01b-e64e-4fa2-a84a-e20f9b60287c
 # ╠═f0aecbbc-3c8c-4984-8704-fd79f986beb2
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
@@ -1744,7 +1700,7 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
 # ╠═52a5bbd2-0278-4d92-95f1-367797f636e6
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 # ╠═b64c0d67-016d-4bca-9fae-150cf50efc77
-# ╟─2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
+# ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
@@ -1752,17 +1708,15 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
 # ╠═82baec54-048a-4851-8808-dd8c31eae4b9
 # ╠═8c367e8f-df43-4f21-bef0-55060f36f44e
 # ╠═b7cb5183-65e8-4ee8-af86-2bedd11daecc
-# ╠═842b074b-f808-48d8-8dc5-110ddd907f90
-# ╠═31298257-d35a-4f6f-8a76-ff00d5361ced
-# ╠═a1ebe9f4-571a-4d65-99c9-c693e520288e
+# ╟─842b074b-f808-48d8-8dc5-110ddd907f90
+# ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 # ╠═84d1270b-8df5-4d5d-a153-da4ffdb1d283
 # ╠═11b12556-5b61-42c2-a911-4ea98a0a1e85
-# ╠═7a02463d-cfd9-4648-af53-f1e65d46733f
+# ╟─7a02463d-cfd9-4648-af53-f1e65d46733f
 # ╟─114d2324-5289-4e44-8d77-736a9bdec365
 # ╟─659091d3-60b2-4158-80e2-cd28a492e870
 # ╟─c4876d26-e841-4e28-8303-131d4635fc23
-# ╠═3bcb8261-5b98-4f4d-a9fe-fb71d5c5b476
 # ╠═5dd1a1e6-7db1-479e-a684-accec53ce06a
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╠═1cd669ac-05eb-48b2-b457-8c395cd5807d
@@ -1778,5 +1732,6 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
 # ╟─9d7d4d68-c9cc-4a42-a99d-ae25a1ab554c
 # ╠═e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
 # ╠═315dd351-9d68-48f1-aa7a-8f43f3dec6ac
+# ╠═7454f68a-64dc-4676-b2b2-ed8fcb35d81e
 # ╠═ae50877a-20da-4b1a-acd5-cc0a73e428da
 # ╠═3ac837b8-559b-41c2-8f83-1331839dcf7e
