@@ -472,22 +472,6 @@ md"""
 # ╔═╡ 952a26ce-2610-48cc-9158-eda816da3a1c
 molarities = [0.005, 0.01, 0.05, 0.1, 0.5] 
 
-# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
-function pb_bcondition(f, u, bnode, data)
-    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
-	
-    ## Dirichlet ϕ=ϕ_we at Γ_we
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-    #boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
-
-	## Robin ϕ=dϕ₀/dx
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
-
-
-    return bulkbcondition(f, u, bnode, data)
-end
-
 # ╔═╡ d76d8413-c019-4728-b182-7f7cb78dede4
 md"""
 ### Result Plots
@@ -623,7 +607,7 @@ function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1], 
-              limits = ((-1.0, 1.5),(-0.50, 7)),
+              #limits = ((-1.0, 1.5),(-0.50, 7)),
 			  ylabel = "Current Density(mA/cm²)",
 			  xlabel = "Voltage (ϕ-ϕₚ)"
 			 )
@@ -818,7 +802,7 @@ floataside(
     @bind user_input confirm(
         PlutoUI.combine() do Child
 	md"""
-	##### __User Data__  
+	###### __User Data__  
 	``CO_2 + H_2O + 2e^- \leftrightharpoons CO + 2OH^-``
 			
 	- ``V_\mathrm{min}``: $(Child("vmin", NumberField(-2.0:0.1:0.0; default = -1.5)))  ``V_\mathrm{max}``: $(Child("vmax", NumberField(0.0:0.1:2.0; default = 1.5)))
@@ -834,7 +818,7 @@ floataside(
 	
 	---
 	
-	##### __Parameter Set__
+	###### __Parameter Set__
 	
 	- __Other ions__  
 	  ``a``: $(Child("at", NumberField(0.0:0.1:20.0; default = 8.2)))  
@@ -846,20 +830,20 @@ floataside(
 	
 	---
 	
-	##### __Model Selection__  
+	###### __Model Selection__  
 	- Model: $(Child("model_choice", Select(["Gold_Model", "Landstorfer_NaClO₄ model", "Landstorfer_NaF model"])))
 	
 	---
 	
-	##### __Activity Coefficient__  
+	###### __Activity Coefficient__  
 	- Mode: $(Child("mode", Select(["Stefan_γ", "DGML_γ"])))
+	- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Dirichlet"])))
 	"""
 	        end;
 	        label = "Submit"
 	    );
 	    top = 50
-	)
-
+)
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
@@ -882,7 +866,7 @@ begin
 							D = 0.923e-9, 
 							c_bulk = 2.68e-5,
 							a = at,  
-							κ = κt, 
+							κ = κt * 2, 
 							color = :violet
 				),
 				BulkSpecies(;name = "CO₂",
@@ -1227,81 +1211,6 @@ begin
 	        error("Unknown model choice: $model_key")
 end
 
-# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
-function pnp_bcondition(
-	f,
-	u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
-	bnode,
-	data
-) where {Tval, Tv, Tc, Tp, Ti}
-	
-	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
-
-	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
-
-    ## Dirichlet ϕ=ϕ_we at Γ_we
-    #boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)	
-	
-	# Robin b.c. for the Poisson equation
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-
-	if bnode.region == Γ_we && model == elydata_Gold
-			we_breactions(f, u, bnode, data)
-	end
-	nothing
-end;
-
-# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
-function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
-    kwargs 	 	= merge(solver_control, kwargs) 
-    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
-	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
-
-	cell, ivresult
-end;
-
-# ╔═╡ 45451a14-17b9-4754-b56b-c9b8e8cce1b4
-begin
-	reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
-	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
-
-end
-
-# ╔═╡ 675ab1d0-a4e8-44a1-9d16-c2293e802868
-sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
-
-# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
-begin
-	try
-		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-		Low_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_Low_κ.voltages,
-		    Landstorfer_Low_κ.dlcaps,
-		    color = :black,
-		    linestyle = :dot,
-		    label = "κ = 0",
-			xlimits = (-0.5, 0.5),
-	        xlabel = "φ / (V vs φ_pzc)",
-	        ylabel = "dlcaps / (μF / cm²)",
-		    clear = true,  
-		)
-		High_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_High_κ.voltages,
-		    Landstorfer_High_κ.dlcaps,
-		    color = :blue,
-		    linestyle = :dot,
-		    label = "κ = 40",
-		    clear = false,
-		)
-		
-		capsplot_κ(vis_κ, sys_pb)
-		reveal(vis_κ)
-	catch
-	end
-end
-
 # ╔═╡ 5df5ee46-b0d3-47a8-835b-b3f21a3cab34
 is_Landstorfer = model != elydata_Gold
 
@@ -1350,11 +1259,172 @@ function capscalc(sys, molarities)
 end
 
 
-# ╔═╡ 6c0608c4-a785-471a-8e03-16a5b16508b8
-result_pb = capscalc(sys_pb, molarities)
+# ╔═╡ b21c8394-f847-477e-ac8f-713398b81166
+function capsplot(vis, result, title)
+    if is_Landstorfer
+        hmol = 1 / length(result)
+        for imol in 1:length(result)
+            c = RGB(imol * hmol, 0, 1 - imol * hmol)
+            voltages = result[imol].voltage_range[1:201]
+            caps = vec(result[imol].dlcaps)[1:201]
+
+            scalarplot!(
+                vis, voltages, caps / (μF / cm^2);
+                color = c, clear = false, label = "$(result[imol].molarity)M",
+                markershape = :none, title = title,
+                xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+            )
+
+            scalarplot!(
+                vis, [0], [result[imol].cdl0] / (μF / cm^2);
+                clear = false, markershape = :circle, markersize = 8, label = ""
+            )
+        end
+    else
+        voltages = result[1].voltage_range[1:201]
+        caps = vec(result[1].dlcaps)[1:201]
+
+        scalarplot!(
+            vis, voltages, caps / (μF / cm^2);
+            limits = (-1, 100), xlimits = (-1.1, 1.1),
+            color = :green, clear = false, label = "$title",
+            title = title, markershape = :none, yscale = 10,
+            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+        )
+        # scalarplot!(
+        #     vis, [0], [result[1].cdl0] / (μF / cm^2);
+        #     clear = false, markershape = :circle, markersize = 8, label = ""
+        # )
+    end
+    return vis
+end;
+
+# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
+function pnp_bcondition(
+	f,
+	u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
+	bnode,
+	data
+) where {Tval, Tv, Tc, Tp, Ti}
+	
+	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
+
+	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
+
+	if user_input.BC_Select == "Dirichlet"
+	    ## Dirichlet ϕ=ϕ_we at Γ_we
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)	
+	else
+		# Robin b.c. for the Poisson equation
+		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+	end
+	
+	if bnode.region == Γ_we && model == elydata_Gold
+			we_breactions(f, u, bnode, data)
+	end
+	nothing
+end;
+
+# ╔═╡ 45451a14-17b9-4754-b56b-c9b8e8cce1b4
+begin
+	reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
+	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
+
+end
 
 # ╔═╡ 1ff59725-ba1e-4309-9b8c-19a30adb36db
 result_pnp = capscalc(sys_pnp, molarities)
+
+# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
+function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
+    kwargs 	 	= merge(solver_control, kwargs) 
+    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
+
+	cell, ivresult
+end;
+
+# ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
+cell, result = simulate_CO2R(grid, model; voltages)
+
+# ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
+(~, default_index) = findmin(abs, result.voltages .+ 0.9 * ufac"V");
+
+# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
+plot1d(result, celldata)
+
+# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
+let
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	df = Dict(:voltage => table[:,1], :current => table[:,2])
+	plotcurr(result; df=df)
+end
+
+# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
+if runregtest
+	sresult = load("./data/regressionresults.jld2")["regressionresults"]
+
+	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
+	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
+	
+	if any(isnothing.(vidxs_sresult))
+		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
+	end
+
+	@testset begin
+	@testset "Concentrations" begin
+		@testset "$(bulk[ia].name)" for ia in 1:nc
+			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
+				@test all(isapprox(
+					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
+					rtol = 1.0e-5
+				))
+			end
+		end
+	end
+
+	@testset "Currents" begin
+		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
+			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
+											sresult.j_we[vidx_result][iohminus])
+				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
+			end
+		end
+	end
+	end
+end;
+
+# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
+function pb_bcondition(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+
+	if user_input.BC_Select == "Dirichlet"
+	    ## Dirichlet ϕ=ϕ_we at Γ_we
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+	    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+	else
+		## Robin ϕ=dϕ₀/dx
+		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
+# ╔═╡ 675ab1d0-a4e8-44a1-9d16-c2293e802868
+sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
+
+# ╔═╡ 6c0608c4-a785-471a-8e03-16a5b16508b8
+result_pb = capscalc(sys_pb, molarities)
+
+# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
+    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
+    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
+
+    reveal(vis)
+end
 
 # ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
 let
@@ -1415,104 +1485,37 @@ let
 	end
 end
 
-# ╔═╡ b21c8394-f847-477e-ac8f-713398b81166
-function capsplot(vis, result, title)
-    if is_Landstorfer
-        hmol = 1 / length(result)
-        for imol in 1:length(result)
-            c = RGB(imol * hmol, 0, 1 - imol * hmol)
-            voltages = result[imol].voltage_range[1:201]
-            caps = vec(result[imol].dlcaps)[1:201]
-
-            scalarplot!(
-                vis, voltages, caps / (μF / cm^2);
-                color = c, clear = false, label = "$(result[imol].molarity)M",
-                markershape = :none, title = title,
-                xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
-            )
-
-            scalarplot!(
-                vis, [0], [result[imol].cdl0] / (μF / cm^2);
-                clear = false, markershape = :circle, markersize = 8, label = ""
-            )
-        end
-    else
-        voltages = result[1].voltage_range[1:201]
-        caps = vec(result[1].dlcaps)[1:201]
-
-        scalarplot!(
-            vis, voltages, caps / (μF / cm^2);
-            limits = (-1, 100), xlimits = (-1.1, 1.1),
-            color = :green, clear = false, label = "$title",
-            title = title, markershape = :none, yscale = 10,
-            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
-        )
-        # scalarplot!(
-        #     vis, [0], [result[1].cdl0] / (μF / cm^2);
-        #     clear = false, markershape = :circle, markersize = 8, label = ""
-        # )
-    end
-    return vis
-end;
-
-# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
-    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
-
-    reveal(vis)
+# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
+begin
+	try
+		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+		Low_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_Low_κ.voltages,
+		    Landstorfer_Low_κ.dlcaps,
+		    color = :black,
+		    linestyle = :dot,
+		    label = "κ = 0",
+			xlimits = (-0.5, 0.5),
+	        xlabel = "φ / (V vs φ_pzc)",
+	        ylabel = "dlcaps / (μF / cm²)",
+		    clear = true,  
+		)
+		High_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_High_κ.voltages,
+		    Landstorfer_High_κ.dlcaps,
+		    color = :blue,
+		    linestyle = :dot,
+		    label = "κ = 40",
+		    clear = false,
+		)
+		
+		capsplot_κ(vis_κ, sys_pb)
+		reveal(vis_κ)
+	catch
+	end
 end
-
-# ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
-cell, result = simulate_CO2R(grid, model; voltages)
-
-# ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
-(~, default_index) = findmin(abs, result.voltages .+ 0.9 * ufac"V");
-
-# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-plot1d(result, celldata)
-
-# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	plotcurr(result; df=df)
-end
-
-# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
-if runregtest
-	sresult = load("./data/regressionresults.jld2")["regressionresults"]
-
-	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
-	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
-	
-	if any(isnothing.(vidxs_sresult))
-		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
-	end
-
-	@testset begin
-	@testset "Concentrations" begin
-		@testset "$(bulk[ia].name)" for ia in 1:nc
-			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
-				@test all(isapprox(
-					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
-					rtol = 1.0e-5
-				))
-			end
-		end
-	end
-
-	@testset "Currents" begin
-		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
-			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
-											sresult.j_we[vidx_result][iohminus])
-				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
-			end
-		end
-	end
-	end
-end;
 
 # ╔═╡ b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 begin 
@@ -1568,7 +1571,7 @@ floataside(
 
     __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
     """,
-    top = 700
+    top = 750
 )
 
 
@@ -1627,7 +1630,7 @@ floataside(
 	**Voltage:** $(round(result.voltages[vindex], digits=3)) V    
 	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
 	""",
-	top = 649
+	top = 678
 )
 
 # ╔═╡ Cell order:
