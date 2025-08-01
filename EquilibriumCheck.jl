@@ -160,6 +160,9 @@ begin
 	)
 end;
 
+# ╔═╡ 2ac40cfb-ed5d-4272-ba00-1c16f451ecc7
+v0
+
 # ╔═╡ 00947475-c96e-4ecc-a1ef-5be5e3e3c864
 begin
 	@kwdef struct BulkSpecies
@@ -173,16 +176,17 @@ begin
 		M::Float64
 		color::Symbol
 	end
-	function BulkSpecies(;name, z, c_bulk=nothing, D, κ=0.0, a=0.0, color)
+	function BulkSpecies(;name, z, c_bulk=nothing, D, κ=nothing, color)
 		D *= m^2/s
 		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
-		a *= Å
-		v = N_A * a^3
+		a = v0^(1/3)
+		v = v0 * (κ * abs(z) + 1)
 		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 	function make_eneutral(bulk_species::Vector{BulkSpecies}
-						  ;name, z, D, κ=0.0, a=0.0, v=N_A*(a*Å)^3, M=M0*v, color)
+						  ;name, z, D, κ=0.0, a=0.0, v = v0 * (κ * abs(z) + 1)
+, M=M0*v, color)
 		a *= Å
 		c_bulk = -mapreduce(x -> x.c_bulk * x.z, +, bulk_species)/z
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
@@ -534,6 +538,9 @@ md"""
 nnpresult = sweep(model; eneutral = true, tunnel = false)
   ╠═╡ =#
 
+# ╔═╡ b101c921-44c3-4b2f-b7c3-2b889e37d6c0
+CV = CSV.read("CV_Experiment/MTM Koper.csv", DataFrame);
+
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 md"""
 ### Result Plots
@@ -607,7 +614,7 @@ function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1], 
-              #limits = ((-1.0, 1.5),(-0.50, 7)),
+              limits = ((-1.0, 1.5),(-0.50, 7)),
 			  ylabel = "Current Density(mA/cm²)",
 			  xlabel = "Voltage (ϕ-ϕₚ)"
 			 )
@@ -821,11 +828,9 @@ floataside(
 	###### __Parameter Set__
 	
 	- __Other ions__  
-	  ``a``: $(Child("at", NumberField(0.0:0.1:20.0; default = 8.2)))  
 	  ``κ``: $(Child("κt", NumberField(0.0:0.1:20.0; default = 8.0)))
 	
 	- __Cation__  
-	  ``a``: $(Child("ak", NumberField(0.0:0.1:20.0; default = 8.2)))  
 	  ``κ``: $(Child("κk", NumberField(0.0:0.1:20.0; default = 8.0)))
 	
 	---
@@ -847,9 +852,9 @@ floataside(
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
-	at = user_input[:at]
+	#at = user_input[:at]
 	κt = user_input[:κt]
-	ak = user_input[:ak]
+	#ak = user_input[:ak]
 	κk = user_input[:κk]
 	const bulk = let 
 		bulk = [
@@ -857,7 +862,7 @@ begin
 							z = -1, 
 							D = 1.185e-9, 
 							c_bulk = 0.091, 
-							a = at, 
+							#v = v0*(κt+1),
 							κ = κt, 
 							color = :brown
 				),
@@ -865,7 +870,7 @@ begin
 							z = -2, 
 							D = 0.923e-9, 
 							c_bulk = 2.68e-5,
-							a = at,  
+							#v = v0*(κt+1), 
 							κ = κt * 2, 
 							color = :violet
 				),
@@ -873,7 +878,7 @@ begin
 							z = 0, 
 							D = 1.91e-9, 
 							c_bulk = 0.033, 
-							a = at, 
+							#v =v0, 
 							κ = 0, 
 							color=:red
 				),
@@ -881,7 +886,7 @@ begin
 							z = -1, 
 							D = 5.273e-9, 
 							c_bulk = 10^(pH-14), 
-							a = at, 
+							#v = v0*(κt+1), 
 							κ = κt, 
 							color = :green
 				),
@@ -889,7 +894,7 @@ begin
 							z = 1, 
 							D = 9.310e-9, 
 							c_bulk = 10^(-pH), 
-							a = at, 
+							#v = v0*(κt+1), 
 							κ = κt, 
 							color = :gray
 				),
@@ -897,7 +902,7 @@ begin
 							z = 0,
 							D = 2.23e-9,
 							c_bulk = 0.0,
-							a = at, 
+							#v = v0, 
 							κ = 0,  
 							color=:blue
 				)
@@ -906,7 +911,7 @@ begin
 									   z = 1, 
 									   D = 1.957e-9,
 		
-									   a = ak, 
+									   #v = v0*(κt+1), 
 									   κ = κk, 
 									   color = :orange
 								  )
@@ -1558,6 +1563,32 @@ end
 # ╔═╡ 52a5bbd2-0278-4d92-95f1-367797f636e6
 CVPlot!(pnpresult, model)
 
+# ╔═╡ 27075c18-4da9-42f4-b5a8-d36bc7b4930d
+let
+    ic = model.cspecies
+    fig = Figure(size = (650, 400))
+    ax = Axis(fig[1, 1], 
+              limits = ((-1.4, 1.4),(-7, 1.5)),
+			  ylabel = "Current Density(mA/cm²)",
+			  xlabel = "Voltage (ϕ-ϕₚ)"
+			 )
+	
+    total_current = zero(currents(pnpresult, ic[1]))
+    #for s in ic
+    #    total_current .+= (currents(result, s) * mA / cm^2)
+    #end
+	total_current = currents(pnpresult, ico)
+
+	
+    lines!(ax, pnpresult.voltages.-ϕ_pzc, total_current,
+           color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+
+	plot!(ax, CV.voltages, CV.currents, markersize = 5)
+
+	
+    fig
+end
+
 # ╔═╡ 4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 conc_time_func(pnpresult, sawtooth)
 
@@ -1641,6 +1672,7 @@ floataside(
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
+# ╠═2ac40cfb-ed5d-4272-ba00-1c16f451ecc7
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
@@ -1698,9 +1730,11 @@ floataside(
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═39c8ef0d-aac2-4c7f-8004-4166c460ebc5
+# ╠═b101c921-44c3-4b2f-b7c3-2b889e37d6c0
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 # ╠═cb9b0158-f17d-4136-8994-360f3078c7df
 # ╠═52a5bbd2-0278-4d92-95f1-367797f636e6
+# ╠═27075c18-4da9-42f4-b5a8-d36bc7b4930d
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 # ╠═b64c0d67-016d-4bca-9fae-150cf50efc77
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
