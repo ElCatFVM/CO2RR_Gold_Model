@@ -539,7 +539,7 @@ nnpresult = sweep(model; eneutral = true, tunnel = false)
   ╠═╡ =#
 
 # ╔═╡ b101c921-44c3-4b2f-b7c3-2b889e37d6c0
-CV = CSV.read("CV_Experiment/MTM Koper.csv", DataFrame);
+CV = CSV.read("Langmuir 2021, 37, 5707−5716/MTM Koper.csv", DataFrame);
 
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 md"""
