@@ -135,7 +135,7 @@ begin
 	const isurfaceend = 10
 	const na 		= 3 # CO_t, CO2_t, COOH_t
 	const M0 		= 18.0153 * ufac"g/mol"
-	const v0        = N_A * (8.2 * Å)^3 # 1 / (55.4 * ufac"M") #
+	const v0        = N_A * (8.2 * Å)^3#18.048 * ufac"cm^3/mol"# # 1 / (55.4 * ufac"M") #
 	
 	const species_dict = Dict(
 		"K⁺" => ikplus,
@@ -161,7 +161,14 @@ begin
 end;
 
 # ╔═╡ 2ac40cfb-ed5d-4272-ba00-1c16f451ecc7
-v0
+### Pluto 셀: 전역 상태
+const RUNSTATE = (
+    last_sig      = Ref{UInt64}(0),  # 마지막 계산에 쓰인 (파라미터) 시그니처
+    last_go       = Ref{Int}(0),     # 마지막 계산 시 go 값
+    last_form_sig = Ref{UInt64}(0),  # 마지막으로 반영된 "폼 제출" 시그니처
+    cache         = Ref{Any}(nothing)
+)
+
 
 # ╔═╡ 00947475-c96e-4ecc-a1ef-5be5e3e3c864
 begin
@@ -180,8 +187,8 @@ begin
 		D *= m^2/s
 		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
 		a = 0.0 * Å            # (v0/N_A)^(1/3)
-		v = 0.0#v0 * (κ + 1)
-		M = 0.0#M0 * v
+		v = 0.0 #v0 * (κ + 1)
+		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 	function make_eneutral(bulk_species::Vector{BulkSpecies}
@@ -192,92 +199,6 @@ begin
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 end;
-
-# ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
-begin
-	#at = user_input[:at]
-	κt = 0.0 #user_input[:κt]
-	#ak = user_input[:ak]
-	κk = 0.0 #user_input[:κk]
-	const bulk = let 
-		bulk = [
-				BulkSpecies(;name = "HCO₃⁻", 
-							z = -1, 
-							D = 1.185e-9, 
-							c_bulk = 0.091, 
-							#v = v0*(κt+1),
-							κ = κt, 
-							color = :brown
-				),
-				BulkSpecies(;name = "CO₃²⁻",
-							z = -2, 
-							D = 0.923e-9, 
-							c_bulk = 2.68e-5,
-							#v = v0*(κt+1), 
-							κ = κt * 2, 
-							color = :violet
-				),
-				BulkSpecies(;name = "CO₂",
-							z = 0, 
-							D = 1.91e-9, 
-							c_bulk = 0.033, 
-							#v =v0, 
-							κ = 0, 
-							color=:red
-				),
-				BulkSpecies(;name = "OH⁻",
-							z = -1, 
-							D = 5.273e-9, 
-							c_bulk = 10^(pH-14), 
-							#v = v0*(κt+1), 
-							κ = κt, 
-							color = :green
-				),
-				BulkSpecies(;name = "H⁺", 
-							z = 1, 
-							D = 9.310e-9, 
-							c_bulk = 10^(-pH), 
-							#v = v0*(κt+1), 
-							κ = κt, 
-							color = :gray
-				),
-				BulkSpecies(;name="CO",
-							z = 0,
-							D = 2.23e-9,
-							c_bulk = 0.0,
-							#v = v0, 
-							κ = 0,  
-							color=:blue
-				)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺", 
-									   z = 1, 
-									   D = 1.957e-9,
-		
-									   #v = v0*(κt+1), 
-									   κ = κk, 
-									   color = :orange
-								  )
-		)
-		sort(bulk, by=x->species_dict[x.name])
-	end
-end;
-
-# ╔═╡ 06f52599-7006-4a5c-ba86-0b668b6952c9
-begin
-	function create_markdown(bulk::Vector{BulkSpecies})
-		table = """
-| Name | z | D | c_bulk | a | v | M | κ | color |
-|------|---|---|--------|---|---|---|---|-------|
-"""
-		for sp in bulk
-			(; name, z, D, c_bulk, a, v, M, κ, color) = sp
-			table *= @sprintf("| %s | %i | %1.3e | %1.3e | %1.3e | %1.3e | %1.3e | %1.2f | %s |\n", name, z, D, c_bulk, a, v, M, κ, color) 
-		end
-		Markdown.parse(table)
-	end
-	create_markdown(bulk)
-end
 
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
@@ -574,33 +495,13 @@ md"""
 # ╔═╡ 952a26ce-2610-48cc-9158-eda816da3a1c
 molarities = [0.005, 0.01, 0.05, 0.1, 0.5] 
 
-# ╔═╡ 6c0608c4-a785-471a-8e03-16a5b16508b8
-# ╠═╡ disabled = true
-#=╠═╡
-result_pb = capscalc(sys_pb, molarities)
-  ╠═╡ =#
-
-# ╔═╡ 1ff59725-ba1e-4309-9b8c-19a30adb36db
-# ╠═╡ disabled = true
-#=╠═╡
-result_pnp = capscalc(sys_pnp, molarities)
-  ╠═╡ =#
+# ╔═╡ 4656ee04-ae86-442f-b37c-c5563170f992
+@bind go CounterButton("Compute DLCap")
 
 # ╔═╡ d76d8413-c019-4728-b182-7f7cb78dede4
 md"""
 ### Result Plots
 """
-
-# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-#=╠═╡
-let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
-    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
-
-    reveal(vis)
-end
-  ╠═╡ =#
 
 # ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
 #=╠═╡
@@ -667,41 +568,6 @@ end
 md"""
 ##### κ(Solvation Number) Plots
 """
-
-# ╔═╡ f8e6c01b-e64e-4fa2-a84a-e20f9b60287c
-function capsplot_κ(vis, sys; n::Int=7)
-    color = [RGB(0, 0, (i/n)) for i in 1:n]
-    dls = LiquidElectrolytes.DLCapSweepResult[]
-    κ_values = [0, 1, 5, 10, 20, 30, 40]
-
-    sys = deepcopy(sys)
-    κ_original = deepcopy(electrolytedata(sys).κ)
-
-    for j in 1:n
-        electrolytedata(sys).κ .= κ_values[j]
-        electrolytedata(sys).c_bulk .= [0.05, 0.05] * ufac"mol/dm^3"
-
-        try
-            result = caps(sys)
-            push!(dls, result)
-            
-            scalarplot!(
-                vis,
-                result.voltages,
-                result.dlcaps / (μF / cm^2),
-			    linestyle = :solid,
-                color = color[j],
-                clear = false,
-                label = "κ = $(κ_values[j])"
-            )
-        catch e
-            @warn "caps failed at κ=$(κ_values[j])" exception=e
-        end
-    end
-	electrolytedata(sys)
-	
-    electrolytedata(sys).κ .= κt # 복구
-end
 
 # ╔═╡ 9598e2c6-521e-4f8d-82d8-a836809736f3
 md"""
@@ -826,44 +692,14 @@ function plot_concentration_profile(result, X, bulk; filename = "concentration_p
     return isdefined(Main, :PlutoRunner) ? LocalResource(filename) : nothing
 end
 
-# ╔═╡ 8c367e8f-df43-4f21-bef0-55060f36f44e
-function conc_time_func(result, scan)
-    species = getproperty.(bulk, :name)
-    colors = getproperty.(bulk, :color)
-    times = result.tsol.t
-    nt = length(times)
-    nspecies = 7
-
-    conc_at_electrode = [result.tsol[i, 1, t] / (mol / dm^3) for i in 1:nspecies, t in 1:nt]
-
-    fig = Figure(size = (650, 400))
-    ax = Axis(
-        fig[1, 1];
-        xlabel = L"time / s",
-        ylabel = L"c_{i,\,\text{electrode}} / (mol/dm^3)",
-        yscale = log10
-    )
-
-    for i in 1:nspecies
-    	yvals = conc_at_electrode[i, :]
-    	yvals_safe = [c > 0 ? c : NaN for c in yvals]
-    	lines!(ax, times, yvals_safe, color = colors[i], label = species[i])
-	end
-
-
-    Legend(fig[1, 2], ax; labelsize = 10, backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5))
-    fig
-end
-
-
 # ╔═╡ b7cb5183-65e8-4ee8-af86-2bedd11daecc
 function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1], 
-              #limits = ((-1.0, 1.5),(-0.50, 7)),
-			  ylabel = "Current Density(mA/cm²)",
-			  xlabel = "Voltage (ϕ-ϕₚ)"
+ 			  #limits = ((-1.25, -0.4),(-20, 2)),
+              ylabel = L"I (mA/cm²)",
+              xlabel = L"φ (V vs SHE)"
 			 )
 	
     total_current = zero(currents(result, ic[1]))
@@ -912,83 +748,6 @@ md"""
 ### Plotting Functions
 """
 
-# ╔═╡ 2ce5aa45-4aa5-4c2a-a608-f581266e55f0
-begin
-	function addplot(vis, sol, vshow)
-		species = getproperty.(bulk, :name)
-		colors = getproperty.(bulk, :color)
-		
-		scale = 1.0 / (mol / dm^3)
-	    title = @sprintf("Φ_we=%+1.2f [V vs. SHE]", vshow)
-	
-		if useonly_pH
-			i = findfirst(isequal("H⁺"), species)
-			scalarplot!(vis, 
-					    grid.components[XCoordinates] .+ 1.0e-14, 
-					    log10.(sol[ihplus, :] * scale), 
-					    color = colors[i],
-					    label = species[i],
-					    clear = true,
-						title = title)
-		else
-			scalarplot!(vis, 
-						grid.components[XCoordinates] .+ 1.0e-14, 
-						log10.(sol[1, :] * scale), 
-						color = colors[1],
-						label = species[1],
-						clear = true,
-						title = title)
-			for ia = 2:nc			
-				scalarplot!(vis, 
-						    grid.components[XCoordinates] .+ 1.0e-14, 
-						    log10.(sol[ia, :] * scale), 
-						    color = colors[ia],
-						    label = species[ia],
-						    clear = false,)
-			end
-		end
-	end
-	function plot1d(result, celldata, vshow; df_compare = nothing)
-		tsol 	= LiquidElectrolytes.voltages_solutions(result)
-		vis 	= GridVisualizer(;
-								 size 	= (600, 300),
-								 clear 	= true,
-								 legend 	= :rt,
-								 limits 	= (-14, 2),
-								 xlimits    = (10e-12, 80 * μm),
-								 xlabel 	= "Distance from electrode [m]",
-	 							 ylabel 	= "log c(aᵢ)", 
-								 xscale 	= :log,)
-	    addplot(vis, tsol(vshow), vshow)
-		if !isnothing(df_compare)
-			addplot(vis, df_compare)
-		end
-		reveal(vis)
-	end
-
-	function plot1d(result, celldata)
-    	tsol  	= LiquidElectrolytes.voltages_solutions(result)
-		vis  	= GridVisualizer(; 
-								 size 	= (600, 300),
-								 clear 	= true,
-							 	 legend = :rt,
-								 limits = (-14, 2),
-								 xlimits= (10e-12, 80 * μm),
-								 xlabel = "Distance from electrode [m]",
- 								 ylabel = "log c(aᵢ)", 
-								 xscale = :log,)
-	
-		vrange = result.voltages[end:-5:1]
-		movie(vis, file="concentrations.gif", framerate=3) do vis
-		for vshow_it in vrange
-			addplot(vis, tsol(vshow_it), vshow_it)
-			reveal(vis)
-		end
-		end
-		isdefined(Main, :PlutoRunner) && LocalResource("concentrations.gif")
-	end
-end
-
 # ╔═╡ 686ac3dc-c191-4575-ba0c-d4c2551474b5
 md"""
 ### Regression Test
@@ -998,40 +757,6 @@ md"""
 md"""
 Run regression tests $(@bind runregtest PlutoUI.CheckBox())
 """
-
-# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
-if runregtest
-	sresult = load("./data/regressionresults.jld2")["regressionresults"]
-
-	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
-	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
-	
-	if any(isnothing.(vidxs_sresult))
-		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
-	end
-
-	@testset begin
-	@testset "Concentrations" begin
-		@testset "$(bulk[ia].name)" for ia in 1:nc
-			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
-				@test all(isapprox(
-					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
-					rtol = 1.0e-5
-				))
-			end
-		end
-	end
-
-	@testset "Currents" begin
-		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
-			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
-											sresult.j_we[vidx_result][iohminus])
-				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
-			end
-		end
-	end
-	end
-end;
 
 # ╔═╡ de144adb-a467-4077-8cb1-d86462f56110
 html"""<hr>"""
@@ -1140,7 +865,7 @@ floataside(
 	- ``L``: 80 μm  
 	- `Double64`: $(Child("double64", CheckBox()))  
 	- `tunnel`: $(Child("tunnel", CheckBox()))
-	
+	- `scanup`: $(Child("scanup", CheckBox()))
 	---
 	
 	###### __Parameter Set__
@@ -1167,6 +892,234 @@ floataside(
 	    );
 	    top = 50
 )
+
+# ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
+begin
+	#at = user_input[:at]
+	κt = user_input[:κt]
+	#ak = user_input[:ak]
+	κk = user_input[:κk]
+	const bulk = let 
+		bulk = [
+				BulkSpecies(;name = "HCO₃⁻", 
+							z = -1, 
+							D = 1.185e-9, 
+							c_bulk = 0.091, 
+							#v = v0*(κt+1),
+							κ = κt, 
+							color = :brown
+				),
+				BulkSpecies(;name = "CO₃²⁻",
+							z = -2, 
+							D = 0.923e-9, 
+							c_bulk = 2.68e-5,
+							#v = v0*(κt+1), 
+							κ = κt * 2, 
+							color = :violet
+				),
+				BulkSpecies(;name = "CO₂",
+							z = 0, 
+							D = 1.91e-9, 
+							c_bulk = 0.033, 
+							#v =v0, 
+							κ = 0, 
+							color=:red
+				),
+				BulkSpecies(;name = "OH⁻",
+							z = -1, 
+							D = 5.273e-9, 
+							c_bulk = 10^(pH-14), 
+							#v = v0*(κt+1), 
+							κ = κt, 
+							color = :green
+				),
+				BulkSpecies(;name = "H⁺", 
+							z = 1, 
+							D = 9.310e-9, 
+							c_bulk = 10^(-pH), 
+							#v = v0*(κt+1), 
+							κ = κt, 
+							color = :gray
+				),
+				BulkSpecies(;name="CO",
+							z = 0,
+							D = 2.23e-9,
+							c_bulk = 0.0,
+							#v = v0, 
+							κ = 0,  
+							color=:blue
+				)
+		]
+		push!(bulk, make_eneutral(bulk;name="K⁺", 
+									   z = 1, 
+									   D = 1.957e-9,
+		
+									   #v = v0*(κt+1), 
+									   κ = κk, 
+									   color = :orange
+								  )
+		)
+		sort(bulk, by=x->species_dict[x.name])
+	end
+end;
+
+# ╔═╡ 06f52599-7006-4a5c-ba86-0b668b6952c9
+begin
+	function create_markdown(bulk::Vector{BulkSpecies})
+		table = """
+| Name | z | D | c_bulk | a | v | M | κ | color |
+|------|---|---|--------|---|---|---|---|-------|
+"""
+		for sp in bulk
+			(; name, z, D, c_bulk, a, v, M, κ, color) = sp
+			table *= @sprintf("| %s | %i | %1.3e | %1.3e | %1.3e | %1.3e | %1.3e | %1.2f | %s |\n", name, z, D, c_bulk, a, v, M, κ, color) 
+		end
+		Markdown.parse(table)
+	end
+	create_markdown(bulk)
+end
+
+# ╔═╡ f8e6c01b-e64e-4fa2-a84a-e20f9b60287c
+function capsplot_κ(vis, sys; n::Int=7)
+    color = [RGB(0, 0, (i/n)) for i in 1:n]
+    dls = LiquidElectrolytes.DLCapSweepResult[]
+    κ_values = [0, 1, 5, 10, 20, 30, 40]
+
+    sys = deepcopy(sys)
+    κ_original = deepcopy(electrolytedata(sys).κ)
+
+    for j in 1:n
+        electrolytedata(sys).κ .= κ_values[j]
+        electrolytedata(sys).c_bulk .= [0.05, 0.05] * ufac"mol/dm^3"
+
+        try
+            result = caps(sys)
+            push!(dls, result)
+            
+            scalarplot!(
+                vis,
+                result.voltages,
+                result.dlcaps / (μF / cm^2),
+			    linestyle = :solid,
+                color = color[j],
+                clear = false,
+                label = "κ = $(κ_values[j])"
+            )
+        catch e
+            @warn "caps failed at κ=$(κ_values[j])" exception=e
+        end
+    end
+	electrolytedata(sys)
+	
+    electrolytedata(sys).κ .= κt # 복구
+end
+
+# ╔═╡ 8c367e8f-df43-4f21-bef0-55060f36f44e
+function conc_time_func(result, scan)
+    species = getproperty.(bulk, :name)
+    colors = getproperty.(bulk, :color)
+    times = result.tsol.t
+    nt = length(times)
+    nspecies = 7
+
+    conc_at_electrode = [result.tsol[i, 1, t] / (mol / dm^3) for i in 1:nspecies, t in 1:nt]
+
+    fig = Figure(size = (650, 400))
+    ax = Axis(
+        fig[1, 1];
+        xlabel = L"time / s",
+        ylabel = L"c_{i,\,\text{electrode}} / (mol/dm^3)",
+        yscale = log10
+    )
+
+    for i in 1:nspecies
+    	yvals = conc_at_electrode[i, :]
+    	yvals_safe = [c > 0 ? c : NaN for c in yvals]
+    	lines!(ax, times, yvals_safe, color = colors[i], label = species[i])
+	end
+
+
+    Legend(fig[1, 2], ax; labelsize = 10, backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5))
+    fig
+end
+
+
+# ╔═╡ 2ce5aa45-4aa5-4c2a-a608-f581266e55f0
+begin
+	function addplot(vis, sol, vshow)
+		species = getproperty.(bulk, :name)
+		colors = getproperty.(bulk, :color)
+		
+		scale = 1.0 / (mol / dm^3)
+	    title = @sprintf("Φ_we=%+1.2f [V vs. SHE]", vshow)
+	
+		if useonly_pH
+			i = findfirst(isequal("H⁺"), species)
+			scalarplot!(vis, 
+					    grid.components[XCoordinates] .+ 1.0e-14, 
+					    log10.(sol[ihplus, :] * scale), 
+					    color = colors[i],
+					    label = species[i],
+					    clear = true,
+						title = title)
+		else
+			scalarplot!(vis, 
+						grid.components[XCoordinates] .+ 1.0e-14, 
+						log10.(sol[1, :] * scale), 
+						color = colors[1],
+						label = species[1],
+						clear = true,
+						title = title)
+			for ia = 2:nc			
+				scalarplot!(vis, 
+						    grid.components[XCoordinates] .+ 1.0e-14, 
+						    log10.(sol[ia, :] * scale), 
+						    color = colors[ia],
+						    label = species[ia],
+						    clear = false,)
+			end
+		end
+	end
+	function plot1d(result, celldata, vshow; df_compare = nothing)
+		tsol 	= LiquidElectrolytes.voltages_solutions(result)
+		vis 	= GridVisualizer(;
+								 size 	= (600, 300),
+								 clear 	= true,
+								 legend 	= :rt,
+								 limits 	= (-14, 2),
+								 xlimits    = (10e-12, 80 * μm),
+								 xlabel 	= "Distance from electrode [m]",
+	 							 ylabel 	= "log c(aᵢ)", 
+								 xscale 	= :log,)
+	    addplot(vis, tsol(vshow), vshow)
+		if !isnothing(df_compare)
+			addplot(vis, df_compare)
+		end
+		reveal(vis)
+	end
+
+	function plot1d(result, celldata)
+    	tsol  	= LiquidElectrolytes.voltages_solutions(result)
+		vis  	= GridVisualizer(; 
+								 size 	= (600, 300),
+								 clear 	= true,
+							 	 legend = :rt,
+								 limits = (-14, 2),
+								 xlimits= (10e-12, 80 * μm),
+								 xlabel = "Distance from electrode [m]",
+ 								 ylabel = "log c(aᵢ)", 
+								 xscale = :log,)
+	
+		vrange = result.voltages[end:-5:1]
+		movie(vis, file="concentrations.gif", framerate=3) do vis
+		for vshow_it in vrange
+			addplot(vis, tsol(vshow_it), vshow_it)
+			reveal(vis)
+		end
+		end
+		isdefined(Main, :PlutoRunner) && LocalResource("concentrations.gif")
+	end
+end
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
@@ -1312,7 +1265,7 @@ is_Landstorfer = model != elydata_Gold
 # ╔═╡ 36e756a9-4d9b-40ef-9e37-d86f1194cc51
 function capscalc(sys, molarities)
     result = []
-	vrange = range(-1, 1, length = 201)
+	vrange = range(-1.0, 1.0, length = 202)
 	if is_Landstorfer
 		for imol in 1:length(molarities)
 		    if !isa(sys, AbstractElectrochemicalSystem)
@@ -1376,15 +1329,15 @@ function capsplot(vis, result, title)
             )
         end
     else
-        voltages = result[1].voltage_range[1:201]
-        caps = vec(result[1].dlcaps)[1:201]
+        voltages = result[1].voltage_range
+        caps = vec(result[1].dlcaps)
 
         scalarplot!(
-            vis, voltages, caps / (μF / cm^2);
-            limits = (-1, 100), xlimits = (-1.1, 1.1),
+            vis, voltages.- ϕ_pzc, caps / (μF / cm^2);
+            limits = (-1, 28), xlimits = (-1.1, 1.1),
             color = :green, clear = false, label = "$title",
             title = title, markershape = :none, yscale = 10,
-            xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
+            xlabel = L"φ / (V vs φ_{pzc})", ylabel = L"dlcaps / (μF / cm²)"
         )
         # scalarplot!(
         #     vis, [0], [result[1].cdl0] / (μF / cm^2);
@@ -1453,13 +1406,6 @@ function pnp_bcondition(
 	nothing
 end;
 
-# ╔═╡ 45451a14-17b9-4754-b56b-c9b8e8cce1b4
-begin
-	reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
-	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
-
-end
-
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
     kwargs 	 	= merge(solver_control, kwargs) 
@@ -1491,12 +1437,12 @@ begin
 	                         xlabel = "Φ_WE/(V vs. SHE)",
 	                         ylabel = "I/(mA/cm²)",
 	                         legend = :lb,
-							 yscale = :log,
+							# yscale = :log,
 		)
 							 
 	    scalarplot!(vis,
 	                volts,
-	                abs.(currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
+	                (currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
 	                color = :green,
 	                clear = false,
 	                linestyle = :solid,
@@ -1542,10 +1488,40 @@ function pb_bcondition(f, u, bnode, data)
     return bulkbcondition(f, u, bnode, data)
 end
 
-# ╔═╡ 675ab1d0-a4e8-44a1-9d16-c2293e802868
-sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
+# ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	if go > 0
+		#pb
+		sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
+		result_pb = capscalc(sys_pb, molarities)
+
+		#pnp
+		reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
+		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
+
+		result_pnp = capscalc(sys_pnp, molarities)
+	else 
+		result_pb = nothing
+		result_pnp = nothing
+	end
+end
+  ╠═╡ =#
+
+# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
+#=╠═╡
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 650))
+    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
+    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
+
+    reveal(vis)
+end
+  ╠═╡ =#
 
 # ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
+#=╠═╡
 begin
 	try
 		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
@@ -1576,16 +1552,16 @@ begin
 	catch
 	end
 end
+  ╠═╡ =#
 
 # ╔═╡ b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 begin 
 	sawtooth = SawTooth(
         scanrate = parse(Float64, user_input.scanrate),
         vmin = user_input.vmin , vmax = user_input.vmax,
-		scanup = false
+		scanup = user_input.scanup
     )
 	    const nperiods = user_input.nperiods
-
 end
 
 # ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
@@ -1673,7 +1649,14 @@ let
               ylabel = "I (mA/cm²)",
               xlabel = "φ (V vs SHE)"
     )
-	colors = [RGB(0, 1-(i/14), 0) for i in 1:7]
+	pink        = RGB(1.0, 0.7, 0.8)
+	pastel_blue = RGB(0.2, 0.5, 1.0)
+	
+	colors = [RGB(
+	    pink.r   + t*(pastel_blue.r - pink.r),
+	    pink.g   + t*(pastel_blue.g - pink.g),
+	    pink.b   + t*(pastel_blue.b - pink.b)
+	) for t in range(0, 1, length=7)]
 
     
     total_current = currents(pnpresult, ico)
@@ -1711,17 +1694,26 @@ let
 	    framevisible = true,    
 	)
     fig
-end;
+end
 
 # ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
 let
     ic = model.cspecies
     fig = Figure(size = (1050, 650))
     ax = Axis(fig[1, 1], 
+ 			  #limits = ((-0.4, 0.9),(-0.00000001, 0.0000005)),
               ylabel = L"I (mA/cm²)",
               xlabel = L"φ (V vs SHE)"
     )
-    colors = [RGB(0, 1-(i/14), 0) for i in 1:7]
+	pink        = RGB(1.0, 0.7, 0.8)
+	pastel_blue = RGB(0.2, 0.5, 1.0)
+	
+	colors = [RGB(
+	    pink.r   + t*(pastel_blue.r - pink.r),
+	    pink.g   + t*(pastel_blue.g - pink.g),
+	    pink.b   + t*(pastel_blue.b - pink.b)
+	) for t in range(0, 1, length=7)]
+
 
     total_current = currents(pnpresult, iohminus).* cm^2/mA
     Gold = lines!(ax, pnpresult.voltages, total_current, 
@@ -1885,8 +1877,20 @@ floataside(
 	top = 678
 )
 
+# ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
+let
+    fig = Figure()
+    ax = Axis(fig[1, 1])
+    T = 0:1.0:pnpresult.tsol.t[end]
+    lines!(ax, T, sawtooth.(T))
+    fig
+end
+
 # ╔═╡ 4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 conc_time_func(pnpresult, sawtooth)
+
+# ╔═╡ 3ec33257-9eda-46d8-ab6c-d187957c9c7c
+user_input.scanup
 
 # ╔═╡ b64c0d67-016d-4bca-9fae-150cf50efc77
 let
@@ -1927,6 +1931,81 @@ let
     fig
 	#println(species, colors)
 end
+
+# ╔═╡ 59a59594-feaa-4343-9fb5-ae0e3b5197c2
+begin
+form_sig = hash(user_input)::UInt64
+
+param_tuple = (
+    user_input[:vmin],
+    user_input[:vmax],
+    user_input[:zR],
+    user_input[:n],
+    user_input[:scanrate],
+    user_input[:nperiods],
+    user_input[:double64],
+    user_input[:tunnel],
+    user_input[:κt],
+    user_input[:κk],
+    user_input[:model_choice],
+    user_input[:mode],
+    user_input[:BC_Select],
+)
+sig = hash(param_tuple)::UInt64
+
+if form_sig != RUNSTATE.last_form_sig[]
+    RUNSTATE.cache[] = nothing            
+    RUNSTATE.last_sig[] = sig             
+    RUNSTATE.last_go[]  = go              
+    RUNSTATE.last_form_sig[] = form_sig   
+end
+
+if sig != RUNSTATE.last_sig[] && go == RUNSTATE.last_go[]
+    RUNSTATE.cache[] = nothing
+    RUNSTATE.last_sig[] = sig
+end
+
+if go != RUNSTATE.last_go[]
+    RUNSTATE.cache[] = heavy(user_input)
+    RUNSTATE.last_go[]  = go
+    RUNSTATE.last_sig[] = sig
+end
+	result = RUNSTATE.cache[]
+end
+
+# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
+if runregtest
+	sresult = load("./data/regressionresults.jld2")["regressionresults"]
+
+	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
+	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
+	
+	if any(isnothing.(vidxs_sresult))
+		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
+	end
+
+	@testset begin
+	@testset "Concentrations" begin
+		@testset "$(bulk[ia].name)" for ia in 1:nc
+			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
+				@test all(isapprox(
+					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
+					rtol = 1.0e-5
+				))
+			end
+		end
+	end
+
+	@testset "Currents" begin
+		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
+			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
+											sresult.j_we[vidx_result][iohminus])
+				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
+			end
+		end
+	end
+	end
+end;
 
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
@@ -1973,11 +2052,9 @@ end
 # ╠═952a26ce-2610-48cc-9158-eda816da3a1c
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
-# ╠═45451a14-17b9-4754-b56b-c9b8e8cce1b4
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
-# ╠═675ab1d0-a4e8-44a1-9d16-c2293e802868
-# ╠═6c0608c4-a785-471a-8e03-16a5b16508b8
-# ╠═1ff59725-ba1e-4309-9b8c-19a30adb36db
+# ╠═4656ee04-ae86-442f-b37c-c5563170f992
+# ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
 # ╠═50ccc291-3625-4639-afd1-5209899d904e
@@ -1993,15 +2070,17 @@ end
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
+# ╠═3ec33257-9eda-46d8-ab6c-d187957c9c7c
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═39c8ef0d-aac2-4c7f-8004-4166c460ebc5
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
+# ╠═f9dade9f-8431-48a6-a2ee-2c88f178e76e
 # ╠═cb9b0158-f17d-4136-8994-360f3078c7df
 # ╠═52a5bbd2-0278-4d92-95f1-367797f636e6
 # ╟─27075c18-4da9-42f4-b5a8-d36bc7b4930d
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
-# ╟─0106756b-594d-4fdb-81b5-cf0739898521
+# ╠═0106756b-594d-4fdb-81b5-cf0739898521
 # ╠═81c4e515-89b5-4ecf-8437-070e5a51cb4c
 # ╠═df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
 # ╠═e5956bb0-a33a-488d-906e-fb5a7e2473a9
@@ -2039,5 +2118,6 @@ end
 # ╠═e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
 # ╠═315dd351-9d68-48f1-aa7a-8f43f3dec6ac
 # ╠═7454f68a-64dc-4676-b2b2-ed8fcb35d81e
+# ╠═59a59594-feaa-4343-9fb5-ae0e3b5197c2
 # ╠═ae50877a-20da-4b1a-acd5-cc0a73e428da
 # ╠═3ac837b8-559b-41c2-8f83-1331839dcf7e
