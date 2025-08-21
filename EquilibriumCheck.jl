@@ -186,8 +186,8 @@ begin
 	function BulkSpecies(;name, z, c_bulk=nothing, D, κ=nothing, color)
 		D *= m^2/s
 		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
-		a = 0.0 * Å            # (v0/N_A)^(1/3)
-		v = 0.0 #v0 * (κ + 1)
+		a = 0.0#8.2 * Å            # (v0/N_A)^(1/3)
+		v = 0.0#N_A * (8.2 * Å)^3 #v0 * (κ + 1)
 		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
@@ -402,13 +402,13 @@ function DGML_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, v, RT, v0, cspecies, rexp, c_bulk) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
 	
-    for ic in cspecies
-        γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc))
-    end
-	
     #for ic in cspecies
-    #    γ[ic] = v0 * ( 1.0 / (1 - sum(c_bulk[i] * v[i] for i in 1:nc) / (mol/dm^3)))
+    #    γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc))
     #end
+	
+    for ic in cspecies
+        γ[ic] = v0 * ( 1.0 / (1 - sum(c_bulk[i] * v[i] for i in 1:nc) / (mol/dm^3)))
+    end
     return γ
 end
 
@@ -503,67 +503,6 @@ md"""
 ### Result Plots
 """
 
-# ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
-#=╠═╡
-let
-	if is_Landstorfer
-		f = Figure()
-	    result = result_pb
-	    l = 1 / length(result)
-		ϕ0_pzc = 0.972
-		
-		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
-	
-		if model_key == "Landstorfer_NaClO₄ model"
-			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
-		else	
-			Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-			High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
-		end
-		
-	    k = []  
-	    legend_labels = [model_key*"\t 5mM", model_key*"\t 100mM"]  
-		
-		for i in 1:length(result)
-		    c = RGB(i * l, 0.0, 1 - i * l)
-		    v = result_pb[i].voltage_range
-		    cdl = result_pb[i].dlcaps / (μF / cm^2)
-		    
-		    minlength = min(length(v), length(cdl))
-		    push!(k, lines!(ax, v[1:minlength], cdl[1:minlength], color=c, label="Result $i"))
-		
-		    m = molarities[i]
-		    push!(legend_labels, "LiquidElectrolyte $m M")
-		end
-	    
-		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
-	    
-		f 
-	else
-		results = [
-		    ("Poisson-Boltzmann", result_pb),
-		    ("Poisson-Nernst-Planck", result_pnp)
-		]
-		plots = []
-		
-		for (name, result) in results
-		    try
-		        if !isempty(result)
-		            push!(plots, (name, result))
-		        end
-		    catch
-		        continue
-		    end
-		end
-		
-	    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, title="Compare PB & PNP")
-	    capsplot_v(vis, plots)
-	    reveal(vis)
-	end
-end
-  ╠═╡ =#
-
 # ╔═╡ 783e2058-c720-4f31-8e51-7c313813924c
 md"""
 ##### κ(Solvation Number) Plots
@@ -626,8 +565,63 @@ md"""
 ### Result Plots
 """
 
-# ╔═╡ 3bbf616f-dc7e-4eed-8f2c-598021187e04
-grid2 = ExtendableGrids.simplexgrid(X)
+# ╔═╡ 79018ef0-6ab1-4420-9a52-8f8e2812fd40
+md"""
+#### Time-Voltage plots
+"""
+
+# ╔═╡ 278dd577-2d1f-4608-aee4-f7de466cf736
+md"""
+#### Time-Concentration plots
+"""
+
+# ╔═╡ b64c0d67-016d-4bca-9fae-150cf50efc77
+#=╠═╡
+let
+    species = getproperty.(bulk, :name)
+	colors = getproperty.(bulk, :color)
+	
+	
+	ZR = zstr(user_input.zR)
+    ZO = zstr(user_input.zR + user_input.n)
+
+    XX = (X[2:end] / nm)
+    uu = pnpresult.tsol[:, :, it + 1]
+    ru = uu / (mol / dm^3)
+
+    fig = Figure(size = (650, 400))
+    ax1 = Axis(
+        fig[1, 1];
+               xlabel=L"x/nm",
+        ylabel = L"c/(mol/dm^3)",
+        xscale = log10,
+        yscale = log10,
+        title = "V=$(pnpresult.voltages[it])"
+    )
+    xlims!(ax1, XX[1], L / nm)
+    ylims!(ax1, 1.0e-25, 1.0e2)
+
+	for i in 1:nc
+	    yvals = [c > 0 ? log10(c) : NaN for c in ru[i, 2:end]]
+	    lines!(ax1, XX, 10 .^ yvals, color = colors[i], linestyle = :solid, label = species[i])
+	end
+
+
+    Legend(
+        fig[1, 2], ax1; labelsize = 10,
+        backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5)
+
+    ) 
+    fig
+	#println(species, colors)
+end
+  ╠═╡ =#
+
+# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
+# ╠═╡ disabled = true
+#=╠═╡
+plot_concentration_profile(pnpresult, X, bulk)
+  ╠═╡ =#
 
 # ╔═╡ 3f30fae0-18d4-4e5f-9618-cbd9852d7857
 function zstr(z::Int)
@@ -644,6 +638,90 @@ function zstr(z::Int)
     end
 end
 
+
+# ╔═╡ 7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
+md"""
+#### Facet plots
+"""
+
+# ╔═╡ de2baeae-eaf6-4565-9ed1-f2eb8c666839
+md"""
+#### Pressure plots
+"""
+
+# ╔═╡ 0106756b-594d-4fdb-81b5-cf0739898521
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
+    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+                 pink.g + t*(pblue.g-pink.g),
+                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        push!(plot_objs1, line)
+    end
+    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
+	fig
+end
+
+# ╔═╡ 9a92d4a9-f489-4bba-9361-03cad3ea12e1
+md"""
+#### Concentration plots
+"""
+
+# ╔═╡ 6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
+let
+    fig = Figure()
+    ax  = Axis(fig[1, 1],
+        xlabel = L"\phi \, (\mathrm{V \; vs \; SHE})",
+        ylabel = L"I \; (\mathrm{mA/cm^2})",
+       # limits = ((-1.25, 0.8), (-0.5, 0.07))
+    )
+
+	csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
+	unit_scale = cm^2/mA 
+
+    raw = CSV.read(csv_path, DataFrame; header = false)
+    pres_labels = vec(Matrix(raw[1:1, :])) 
+    sub  = Matrix(raw[4:end, :])
+    num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+
+    npairs = size(num_df, 2) ÷ 2
+
+    exp_colors = [RGB(0.9 - (0.05 * i/npairs), 0.15 * (1 - i/npairs), 0.3 * i/npairs) for i in 1:npairs]
+
+
+    exp_plots = Plot[] 
+    exp_labels = String[]
+
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+		label = "$(pres_labels[min(2j, length(pres_labels))]) pH"
+        push!(exp_labels, label)
+
+		h = lines!(ax, num_df[!, xcol], log.(abs.(num_df[!, ycol])); color = exp_colors[j])
+        push!(exp_plots, h)
+    end
+    Legend(fig[1, 2], exp_plots,  exp_labels,  "Experimental"; framevisible = true)
+
+	fig
+end
 
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
@@ -697,7 +775,7 @@ function CVPlot!(result, model)
     ic = model.cspecies
     fig = Figure(size = (650, 400))
     ax = Axis(fig[1, 1], 
- 			  #limits = ((-1.25, -0.4),(-20, 2)),
+ 			 # limits = ((-1.25, 0.8),(-0.0000002, 0.0000002)),
               ylabel = L"I (mA/cm²)",
               xlabel = L"φ (V vs SHE)"
 			 )
@@ -733,6 +811,12 @@ solver_control = (; max_round 	= 4,
               		reltol 		= 1.0e-8,
               		tol_mono 	= 1.0e-10)
 
+# ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
+# ╠═╡ disabled = true
+#=╠═╡
+cell, ivresult = simulate_CO2R(grid, model; voltages)
+  ╠═╡ =#
+
 # ╔═╡ 7a02463d-cfd9-4648-af53-f1e65d46733f
 md"""
 ### Result Plots
@@ -743,10 +827,84 @@ md"""
 Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 """
 
+# ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
+#=╠═╡
+(~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
+  ╠═╡ =#
+
+# ╔═╡ c4876d26-e841-4e28-8303-131d4635fc23
+#=╠═╡
+md"""
+Potential at the working electrode 
+$(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
+"""
+  ╠═╡ =#
+
+# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
+#=╠═╡
+plot1d(ivresult, celldata, vshow)
+  ╠═╡ =#
+
+# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
+#=╠═╡
+plot1d(ivresult, celldata)
+  ╠═╡ =#
+
+# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
+#=╠═╡
+let
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	df = Dict(:voltage => table[:,1], :current => table[:,2])
+	plotcurr(ivresult; df=df)
+end
+  ╠═╡ =#
+
 # ╔═╡ c1d2305e-fb8b-4845-a414-08fff84aa9b0
 md"""
 ### Plotting Functions
 """
+
+# ╔═╡ d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
+#=╠═╡
+begin
+	#curr(J, ix) = [F * abs(j[ix]) for j in J]
+	
+	function plotcurr(result; df = nothing)
+	    scale = 1 / (mol / dm^3)
+	    volts = result.voltages[result.voltages .< -0.4]
+	    vis = GridVisualizer(;
+	                         size = (600, 400),
+	                         tilte = "IV Curve",
+	                         xlabel = "Φ_WE/(V vs. SHE)",
+	                         ylabel = "I/(mA/cm²)",
+	                         legend = :lb,
+							 yscale = :log,
+		)
+							 
+	    scalarplot!(vis,
+	                volts,
+	                abs.(currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
+	                color = :green,
+	                clear = false,
+	                linestyle = :solid,
+	                label = "e⁻, we")
+		if !isnothing(df)
+			scalarplot!(vis,
+						df[:voltage],
+						df[:current],
+						clear = false,
+						linewidth = 0,
+						markershape = :cross,
+						markersize = 8,
+						markevery = 1,
+						color = :red,
+						label = "Ringe et. al")
+		end
+		
+	    reveal(vis)
+	end
+end
+  ╠═╡ =#
 
 # ╔═╡ 686ac3dc-c191-4575-ba0c-d4c2551474b5
 md"""
@@ -847,6 +1005,30 @@ begin
     floataside(stuff; kwargs...) = floataside(md"""$(stuff)"""; kwargs...)
 end;
 
+# ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
+#=╠═╡
+floataside(
+    md"""
+    __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(ivresult.voltages), default=default_index))
+
+    __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
+    """,
+    top = 750
+)
+
+  ╠═╡ =#
+
+# ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
+#=╠═╡
+floataside(
+	md"""
+	**Voltage:** $(round(ivresult.voltages[vindex], digits=3)) V    
+	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
+	""",
+	top = 678
+)
+  ╠═╡ =#
+
 # ╔═╡ ae50877a-20da-4b1a-acd5-cc0a73e428da
 floataside(
     @bind user_input confirm(
@@ -855,12 +1037,12 @@ floataside(
 	###### __User Data__  
 	``CO_2 + H_2O + 2e^- \leftrightharpoons CO + 2OH^-``
 			
-	- ``V_\mathrm{min}``: $(Child("vmin", NumberField(-2.0:0.1:2.0; default = -1.5)))  ``V_\mathrm{max}``: $(Child("vmax", NumberField(-2.0:0.1:2.0; default = 1.5)))
+	- ``V_\mathrm{min}``: $(Child("vmin", NumberField(-2.0:0.1:2.0; default = -1.2)))  ``V_\mathrm{max}``: $(Child("vmax", NumberField(-2.0:0.1:2.0; default = 0.8)))
 	- ``z_R``: $(Child("zR", NumberField(-2:2; default = -1)))   
 	  ``n``: $(Child("n", NumberField(0:2; default = 2)))
 	
-	- Scan rate ``(V/s)``: $(Child("scanrate", TextField(6; default = "0.3")))  
-	- Periods: $(Child("nperiods", NumberField(1:10; default = 3)))
+	- Scan rate ``(V/s)``: $(Child("scanrate", TextField(6; default = "0.05")))  
+	- Periods: $(Child("nperiods", NumberField(1:10; default = 1)))
 	
 	- ``L``: 80 μm  
 	- `Double64`: $(Child("double64", CheckBox()))  
@@ -871,10 +1053,10 @@ floataside(
 	###### __Parameter Set__
 	
 	- __Other ions__  
-	  ``κ``: $(Child("κt", NumberField(0.0:0.1:20.0; default = 8.0)))
+	  ``κ``: $(Child("κt", NumberField(0.0:0.1:20.0; default = 0.0)))
 	
 	- __Cation__  
-	  ``κ``: $(Child("κk", NumberField(0.0:0.1:20.0; default = 8.0)))
+	  ``κ``: $(Child("κk", NumberField(0.0:0.1:20.0; default = 0.0)))
 	
 	---
 	
@@ -884,7 +1066,7 @@ floataside(
 	---
 	
 	###### __Activity Coefficient__  
-	- Mode: $(Child("mode", Select(["Stefan_γ", "DGML_γ"])))
+	- Mode: $(Child("mode", Select(["DMGL_γ", "Stefan_γ"])))
 	- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Dirichlet"])))
 	"""
 	        end;
@@ -912,7 +1094,7 @@ begin
 				BulkSpecies(;name = "CO₃²⁻",
 							z = -2, 
 							D = 0.923e-9, 
-							c_bulk = 2.68e-5,
+							c_bulk = 2.68e-6,
 							#v = v0*(κt+1), 
 							κ = κt * 2, 
 							color = :violet
@@ -920,6 +1102,7 @@ begin
 				BulkSpecies(;name = "CO₂",
 							z = 0, 
 							D = 1.91e-9, 
+							# = 0.033
 							c_bulk = 0.033, 
 							#v =v0, 
 							κ = 0, 
@@ -978,6 +1161,9 @@ begin
 	end
 	create_markdown(bulk)
 end
+
+# ╔═╡ ab1c0d49-7da7-484f-a2c2-4eec20239450
+bulk[5].c_bulk *= 0.3 
 
 # ╔═╡ f8e6c01b-e64e-4fa2-a84a-e20f9b60287c
 function capsplot_κ(vis, sys; n::Int=7)
@@ -1120,6 +1306,40 @@ begin
 		isdefined(Main, :PlutoRunner) && LocalResource("concentrations.gif")
 	end
 end
+
+# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
+if runregtest
+	sresult = load("./data/regressionresults.jld2")["regressionresults"]
+
+	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
+	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
+	
+	if any(isnothing.(vidxs_sresult))
+		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
+	end
+
+	@testset begin
+	@testset "Concentrations" begin
+		@testset "$(bulk[ia].name)" for ia in 1:nc
+			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
+				@test all(isapprox(
+					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
+					rtol = 1.0e-5
+				))
+			end
+		end
+	end
+
+	@testset "Currents" begin
+		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
+			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
+											sresult.j_we[vidx_result][iohminus])
+				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
+			end
+		end
+	end
+	end
+end;
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
@@ -1415,62 +1635,6 @@ function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 	cell, ivresult
 end;
 
-# ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
-cell, ivresult = simulate_CO2R(grid, model; voltages)
-
-# ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
-(~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
-
-# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-plot1d(ivresult, celldata)
-
-# ╔═╡ d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
-begin
-	#curr(J, ix) = [F * abs(j[ix]) for j in J]
-	
-	function plotcurr(result; df = nothing)
-	    scale = 1 / (mol / dm^3)
-	    volts = result.voltages[result.voltages .< -0.4]
-	    vis = GridVisualizer(;
-	                         size = (600, 400),
-	                         tilte = "IV Curve",
-	                         xlabel = "Φ_WE/(V vs. SHE)",
-	                         ylabel = "I/(mA/cm²)",
-	                         legend = :lb,
-							# yscale = :log,
-		)
-							 
-	    scalarplot!(vis,
-	                volts,
-	                (currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
-	                color = :green,
-	                clear = false,
-	                linestyle = :solid,
-	                label = "e⁻, we")
-		if !isnothing(df)
-			scalarplot!(vis,
-						df[:voltage],
-						df[:current],
-						clear = false,
-						linewidth = 0,
-						markershape = :cross,
-						markersize = 8,
-						markevery = 1,
-						color = :red,
-						label = "Ringe et. al")
-		end
-		
-	    reveal(vis)
-	end
-end
-
-# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	plotcurr(ivresult; df=df)
-end
-
 # ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
 function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
@@ -1489,8 +1653,6 @@ function pb_bcondition(f, u, bnode, data)
 end
 
 # ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
-# ╠═╡ disabled = true
-#=╠═╡
 begin
 	if go > 0
 		#pb
@@ -1507,10 +1669,8 @@ begin
 		result_pnp = nothing
 	end
 end
-  ╠═╡ =#
 
 # ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-#=╠═╡
 let
     vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 650))
     capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
@@ -1518,10 +1678,67 @@ let
 
     reveal(vis)
 end
-  ╠═╡ =#
+
+# ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
+let
+	if is_Landstorfer
+		f = Figure()
+	    result = result_pb
+	    l = 1 / length(result)
+		ϕ0_pzc = 0.972
+		
+		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot")
+	
+		if model_key == "Landstorfer_NaClO₄ model"
+			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
+		else	
+			Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
+		end
+		
+	    k = []  
+	    legend_labels = [model_key*"\t 5mM", model_key*"\t 100mM"]  
+		
+		for i in 1:length(result)
+		    c = RGB(i * l, 0.0, 1 - i * l)
+		    v = result_pb[i].voltage_range
+		    cdl = result_pb[i].dlcaps / (μF / cm^2)
+		    
+		    minlength = min(length(v), length(cdl))
+		    push!(k, lines!(ax, v[1:minlength], cdl[1:minlength], color=c, label="Result $i"))
+		
+		    m = molarities[i]
+		    push!(legend_labels, "LiquidElectrolyte $m M")
+		end
+	    
+		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+	    
+		f 
+	else
+		results = [
+		    ("Poisson-Boltzmann", result_pb),
+		    ("Poisson-Nernst-Planck", result_pnp)
+		]
+		plots = []
+		
+		for (name, result) in results
+		    try
+		        if !isempty(result)
+		            push!(plots, (name, result))
+		        end
+		    catch
+		        continue
+		    end
+		end
+		
+	    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, title="Compare PB & PNP")
+	    capsplot_v(vis, plots)
+	    reveal(vis)
+	end
+end
 
 # ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
-#=╠═╡
 begin
 	try
 		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
@@ -1552,7 +1769,6 @@ begin
 	catch
 	end
 end
-  ╠═╡ =#
 
 # ╔═╡ b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 begin 
@@ -1569,7 +1785,7 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     celldata = deepcopy(pnpdata)
     celldata.eneutral = eneutral
 	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg)
+    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
     return result = cvsweep(
         pnpcell;
         voltages = sawtooth,
@@ -1578,6 +1794,151 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     )
 
 end
+
+# ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
+begin
+    P = [0.0, 0.1, 0.2, 0.3, 0.5, 0.6, 1.0]
+    base_co2 = elydata_Gold.c_bulk[5]
+
+    pnp_vec = Any[]  
+
+    for p in P
+        ely_pressure = deepcopy(elydata_Gold)   
+        ely_pressure.c_bulk[5] = base_co2 * p   
+
+        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
+
+        push!(pnp_vec, pnp_rec)              
+    end
+end
+
+
+# ╔═╡ 0607672c-9177-4717-8ddf-e07a5dd82ec4
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	label = ["Ar", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
+	
+    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
+    cols2 = [RGB(1 - i/length(pnp_vec), 0, i/length(pnp_vec)) for i in 1:length(pnp_vec)]
+    plot_objs2 = []
+    labels2 = String[]
+    for (j, rec) in enumerate(pnp_vec)
+        label2 = j == 1 ? "$(label[j])\t\t sat" : "$(label[j])\t pCO2(atm)"
+        push!(labels2, label2)
+        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)), linestyle =:dash; color = cols2[j])
+        push!(plot_objs2, line)
+    end
+    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    fig
+end
+
+# ╔═╡ d4fb4803-1c1b-4fd7-a782-112777f55be0
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
+    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+                 pink.g + t*(pblue.g-pink.g),
+                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        push!(plot_objs1, line)
+    end
+    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
+
+    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
+    cols2 = [RGB(1 - i/length(pnp_vec), 0, i/length(pnp_vec)) for i in 1:length(pnp_vec)]
+    plot_objs2 = []
+    labels2 = String[]
+    for (j, rec) in enumerate(pnp_vec)
+        label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels2, label2)
+        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)), linestyle =:dash; color = cols2[j])
+        push!(plot_objs2, line)
+    end
+    Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    fig
+end
+
+# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+let
+    fig = Figure(size = (1600, 900))
+    ax  = Axis(fig[1, 1],
+        xlabel = L"\phi \, (\mathrm{V \; vs \; SHE})",
+        ylabel = L"I \; (\mathrm{mA/cm^2})",
+       # limits = ((-1.25, 0.8), (-0.5, 0.07))
+    )
+
+	csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
+	unit_scale = cm^2/mA 
+
+    #Experimental (Koper, Langmuir 2021, Fig.3)
+    raw = CSV.read(csv_path, DataFrame; header = false)
+    pres_labels = vec(Matrix(raw[1:1, :])) 
+    sub  = Matrix(raw[4:end, :])
+    num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+
+    npairs = size(num_df, 2) ÷ 2
+
+    exp_colors = [RGB(0.9 - (0.05 * i/npairs), 0.15 * (1 - i/npairs), 0.3 * i/npairs) for i in 1:npairs]
+
+
+    exp_plots = Plot[] 
+    exp_labels = String[]
+
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+		label = "$(pres_labels[min(2j, length(pres_labels))]) pH"
+        push!(exp_labels, label)
+
+		#---normal scale---
+        #h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
+		#---log scale---
+		h = scatter!(ax, num_df[!, xcol], log.(abs.(num_df[!, ycol])); color = exp_colors[j], markersize = 3)
+        push!(exp_plots, h)
+    end
+
+    #Theoretical (LiquidElectrolytes.jl 결과)
+    theo_colors = [RGB(1 - (0.2 * i/npairs), 0.5 * (1 - i/npairs), 0.6 * i/npairs) for i in 1:npairs]
+
+    theo_plots = Plot[]
+    theo_labels = String[]
+
+    for j in 1:npairs
+        rec = pnp_vec[j]
+   		label2 = "$(pres_labels[min(2j, length(pres_labels))]) pH"
+        push!(theo_labels, label2)
+
+        j_tot = currents(rec, iohminus) .* unit_scale
+		#---normal scale---
+        #h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
+		#---log scale---
+		h = lines!(ax, rec.voltages, log.(abs.(j_tot)); color = theo_colors[j], linestyle = :dash)
+        push!(theo_plots, h)
+    end
+
+    Legend(fig[1, 2], exp_plots,  exp_labels,  "Experimental"; framevisible = true)
+    Legend(fig[1, 3], theo_plots, theo_labels, "Theoretical";  framevisible = true)
+
+    fig
+end
+
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 pnpresult = sweep(model; eneutral = false, tunnel = false)
@@ -1589,6 +1950,29 @@ let
     T = pnpresult.times
     #lines!(ax,T, voltages.(T))
     lines!(ax, T[2:end], T[2:end] - T[1:(end - 1)])
+    fig
+end
+
+# ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
+let
+	ic = model.cspecies
+    fig = Figure(size = (650, 400))
+    ax = Axis(fig[1, 1], 
+ 			  #limits = ((-1.25, 1.8),(-0.00000002, 0.0000002)),
+              ylabel = L"I (mA/cm²)",
+              xlabel = L"φ (V vs SHE)",
+			 )
+	
+    total_current = zero(currents(pnpresult, ic[1]))
+    #for s in ic
+    #    total_current .+= (currents(result, s) * mA / cm^2)
+    #end
+	total_current = ((currents(pnpresult, iohminus) .* cm^2/mA))
+
+	
+    lines!(ax, pnpresult.voltages, total_current,
+           color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+
     fig
 end
 
@@ -1620,13 +2004,13 @@ let
         parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
         for i in 3:nrow(raw_df)
     ]
-    num_df = DataFrame(hcat(numeric_data...)', names(raw_df)) .- 0.4
+    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
 
     # === Facet data ===
     facet_lines = [
-        lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1]),
-        lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2]),
-        lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3])
+        lines!(ax, num_df[!, 1].-0.4, num_df[!, 2], color = colors[1]),
+        lines!(ax, num_df[!, 3].-0.4, num_df[!, 4], color = colors[2]),
+        lines!(ax, num_df[!, 5].-0.4, num_df[!, 6], color = colors[3])
     ]
     labels2 = [facet_row[1], facet_row[3], facet_row[5]]
 
@@ -1640,174 +2024,52 @@ let
 end
 
 
-# ╔═╡ 0106756b-594d-4fdb-81b5-cf0739898521
-let
-    ic = model.cspecies
-    fig = Figure(size = (850, 500))
-    ax = Axis(fig[1, 1], 
-			  #limits = ((-1.4, 1.4),(-5, 10)),
-              ylabel = "I (mA/cm²)",
-              xlabel = "φ (V vs SHE)"
-    )
-	pink        = RGB(1.0, 0.7, 0.8)
-	pastel_blue = RGB(0.2, 0.5, 1.0)
-	
-	colors = [RGB(
-	    pink.r   + t*(pastel_blue.r - pink.r),
-	    pink.g   + t*(pastel_blue.g - pink.g),
-	    pink.b   + t*(pastel_blue.b - pink.b)
-	) for t in range(0, 1, length=7)]
-
-    
-    total_current = currents(pnpresult, ico)
-	#lines!(ax, pnpresult.voltages, total_current, color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0), label = "CO2RR Gold Model")
-
-    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
-
-    pressure_row = collect(raw_df[1, :])
-    datatype_row = collect(raw_df[2, :])
-
-	labels = [pressure_row[1]*"\t\t sat", pressure_row[4]*"\t\t sat", pressure_row[6]*"\t\t sat", pressure_row[8]*"\t\t sat",pressure_row[10]*"\t\t sat",pressure_row[12]*"\t\t sat"]
-	
-	numeric_data = [
-	    parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
-	    for i in 4:nrow(raw_df)
-	]
-	num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
-
-	#Ar
-    lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1], label = pressure_row[1]*"\t\t sat" )
-	#0.1 CO2
-    lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2], label = pressure_row[4]*"\t pCO2(atm)")
-	#0.2 CO2
-    lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3], label = pressure_row[6]*"\t pCO2(atm)")
-	#0.3 CO2
-    lines!(ax, num_df[!, 7], num_df[!, 8], color = colors[4], label = pressure_row[8]*"\t pCO2(atm)")  
-	#0.5 CO2
-    lines!(ax, num_df[!, 9], num_df[!, 10], color = colors[5], label = pressure_row[10]*"\t pCO2(atm)") 
-	#0.6 CO2
-    lines!(ax, num_df[!, 11], num_df[!, 12], color = colors[6], label = pressure_row[12]*"\t pCO2(atm)")
-	#1.0 CO2
-	lines!(ax, num_df[!, 13], num_df[!, 14], color = colors[7], label = pressure_row[14]*".0\t pCO2(atm)")
-	
-	Legend(fig[1, 2], ax;
-	    framevisible = true,    
-	)
-    fig
-end
-
 # ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
 let
-    ic = model.cspecies
-    fig = Figure(size = (1050, 650))
-    ax = Axis(fig[1, 1], 
- 			  #limits = ((-0.4, 0.9),(-0.00000001, 0.0000005)),
-              ylabel = L"I (mA/cm²)",
-              xlabel = L"φ (V vs SHE)"
-    )
-	pink        = RGB(1.0, 0.7, 0.8)
-	pastel_blue = RGB(0.2, 0.5, 1.0)
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+
+	total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
+    gold_line = lines!(ax, pnpresult.voltages, total_current,
+                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
 	
-	colors = [RGB(
-	    pink.r   + t*(pastel_blue.r - pink.r),
-	    pink.g   + t*(pastel_blue.g - pink.g),
-	    pink.b   + t*(pastel_blue.b - pink.b)
-	) for t in range(0, 1, length=7)]
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
+    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+                 pink.g + t*(pblue.g-pink.g),
+                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
 
-
-    total_current = currents(pnpresult, iohminus).* cm^2/mA
-    Gold = lines!(ax, pnpresult.voltages, total_current, 
-                  color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-	
-    labels1 = ["CO2RR Gold Model"]
-
-    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
-
-    pressure_row = collect(raw_df[1, :])
-    datatype_row = collect(raw_df[2, :])
-
-    labels2 = [
-        pressure_row[1] * "\t sat",
-        pressure_row[4] * "\t pCO2(atm)",
-        pressure_row[6] * "\t pCO2(atm)",
-        pressure_row[8] * "\t pCO2(atm)",
-        pressure_row[10] * "\t pCO2(atm)",
-        pressure_row[12] * "\t pCO2(atm)",
-        pressure_row[14] * "\t\t\b pCO2(atm)"
-    ]
-    
-    numeric_data = [
-        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
-        for i in 4:nrow(raw_df)
-    ]
-    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
-
-    Ar     = lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1])
-    CO2_1  = lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2])
-    CO2_2  = lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3])
-    CO2_3  = lines!(ax, num_df[!, 7], num_df[!, 8], color = colors[4])  
-    CO2_5  = lines!(ax, num_df[!, 9], num_df[!, 10], color = colors[5]) 
-    CO2_6  = lines!(ax, num_df[!, 11], num_df[!, 12], color = colors[6])
-    CO2_10 = lines!(ax, num_df[!, 13], num_df[!, 14], color = colors[7])
-
-    lines2 = [Ar, CO2_1, CO2_2, CO2_3, CO2_5, CO2_6, CO2_10]
-
-   	Legend(fig[1, 2], 
-    [[Gold], lines2],         
-    [labels1, labels2],       
-    ["Model", "Koper\nPressure"]; 
-)
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        push!(plot_objs1, line)
+    end
+    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
 	fig
 end
-
-
-# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
-let
-    ic = model.cspecies
-    fig = Figure(size = (650, 400))
-    ax = Axis(fig[1, 1], 
-			  #limits = ((-1.4, 1.4),(-5, 10)),
-              ylabel = "I (mA/cm²)",
-              xlabel = "φ (V vs SHE)"
-    )
-	colors = [RGB(1-(i/6), 0, 1-(i/6)) for i in 1:3]
-
-    
-    total_current = currents(pnpresult, iohminus)
-	lines!(ax, pnpresult.voltages, total_current, color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-
-    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
-
-	pH_row = collect(raw_df[1, :])
-    electrolyte_row = collect(raw_df[2, :])
-
-	numeric_data = [
-	    parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
-	    for i in 4:nrow(raw_df)
-	]
-	num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
-
-	#0.02M 
-    lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1], label = electrolyte_row[1]*"\t"*pH_row[2] * "pH")
-	#0.1M
-    lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2], label = electrolyte_row[3]*"\t\t"*pH_row[4] * "pH")
-	#0.5M
-    lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3], label = electrolyte_row[5]*"\t\t"*pH_row[6] * "pH")
-
-    axislegend(ax, position = :rt)
-	
-    fig
-end;
 
 # ╔═╡ e5956bb0-a33a-488d-906e-fb5a7e2473a9
 let
     ic = model.cspecies
     fig = Figure(size = (1050, 650))
     ax = Axis(fig[1, 1], 
+  			  #limits = ((-1.25, 0.8),(-0.02, 0.1
+									 
+									 #)),
               ylabel = L"I (mA/cm²)",
               xlabel = L"φ (V vs SHE)"
     )
-    colors = [RGB(1-(i/6), 0, 1-(i/6)) for i in 1:3]
+    colors = [RGB(i/3, 0, 1-(i/3)) for i in 1:3]
 
     total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
     gold_line = lines!(ax, pnpresult.voltages, total_current,
@@ -1845,37 +2107,28 @@ let
 end
 
 
-# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
-plot_concentration_profile(pnpresult, X, bulk)
+# ╔═╡ fee347ff-5401-4540-a1ce-fc2e8ff0ce63
+begin
+    c_bulk2 = [0.02, 0.1, 0.5]
+    pH2 = [8.9, 9.3, 8.8]
+    
+    pH_vec = Any[]
 
-# ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
-floataside(
-    md"""
-    __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(ivresult.voltages), default=default_index))
+    # 1부터 c_bulk2의 길이(3)까지 루프를 돌도록 수정
+    for p in 1:length(c_bulk2)
+        ely_pH = deepcopy(elydata_Gold)
+        ely_pH.c_bulk[5] = elydata_Gold.c_bulk[5] * 0
+        ely_pH.c_bulk .*= c_bulk2[p]
+        ely_pH.c_bulk[2] = 10^(-pH2[p])
+        ely_pH.c_bulk[6] = 10^(pH2[p]-14)
+        pnp_rec = sweep(ely_pH; eneutral=false, tunnel=false)
 
-    __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
-    """,
-    top = 750
-)
+        push!(pH_vec, pnp_rec)
+    end
+end
 
-
-# ╔═╡ c4876d26-e841-4e28-8303-131d4635fc23
-md"""
-Potential at the working electrode 
-$(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
-"""
-
-# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
-plot1d(ivresult, celldata, vshow)
-
-# ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
-floataside(
-	md"""
-	**Voltage:** $(round(ivresult.voltages[vindex], digits=3)) V    
-	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
-	""",
-	top = 678
-)
+# ╔═╡ 787cd367-16cf-472f-962a-a459c4b3a5ee
+pH_vec
 
 # ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
 let
@@ -1889,124 +2142,6 @@ end
 # ╔═╡ 4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 conc_time_func(pnpresult, sawtooth)
 
-# ╔═╡ 3ec33257-9eda-46d8-ab6c-d187957c9c7c
-user_input.scanup
-
-# ╔═╡ b64c0d67-016d-4bca-9fae-150cf50efc77
-let
-    species = getproperty.(bulk, :name)
-	colors = getproperty.(bulk, :color)
-	
-	
-	ZR = zstr(user_input.zR)
-    ZO = zstr(user_input.zR + user_input.n)
-
-    XX = (X[2:end] / nm)
-    uu = pnpresult.tsol[:, :, it + 1]
-    ru = uu / (mol / dm^3)
-
-    fig = Figure(size = (650, 400))
-    ax1 = Axis(
-        fig[1, 1];
-               xlabel=L"x/nm",
-        ylabel = L"c/(mol/dm^3)",
-        xscale = log10,
-        yscale = log10,
-        title = "V=$(pnpresult.voltages[it])"
-    )
-    xlims!(ax1, XX[1], L / nm)
-    ylims!(ax1, 1.0e-25, 1.0e2)
-
-	for i in 1:nc
-	    yvals = [c > 0 ? log10(c) : NaN for c in ru[i, 2:end]]
-	    lines!(ax1, XX, 10 .^ yvals, color = colors[i], linestyle = :solid, label = species[i])
-	end
-
-
-    Legend(
-        fig[1, 2], ax1; labelsize = 10,
-        backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5)
-
-    ) 
-    fig
-	#println(species, colors)
-end
-
-# ╔═╡ 59a59594-feaa-4343-9fb5-ae0e3b5197c2
-begin
-form_sig = hash(user_input)::UInt64
-
-param_tuple = (
-    user_input[:vmin],
-    user_input[:vmax],
-    user_input[:zR],
-    user_input[:n],
-    user_input[:scanrate],
-    user_input[:nperiods],
-    user_input[:double64],
-    user_input[:tunnel],
-    user_input[:κt],
-    user_input[:κk],
-    user_input[:model_choice],
-    user_input[:mode],
-    user_input[:BC_Select],
-)
-sig = hash(param_tuple)::UInt64
-
-if form_sig != RUNSTATE.last_form_sig[]
-    RUNSTATE.cache[] = nothing            
-    RUNSTATE.last_sig[] = sig             
-    RUNSTATE.last_go[]  = go              
-    RUNSTATE.last_form_sig[] = form_sig   
-end
-
-if sig != RUNSTATE.last_sig[] && go == RUNSTATE.last_go[]
-    RUNSTATE.cache[] = nothing
-    RUNSTATE.last_sig[] = sig
-end
-
-if go != RUNSTATE.last_go[]
-    RUNSTATE.cache[] = heavy(user_input)
-    RUNSTATE.last_go[]  = go
-    RUNSTATE.last_sig[] = sig
-end
-	result = RUNSTATE.cache[]
-end
-
-# ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
-if runregtest
-	sresult = load("./data/regressionresults.jld2")["regressionresults"]
-
-	vidxs_result = [findfirst(isequal(v), result.voltages) for v in voltages[1:end-1]]
-	vidxs_sresult = [findfirst(isequal(v), sresult.voltages) for v in voltages[1:end-1]]
-	
-	if any(isnothing.(vidxs_sresult))
-		throw(ArgumentError("For the full regression test use the applied voltages  -1.5:0.1:0.0"))
-	end
-
-	@testset begin
-	@testset "Concentrations" begin
-		@testset "$(bulk[ia].name)" for ia in 1:nc
-			@testset "U=$(result.voltages[vidx_result])" for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)	
-				@test all(isapprox(
-					result.solutions[vidx_result][ia,:], sresult.solutions[vidx_sresult][ia,:], 
-					rtol = 1.0e-5
-				))
-			end
-		end
-	end
-
-	@testset "Currents" begin
-		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
-			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
-											sresult.j_we[vidx_result][iohminus])
-				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
-			end
-		end
-	end
-	end
-end;
-
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═a94bc4e1-506f-4e40-bfe8-1ce7e6093974
@@ -2019,6 +2154,7 @@ end;
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
+# ╠═ab1c0d49-7da7-484f-a2c2-4eec20239450
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
 # ╟─de2c826d-6c05-47cf-b5f5-44a00ea9889c
 # ╟─d8f00649-e2ed-4bdd-853f-05268f0d5353
@@ -2070,25 +2206,35 @@ end;
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
-# ╠═3ec33257-9eda-46d8-ab6c-d187957c9c7c
+# ╠═a42b1afb-86f2-4a11-8328-c726b614aaba
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═39c8ef0d-aac2-4c7f-8004-4166c460ebc5
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
+# ╠═fee347ff-5401-4540-a1ce-fc2e8ff0ce63
+# ╠═787cd367-16cf-472f-962a-a459c4b3a5ee
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
+# ╠═79018ef0-6ab1-4420-9a52-8f8e2812fd40
 # ╠═f9dade9f-8431-48a6-a2ee-2c88f178e76e
 # ╠═cb9b0158-f17d-4136-8994-360f3078c7df
+# ╠═c62ab378-0988-4fa5-b21d-5e1622c63c87
 # ╠═52a5bbd2-0278-4d92-95f1-367797f636e6
-# ╟─27075c18-4da9-42f4-b5a8-d36bc7b4930d
-# ╠═3d661549-a8d2-40b0-add8-b186193f90fe
-# ╠═0106756b-594d-4fdb-81b5-cf0739898521
-# ╠═81c4e515-89b5-4ecf-8437-070e5a51cb4c
-# ╠═df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
-# ╠═e5956bb0-a33a-488d-906e-fb5a7e2473a9
+# ╠═278dd577-2d1f-4608-aee4-f7de466cf736
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
-# ╠═3bbf616f-dc7e-4eed-8f2c-598021187e04
 # ╠═b64c0d67-016d-4bca-9fae-150cf50efc77
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
+# ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
+# ╠═27075c18-4da9-42f4-b5a8-d36bc7b4930d
+# ╠═3d661549-a8d2-40b0-add8-b186193f90fe
+# ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
+# ╠═0607672c-9177-4717-8ddf-e07a5dd82ec4
+# ╠═0106756b-594d-4fdb-81b5-cf0739898521
+# ╠═d4fb4803-1c1b-4fd7-a782-112777f55be0
+# ╠═81c4e515-89b5-4ecf-8437-070e5a51cb4c
+# ╟─9a92d4a9-f489-4bba-9361-03cad3ea12e1
+# ╠═6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
+# ╠═df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+# ╠═e5956bb0-a33a-488d-906e-fb5a7e2473a9
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 # ╠═82baec54-048a-4851-8808-dd8c31eae4b9
 # ╠═8c367e8f-df43-4f21-bef0-55060f36f44e
@@ -2118,6 +2264,5 @@ end;
 # ╠═e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
 # ╠═315dd351-9d68-48f1-aa7a-8f43f3dec6ac
 # ╠═7454f68a-64dc-4676-b2b2-ed8fcb35d81e
-# ╠═59a59594-feaa-4343-9fb5-ae0e3b5197c2
 # ╠═ae50877a-20da-4b1a-acd5-cc0a73e428da
 # ╠═3ac837b8-559b-41c2-8f83-1331839dcf7e
