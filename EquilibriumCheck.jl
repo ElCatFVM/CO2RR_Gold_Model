@@ -183,11 +183,11 @@ begin
 		M::Float64
 		color::Symbol
 	end
-	function BulkSpecies(;name, z, c_bulk=nothing, D, κ=nothing, color)
+	function BulkSpecies(;name, z, c_bulk=nothing, a, D, κ=nothing, color)
 		D *= m^2/s
 		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
-		a = 0.0#8.2 * Å            # (v0/N_A)^(1/3)
-		v = 0.0#N_A * (8.2 * Å)^3 #v0 * (κ + 1)
+		a = 0.0 #8.2 * Å#8.2 * Å            # (v0/N_A)^(1/3)
+		v = N_A * (a * Å)^3 #v0 * (κ + 1)
 		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
@@ -405,7 +405,10 @@ function DGML_γ!(γ, c, p, electrolyte)
     for ic in cspecies
         γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc))
     end
-	
+
+	#for ic in cspecies
+    #    γ[ic] = rexp(tildev[ic] * p / RT) * (barc)^(Mrel[ic]-1) 
+    #end
     #for ic in cspecies
     #    γ[ic] = v0 * ( 1.0 / (1 - sum(c_bulk[i] * v[i] for i in 1:nc) / (mol/dm^3)))
     #end
@@ -442,45 +445,16 @@ function Stefan_γ!(γ, c, p, electrolyte)
     return γ
 end
 
-# ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
-function activity_coefficient!(
-    γ::AbstractVector,
-	u,
-    data,
-    mode::Function;
-)
-    (; v, ip, pscale, p_bulk, M, M0, v0, κ, RT, nc, Mrel, tildev, v0, cspecies, rexp) = data
-
-    if mode == Stefan_γ!
-        # Ringe et al. approach (volume fraction-based)
-    	for ic in cspecies
-        	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc) / (mol/dm^3))
-    	end
-		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
-    elseif mode == DGML_γ!
-		
-        # Dreyer et al. approach
-        #p = u[ip] * pscale - p_bulk
-        #c0, barc = c0_barc(u, data)
-        #for ic in nc
-        #    γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] #* (1 /barc)
-		#end
-
-		
-	    #γ .= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
-
-
-		for ic in cspecies
-    	   	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc) / (mol/dm^3))
-   		end
-        
-    else
-        error("Unsupported mode: must be Stefan_γ! or DGML_γ!")
-    end
-
+# ╔═╡ 161a810d-c05e-42ad-97ab-131059d6784a
+function Potassium_γ!(γ, c, p, electrolyte)
+	
+    (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
+    c0, barc = c0_barc(c, electrolyte)
+	γ .= 0 
+    γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus] / (mol/dm^3))
+    
     return γ
 end
-
 
 # ╔═╡ 2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 md"""
@@ -561,6 +535,33 @@ X
 # ╠═╡ disabled = true
 #=╠═╡
 nnpresult = sweep(model; eneutral = true, tunnel = false)
+  ╠═╡ =#
+
+# ╔═╡ fee347ff-5401-4540-a1ce-fc2e8ff0ce63
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+    c_bulk2 = [0.2, 1, 5]
+    pH2 = [8.9, 9.3, 8.8]
+    
+    pH_vec = Any[]
+
+    for p in 1:length(c_bulk2)
+        ely_pH = deepcopy(elydata_Gold)
+        ely_pH.c_bulk[5] = elydata_Gold.c_bulk[5] * 0
+        ely_pH.c_bulk .*= c_bulk2[p]
+        ely_pH.c_bulk[2] = 10^(-pH2[p])
+        ely_pH.c_bulk[6] = 10^(pH2[p]-14)
+        pnp_pH = sweep(ely_pH; eneutral=false, tunnel=false)
+
+        push!(pH_vec, pnp_pH)
+    end
+end
+  ╠═╡ =#
+
+# ╔═╡ ca5793af-b6e1-492a-831d-80eb18d0a84e
+#=╠═╡
+pH_vec
   ╠═╡ =#
 
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
@@ -716,6 +717,99 @@ let
 	fig
 end
 
+# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+let
+    fig = Figure(size = (1600, 900))
+    ax  = Axis(fig[1, 1],
+        xlabel = L"\phi \, (\mathrm{V \; vs \; SHE})",
+        ylabel = L"I \; (\mathrm{mA/cm^2})",
+       # limits = ((-1.25, 0.8), (-0.5, 0.07))
+    )
+
+	csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
+	unit_scale = cm^2/mA 
+
+    #Experimental (Koper, Langmuir 2021, Fig.3)
+    raw = CSV.read(csv_path, DataFrame; header = false)
+    pres_labels = vec(Matrix(raw[1:1, :])) 
+    sub  = Matrix(raw[4:end, :])
+    num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+
+    npairs = size(num_df, 2) ÷ 2
+
+    exp_colors = [RGB(0.9 - (0.05 * i/npairs), 0.8 * (1 - i/npairs), 0.7 + 0.3 * i/npairs) for i in 1:npairs]
+
+
+    exp_plots = Plot[] 
+    exp_labels = String[]
+
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+		label = "$(pres_labels[min(2j, length(pres_labels))]) pH"
+        push!(exp_labels, label)
+
+		#---normal scale---
+        #h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
+		#---log scale---
+		h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
+        push!(exp_plots, h)
+    end
+
+    #Theoretical (LiquidElectrolytes.jl 결과)
+    theo_colors = [RGB(0.6 - (0.2 * i/npairs), 0.5 * (1 - i/npairs), 0.3 + 0.6 * i/npairs) for i in 1:npairs]
+
+    theo_plots = Plot[]
+    theo_labels = String[]
+
+    for j in 1:npairs
+        rec = pH_vec[j]
+   		label2 = "$(pres_labels[min(2j, length(pres_labels))]) pH"
+        push!(theo_labels, label2)
+
+        j_tot = currents(rec, iohminus) .* unit_scale
+		#---normal scale---
+        #h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
+		#---log scale---
+		h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
+        push!(theo_plots, h)
+    end
+
+    Legend(fig[1, 2], exp_plots,  exp_labels,  "Experimental"; framevisible = true)
+    Legend(fig[1, 3], theo_plots, theo_labels, "Theoretical";  framevisible = true)
+
+    fig
+end
+
+
+# ╔═╡ 333492ec-9016-44c5-9059-e3cb42c05a89
+#=╠═╡
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	
+	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
+				0.3 + 0.5*(1-i/length(sweep_vec)), 
+				0.8 - 0.7*(i/length(sweep_vec)))
+			for i in 1:length(sweep_vec)]
+    plot_objs = []
+    labels = String[]
+    for (j, rec) in enumerate(sweep_vec)
+        label = "$(scanrates[j])\t\t "
+        push!(labels, label)
+        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
+        push!(plot_objs, line)
+    end
+    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
+    fig
+end
+  ╠═╡ =#
+
+# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
+#=╠═╡
+sweep_vec
+  ╠═╡ =#
+
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
 ### Plotting Functions
@@ -819,6 +913,11 @@ Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 #=╠═╡
 plot1d(ivresult, celldata, vshow)
   ╠═╡ =#
+
+# ╔═╡ f8b5dc8f-1f41-4600-825e-2f9653f2d925
+md"""
+### Polarization Curve
+"""
 
 # ╔═╡ c1d2305e-fb8b-4845-a414-08fff84aa9b0
 md"""
@@ -949,10 +1048,12 @@ floataside(
 	
 	- __Other ions__  
 	  ``κ``: $(Child("κt", NumberField(0.0:0.1:20.0; default = 0.0)))
-	
+	  ``a``: $(Child("at", NumberField(0.0:0.1:20.0; default = 0.0)))
+
 	- __Cation__  
 	  ``κ``: $(Child("κk", NumberField(0.0:0.1:20.0; default = 0.0)))
-	
+	  ``a``: $(Child("ak", NumberField(0.0:0.1:20.0; default = 8.2)))
+
 	---
 	
 	###### __Model Selection__  
@@ -961,7 +1062,8 @@ floataside(
 	---
 	
 	###### __Activity Coefficient__  
-	- Mode: $(Child("mode", Select(["DMGL_γ", "Stefan_γ"])))
+	- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
+	- NoteBook.Mode: $(Child("Nmode", Select(["Stefan_γ", "Potassium_γ", "DMGL_γ"])))
 	- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Dirichlet"])))
 	"""
 	        end;
@@ -972,9 +1074,9 @@ floataside(
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
-	#at = user_input[:at]
+	at = user_input[:at]
 	κt = user_input[:κt]
-	#ak = user_input[:ak]
+	ak = user_input[:ak]
 	κk = user_input[:κk]
 	const bulk = let 
 		bulk = [
@@ -983,6 +1085,7 @@ begin
 							D = 1.185e-9, 
 							c_bulk = 0.091, 
 							#v = v0*(κt+1),
+							a = at,
 							κ = κt, 
 							color = :brown
 				),
@@ -991,7 +1094,8 @@ begin
 							D = 0.923e-9, 
 							c_bulk = 2.68e-6,
 							#v = v0*(κt+1), 
-							κ = κt * 2, 
+							a = at,
+							κ = κt, 
 							color = :violet
 				),
 				BulkSpecies(;name = "CO₂",
@@ -1000,7 +1104,8 @@ begin
 							# = 0.033
 							c_bulk = 0.033, 
 							#v =v0, 
-							κ = 0, 
+							a = at,
+							κ = κt, 
 							color=:red
 				),
 				BulkSpecies(;name = "OH⁻",
@@ -1008,6 +1113,7 @@ begin
 							D = 5.273e-9, 
 							c_bulk = 10^(pH-14), 
 							#v = v0*(κt+1), 
+							a = at,
 							κ = κt, 
 							color = :green
 				),
@@ -1016,6 +1122,7 @@ begin
 							D = 9.310e-9, 
 							c_bulk = 10^(-pH), 
 							#v = v0*(κt+1), 
+							a = at,
 							κ = κt, 
 							color = :gray
 				),
@@ -1024,14 +1131,15 @@ begin
 							D = 2.23e-9,
 							c_bulk = 0.0,
 							#v = v0, 
-							κ = 0,  
+							a = at,
+							κ = κt,  
 							color=:blue
 				)
 		]
 		push!(bulk, make_eneutral(bulk;name="K⁺", 
 									   z = 1, 
 									   D = 1.957e-9,
-		
+									   a = ak,
 									   #v = v0*(κt+1), 
 									   κ = κk, 
 									   color = :orange
@@ -1238,9 +1346,63 @@ end;
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
-	γ_key = user_input.mode 
-	γ_mode = γ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
+	Lγ_key = user_input.Lmode 
+	Lγ_mode = Lγ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
+
+	Nγ_key = user_input.Nmode
+	Nγ_mode = Nγ_key == "Stefan_γ" ? Stefan_γ! : Nγ_key == "DMGL_γ" ? DGML_γ! : Potassium_γ! 
 end;
+
+# ╔═╡ e510bce3-d33f-47bb-98d6-121eee8f2252
+elydata_Gold = ElectrolyteData(;
+                               	nc = size(bulk)[1],
+								na    = na,
+								z     = getproperty.(bulk, :z),
+							  	D     = getproperty.(bulk, :D),
+							  	T     = T,
+							  	eneutral=false,
+							  	κ     = getproperty.(bulk, :κ),
+	                            c_bulk= getproperty.(bulk, :c_bulk),
+							    v0 	  = v0,
+								v     = getproperty.(bulk, :v),
+								M0 	  = M0,
+								M     = getproperty.(bulk, :M),
+							  	Γ_we  = Γ_we,
+							  	Γ_bulk= Γ_bulk,
+							   	actcoeff! = Lγ_mode
+							   )
+
+# ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
+function activity_coefficient!(
+    γ::AbstractVector,
+	u,
+    data,
+    mode::Function;
+)
+    (; v, ip, pscale, p_bulk, M, M0, v0, κ, RT, nc, Mrel, tildev, v0, cspecies, rexp) = data
+
+    if Nγ_mode == Stefan_γ!
+        # Ringe et al. approach (volume fraction-based)
+    	for ic in cspecies
+        	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc) / (mol/dm^3))
+    	end
+		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
+    elseif Nγ_mode == DGML_γ!
+		
+        # Dreyer et al. approach
+        p = u[ip] * pscale - p_bulk
+        c0, barc = c0_barc(u, data)
+        for ic in nc
+            γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] #* (1 /barc)
+		end
+
+    else
+		γ .= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
+	end
+
+    return γ
+end
+
 
 # ╔═╡ 8a1047fa-e483-40d9-8904-7576f30acfb4
 begin
@@ -1258,7 +1420,7 @@ begin
 
 		γ = get_tmp(γ_cache, u[ico2])
 		# compute activity coefficients according to the approach in Ringe et al.
-		activity_coefficient!(γ, u, data, γ_mode)
+		activity_coefficient!(γ, u, data, Nγ_mode)
 		
 		# compute activity coefficients according to the approach in Dreyer et al.
 		# p = u[ip] * pscale-p_bulk
@@ -1296,8 +1458,8 @@ begin
 		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we) = data
 				
 		γ = get_tmp(γ_cache, u[ico2])
-		γ_co2 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
-		γ_co 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
+		γ_co2 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
+		γ_co 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico]
 		#γ_co 	= 1.0
 		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
 		local_pH 	= -log10(u[ihplus] / (mol/dm^3))
@@ -1344,25 +1506,6 @@ begin
 		f[ikplus] *= S
 	end
 end
-
-# ╔═╡ e510bce3-d33f-47bb-98d6-121eee8f2252
-elydata_Gold = ElectrolyteData(;
-                               	nc = size(bulk)[1],
-								na    = na,
-								z     = getproperty.(bulk, :z),
-							  	D     = getproperty.(bulk, :D),
-							  	T     = T,
-							  	eneutral=false,
-							  	κ     = getproperty.(bulk, :κ),
-	                            c_bulk= getproperty.(bulk, :c_bulk),
-							    v0 	  = v0,
-								v     = getproperty.(bulk, :v),
-								M0 	  = M0,
-								M     = getproperty.(bulk, :M),
-							  	Γ_we  = Γ_we,
-							  	Γ_bulk= Γ_bulk,
-							   	actcoeff! = γ_mode
-							   )
 
 # ╔═╡ 924f8f5d-2cb0-4381-a522-509ff4c002b6
 begin
@@ -1748,9 +1891,13 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
 end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
+# ╠═╡ disabled = true
+#=╠═╡
 pnpresult = sweep(model; eneutral = false, tunnel = false)
+  ╠═╡ =#
 
 # ╔═╡ cb9b0158-f17d-4136-8994-360f3078c7df
+#=╠═╡
 let
     fig = Figure(size = (600, 200))
     ax = Axis(fig[1, 1], yscale = log10)
@@ -1759,8 +1906,10 @@ let
     lines!(ax, T[2:end], T[2:end] - T[1:(end - 1)])
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
+#=╠═╡
 let
 	ic = model.cspecies
     fig = Figure(size = (650, 400))
@@ -1782,11 +1931,15 @@ let
 
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 52a5bbd2-0278-4d92-95f1-367797f636e6
+#=╠═╡
 CVPlot!(pnpresult, model)
+  ╠═╡ =#
 
 # ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
+#=╠═╡
 let
     ic = model.cspecies
     fig = Figure(size = (1050, 650))
@@ -1830,8 +1983,10 @@ let
     fig
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
+#=╠═╡
 let
     fig = Figure(size = (1600, 900))
     ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
@@ -1865,8 +2020,10 @@ let
     Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
 	fig
 end
+  ╠═╡ =#
 
 # ╔═╡ e5956bb0-a33a-488d-906e-fb5a7e2473a9
+#=╠═╡
 let
     ic = model.cspecies
     fig = Figure(size = (1050, 650))
@@ -1914,8 +2071,10 @@ let
     fig
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
+#=╠═╡
 floataside(
     md"""
     __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(ivresult.voltages), default=default_index))
@@ -1925,14 +2084,18 @@ floataside(
     top = 750
 )
 
+  ╠═╡ =#
 
 # ╔═╡ c4876d26-e841-4e28-8303-131d4635fc23
+#=╠═╡
 md"""
 Potential at the working electrode 
 $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 """
+  ╠═╡ =#
 
 # ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
+#=╠═╡
 floataside(
 	md"""
 	**Voltage:** $(round(ivresult.voltages[vindex], digits=3)) V    
@@ -1940,8 +2103,11 @@ floataside(
 	""",
 	top = 678
 )
+  ╠═╡ =#
 
 # ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
+# ╠═╡ disabled = true
+#=╠═╡
 begin
     P = [0.0, 0.1, 0.2, 0.3, 0.5, 0.6, 1.0]
     base_co2 = elydata_Gold.c_bulk[5]
@@ -1958,8 +2124,10 @@ begin
     end
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 0607672c-9177-4717-8ddf-e07a5dd82ec4
+#=╠═╡
 let
     fig = Figure(size = (1600, 900))
     ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
@@ -1978,8 +2146,10 @@ let
     Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ d4fb4803-1c1b-4fd7-a782-112777f55be0
+#=╠═╡
 let
     fig = Figure(size = (1600, 900))
        ax = Axis(fig[1, 1],
@@ -2030,8 +2200,10 @@ let
     Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 8fc7877e-c4e4-40d1-a720-7806f7dbde0a
+#=╠═╡
 let
     fig = Figure(size = (1600, 900))
        ax = Axis(fig[1, 1],
@@ -2082,93 +2254,7 @@ let
     Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
     fig
 end
-
-# ╔═╡ fee347ff-5401-4540-a1ce-fc2e8ff0ce63
-begin
-    c_bulk2 = [0.2, 1, 5]
-    pH2 = [8.9, 9.3, 8.8]
-    
-    pH_vec = Any[]
-
-    for p in 1:length(c_bulk2)
-        ely_pH = deepcopy(elydata_Gold)
-        ely_pH.c_bulk[5] = elydata_Gold.c_bulk[5] * 0
-        ely_pH.c_bulk .*= c_bulk2[p]
-        ely_pH.c_bulk[2] = 10^(-pH2[p])
-        ely_pH.c_bulk[6] = 10^(pH2[p]-14)
-        pnp_pH = sweep(ely_pH; eneutral=false, tunnel=false)
-
-        push!(pH_vec, pnp_pH)
-    end
-end
-
-# ╔═╡ ca5793af-b6e1-492a-831d-80eb18d0a84e
-pH_vec
-
-# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
-let
-    fig = Figure(size = (1600, 900))
-    ax  = Axis(fig[1, 1],
-        xlabel = L"\phi \, (\mathrm{V \; vs \; SHE})",
-        ylabel = L"I \; (\mathrm{mA/cm^2})",
-       # limits = ((-1.25, 0.8), (-0.5, 0.07))
-    )
-
-	csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
-	unit_scale = cm^2/mA 
-
-    #Experimental (Koper, Langmuir 2021, Fig.3)
-    raw = CSV.read(csv_path, DataFrame; header = false)
-    pres_labels = vec(Matrix(raw[1:1, :])) 
-    sub  = Matrix(raw[4:end, :])
-    num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-    num_df = DataFrame(num, :auto)
-
-    npairs = size(num_df, 2) ÷ 2
-
-    exp_colors = [RGB(0.9 - (0.05 * i/npairs), 0.8 * (1 - i/npairs), 0.7 + 0.3 * i/npairs) for i in 1:npairs]
-
-
-    exp_plots = Plot[] 
-    exp_labels = String[]
-
-    for j in 1:npairs
-        xcol, ycol = 2j - 1, 2j
-		label = "$(pres_labels[min(2j, length(pres_labels))]) pH"
-        push!(exp_labels, label)
-
-		#---normal scale---
-        #h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
-		#---log scale---
-		h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
-        push!(exp_plots, h)
-    end
-
-    #Theoretical (LiquidElectrolytes.jl 결과)
-    theo_colors = [RGB(0.6 - (0.2 * i/npairs), 0.5 * (1 - i/npairs), 0.3 + 0.6 * i/npairs) for i in 1:npairs]
-
-    theo_plots = Plot[]
-    theo_labels = String[]
-
-    for j in 1:npairs
-        rec = pH_vec[j]
-   		label2 = "$(pres_labels[min(2j, length(pres_labels))]) pH"
-        push!(theo_labels, label2)
-
-        j_tot = currents(rec, iohminus) .* unit_scale
-		#---normal scale---
-        #h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
-		#---log scale---
-		h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
-        push!(theo_plots, h)
-    end
-
-    Legend(fig[1, 2], exp_plots,  exp_labels,  "Experimental"; framevisible = true)
-    Legend(fig[1, 3], theo_plots, theo_labels, "Theoretical";  framevisible = true)
-
-    fig
-end
-
+  ╠═╡ =#
 
 # ╔═╡ d38c2b43-4d8b-4be7-8d77-5a30da384541
 function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = true)
@@ -2186,6 +2272,7 @@ function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = t
 end
 
 # ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
+#=╠═╡
 let
     fig = Figure()
     ax = Axis(fig[1, 1])
@@ -2193,13 +2280,18 @@ let
     lines!(ax, T, sawtooth.(T))
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 4e894347-2ce6-4c5f-a06e-7f1af1983bbc
+#=╠═╡
 conc_time_func(pnpresult, sawtooth)
+  ╠═╡ =#
 
 # ╔═╡ 1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
+# ╠═╡ disabled = true
+#=╠═╡
 begin
-    scanrates = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0] 
+    scanrates = [0.00000000000000000000000000000000000000005, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0] 
 
     sweep_vec = Vector{Any}(undef, length(scanrates))
 
@@ -2214,8 +2306,10 @@ begin
     end
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
+#=╠═╡
 let
 	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
 	raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
@@ -2281,8 +2375,10 @@ let
 	fig
 
 end
+  ╠═╡ =#
 
 # ╔═╡ d94ec33c-3d9d-4d70-b0e1-e3d861a62821
+#=╠═╡
 let
     fig = Figure(size = (1600, 900))
     ax = Axis(fig[1, 1], limits = ((-1.2, 0.9),(-0, 0.0002)), ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
@@ -2302,32 +2398,10 @@ let
     Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
     fig
 end
-
-# ╔═╡ 333492ec-9016-44c5-9059-e3cb42c05a89
-let
-    fig = Figure(size = (1600, 900))
-    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
-	
-	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
-				0.3 + 0.5*(1-i/length(sweep_vec)), 
-				0.8 - 0.7*(i/length(sweep_vec)))
-			for i in 1:length(sweep_vec)]
-    plot_objs = []
-    labels = String[]
-    for (j, rec) in enumerate(sweep_vec)
-        label = "$(scanrates[j])\t\t "
-        push!(labels, label)
-        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
-        push!(plot_objs, line)
-    end
-    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
-    fig
-end
-
-# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
-sweep_vec
+  ╠═╡ =#
 
 # ╔═╡ b64c0d67-016d-4bca-9fae-150cf50efc77
+#=╠═╡
 let
     species = getproperty.(bulk, :name)
 	colors = getproperty.(bulk, :color)
@@ -2366,6 +2440,7 @@ let
     fig
 	#println(species, colors)
 end
+  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
@@ -2406,6 +2481,7 @@ end
 # ╠═0db74a70-af86-492c-affb-9de62ffe4455
 # ╟─4f388fe0-6bc8-4a29-bccc-fa725e62c6a7
 # ╠═5d179c52-43d7-4bcb-a2df-93c5806876fa
+# ╠═161a810d-c05e-42ad-97ab-131059d6784a
 # ╠═9d814b85-a5b6-42e5-abf4-15500bbdb717
 # ╠═5f17b4f7-54d6-4ad0-9886-252854840a80
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
@@ -2484,6 +2560,7 @@ end
 # ╟─c4876d26-e841-4e28-8303-131d4635fc23
 # ╠═5dd1a1e6-7db1-479e-a684-accec53ce06a
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
+# ╠═f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═1cd669ac-05eb-48b2-b457-8c395cd5807d
 # ╟─c1d2305e-fb8b-4845-a414-08fff84aa9b0
 # ╠═2ce5aa45-4aa5-4c2a-a608-f581266e55f0
