@@ -550,7 +550,7 @@ md"""
 """
 
 # ╔═╡ e7093eae-b18f-423c-a9bd-6017e693ac8b
-nine_diff = []
+
 
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
 md"""
@@ -648,26 +648,6 @@ md"""
 #### Pressure plots
 """
 
-# ╔═╡ 04790584-5822-460a-be5c-c9efb3bc26b5
-let
-    fig = Figure(size = (1600, 900), title = "pH = 9")
-    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
-	label = ["0.01", "0.05", "0.1", "0.5", "1.0"]
-	
-    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-    cols2 = [RGB(1 - i/length(nine_diff), 0, i/length(nine_diff)) for i in 1:length(nine_diff)]
-    plot_objs2 = []
-    labels2 = String[]
-    for (j, rec) in enumerate(nine_diff)
-        label2 = j == 0 ? "$(label[j])\t\t sat" : "pCO2 ⋅ $(label[j])\t atm"
-        push!(labels2, label2)
-        line = scatterlines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
-        push!(plot_objs2, line)
-    end
-    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
-    fig
-end
-
 # ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
 #=╠═╡
 let
@@ -723,9 +703,6 @@ end
 
   ╠═╡ =#
 
-# ╔═╡ 4f8b852b-3ab3-4c54-8c44-64f6413329ee
-results
-
 # ╔═╡ 0106756b-594d-4fdb-81b5-cf0739898521
 let
     fig = Figure(size = (1600, 900))
@@ -754,6 +731,58 @@ let
     end
     Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
 	fig
+end
+
+# ╔═╡ d4fb4803-1c1b-4fd7-a782-112777f55be0
+let
+    fig = Figure(size = (1600, 900))
+       ax = Axis(fig[1, 1],
+        xlabel = L"φ (V vs SHE)",
+        ylabel = L"I (mA/cm²)",
+        #yscale = log10,
+       # yminorticksvisible = true,  
+       # yminorticks = IntervalsBetween(5),
+		limits = ((-0.3, 1.0),(1e-4, 1.5e-1))
+    )
+
+
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
+    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+                 pink.g + t*(pblue.g-pink.g),
+                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+       # label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+       # push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        push!(plot_objs1, line)
+    end
+   # Legend(fig[1, 2], plot_objs1, "Experimental"; framevisible = true)
+
+    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
+    cols2 = [RGB(1 - i/length(pnp_vec), 0, i/length(pnp_vec)) for i in 0:length(pnp_vec)]
+    plot_objs2 = []
+    labels2 = String[]
+    for (j, rec) in enumerate(pnp_vec)
+       # label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+      #  push!(labels2, label2)
+        line = scatterlines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
+		#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
+        push!(plot_objs2, line)
+    end
+   # Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    fig
 end
 
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
@@ -2356,60 +2385,32 @@ floataside(
 )
 
 # ╔═╡ 12a4df23-3c63-41d6-bd50-d7209e423cb8
-let
+begin
     P = [0.01, 0.05, 0.1, 0.5, 1]
     base_CO2 = elydata_Gold.c_bulk[5]
-	#base_CO3 = elydata_Gold.c_bulk[3]
-	elydata_Gold.c_bulk[2] = 10.0.^(- 9 )
-	elydata_Gold.c_bulk[6] = 10.0.^(- (14 + 9))
-
+	Pressure_vec = []
     for p in P
         ely_pressure = deepcopy(elydata_Gold)   
-        #ely_pressure.c_bulk[2] = 10.0.^(-p)
-		#ely_pressure.c_bulk[6] = 10.0.^(-14+p)
 		ely_pressure.c_bulk[5] = base_CO2 .* p
 
         pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
 
-        push!(nine_diff, pnp_rec)              
+        push!(Pressure_vec, pnp_rec)              
     end
 end
 
-# ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
-begin
-    P = [3.0, 4, 5, 6, 6.8, 7, 8, 9]
-   # base_CO2 = elydata_Gold.c_bulk[5]
-	base_CO3 = elydata_Gold.c_bulk[3]
-	#base_H = elydata_Gold.c_bulk[2]
-	#base_OH = elydata_Gold.c_bulk[6]
-	
-    pnp_vec = Any[]  
-
-    for p in P
-        ely_pressure = deepcopy(elydata_Gold)   
-        ely_pressure.c_bulk[2] = 10.0.^(-p)
-		ely_pressure.c_bulk[6] = 10.0.^(-14+p)
-	#	ely_pressure.c_bulk[5] = base_CO2 .* p
-
-        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
-
-        push!(pnp_vec, pnp_rec)              
-    end
-end
-
-
-# ╔═╡ 0607672c-9177-4717-8ddf-e07a5dd82ec4
+# ╔═╡ 04790584-5822-460a-be5c-c9efb3bc26b5
 let
-    fig = Figure(size = (1600, 900))
+    fig = Figure(size = (1600, 900), title = "pH = 9")
     ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
-	label = ["3.0", "4.0", "5.0", "6.0", "6.8", "7.0", "8.0", "9.0"]
+	label = ["0.01", "0.05", "0.1", "0.5", "1.0"]
 	
     # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-    cols2 = [RGB(0.5 - 0.3 * i/length(pnp_vec), 0.5 * i/length(pnp_vec), 0.2 * i/length(pnp_vec)) for i in 1:length(pnp_vec)]
+    cols2 = [RGB(1 - i/length(Pressure_vec), 0, i/length(Pressure_vec)) for i in 1:length(Pressure_vec)]
     plot_objs2 = []
     labels2 = String[]
-    for (j, rec) in enumerate(pnp_vec)
-        label2 = j == 0 ? "$(label[j])\t\t sat" : " ⋅ $(label[j])\t pH"
+    for (j, rec) in enumerate(Pressure_vec)
+        label2 = j == 0 ? "$(label[j])\t\t sat" : "pCO2 ⋅ $(label[j])\t atm"
         push!(labels2, label2)
         line = scatterlines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
         push!(plot_objs2, line)
@@ -2418,55 +2419,41 @@ let
     fig
 end
 
-# ╔═╡ d4fb4803-1c1b-4fd7-a782-112777f55be0
+# ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
+begin
+    pH_var = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0]
+	base_CO3 = elydata_Gold.c_bulk[3]
+	
+    pH_vec = Any[]  
+    for p in pH_var
+        ely_pressure = deepcopy(elydata_Gold)   
+        ely_pressure.c_bulk[2] = 10.0.^(-p)
+		ely_pressure.c_bulk[6] = 10.0.^(-14+p)
+	#	ely_pressure.c_bulk[5] = base_CO2 .* p
+
+        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
+
+        push!(pH_vec, pnp_rec)              
+    end
+end
+
+# ╔═╡ 0607672c-9177-4717-8ddf-e07a5dd82ec4
 let
     fig = Figure(size = (1600, 900))
-       ax = Axis(fig[1, 1],
-        xlabel = L"φ (V vs SHE)",
-        ylabel = L"I (mA/cm²)",
-        #yscale = log10,
-       # yminorticksvisible = true,  
-       # yminorticks = IntervalsBetween(5),
-		limits = ((-0.3, 1.0),(1e-4, 1.5e-1))
-    )
-
-
-    # Experimental Data Plotting based on M.T.M Koper
-    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
-    pres = vec(Matrix(raw[1:1, :]))
-    sub = Matrix(raw[4:end, :])
-    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-    num_df = DataFrame(num, :auto)
-    npairs = size(num_df, 2) ÷ 2
-    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
-    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
-                 pink.g + t*(pblue.g-pink.g),
-                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
-
-    plot_objs1 = []
-    labels1 = String[]
-    for j in 1:npairs
-        xcol, ycol = 2j - 1, 2j
-       # label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-       # push!(labels1, label)
-        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
-        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
-        push!(plot_objs1, line)
-    end
-   # Legend(fig[1, 2], plot_objs1, "Experimental"; framevisible = true)
-
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	label = ["3.0", "4.0", "5.0", "6.0", "6.8", "7.0", "8.0", "9.0"]
+	
     # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-    cols2 = [RGB(1 - i/length(pnp_vec), 0, i/length(pnp_vec)) for i in 0:length(pnp_vec)]
+    cols2 = [RGB(0.5 - 0.3 * i/length(pH_vec), 0.5 * i/length(pH_vec), 0.2 * i/length(pH_vec)) for i in 1:length(pH_vec)]
     plot_objs2 = []
     labels2 = String[]
-    for (j, rec) in enumerate(pnp_vec)
-       # label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-      #  push!(labels2, label2)
+    for (j, rec) in enumerate(pH_vec)
+        label2 = j == 0 ? "$(label[j])\t\t sat" : " ⋅ $(label[j])\t pH"
+        push!(labels2, label2)
         line = scatterlines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
-		#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
         push!(plot_objs2, line)
     end
-   # Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
     fig
 end
 
@@ -2508,10 +2495,10 @@ let
     Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
 
     # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-    cols2 = [RGB(1 - i/length(pnp_vec), 0, i/length(pnp_vec)) for i in 0:length(pnp_vec)]
+    cols2 = [RGB(1 - i/length(pH_vec), 0, i/length(pH_vec)) for i in 0:length(pH_vec)]
     plot_objs2 = []
     labels2 = String[]
-    for (j, rec) in enumerate(pnp_vec)
+    for (j, rec) in enumerate(pH_vec)
         label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
         push!(labels2, label2)
         line = scatterlines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
@@ -2527,7 +2514,7 @@ Boundary_Layer_LS(elydata_Gold, sawtooth, 1500)
 
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function RDE_BL(model;
-    rpms::AbstractVector{<:Real} = 50:790:4000,
+    rpms::AbstractVector{<:Real} = 10:390:4000,
     eneutral::Bool = true,
     tunnel::Bool = false,
     bikerman::Bool = true,
@@ -2542,8 +2529,8 @@ function RDE_BL(model;
         δ = Boundary_Layer_LS(model, sawtooth, rpm)  
 
 
-        hmin = max(δ * 1e-5, 1.0e-6 * μm)
-        hmax = min(δ * 5e-3, 1.0 * μm) 
+        hmin = δ * 1e-4
+        hmax = δ * 5e-2 
 
         if hmin >= δ
             hmin = δ / 100
@@ -2583,9 +2570,6 @@ end
 # ╔═╡ dd082fcc-a935-4fcb-bc89-788f2cf02978
 RDE_result = RDE_BL(elydata_Gold)
 
-# ╔═╡ 1c029aec-abde-4fe3-862d-e22b639b0965
-plot_RDE_results(RDE_result)
-
 # ╔═╡ e1ef1e83-c472-4267-8450-38c65f48d3dc
 let
     fig = Figure(size = (1600, 900), title = "pH = 9")
@@ -2596,8 +2580,8 @@ let
 
     plot_objs = Any[]
     labels    = String[]
-	cols = [RGB(0.2 + 0.6*(i/length(RDE_result)), 
-				0.3 + 0.5*(1-i/length(RDE_result)), 
+	cols = [RGB(0.8 - 0.1*(i/length(RDE_result)), 
+				0.3 + 0.2*(1-i/length(RDE_result)), 
 				0.8 - 0.7*(i/length(RDE_result)))
 			for i in 1:length(RDE_result)]
 	
@@ -2609,7 +2593,7 @@ let
         I = currents(rec, iohminus) .* (cm^2/mA)
         ϕ = rec.voltages
 
-        line = scatterlines!(ax, ϕ, I; color = cols[j])
+        line = lines!(ax, ϕ, I; color = cols[j])
         push!(plot_objs, line)
 
         δ_um = round(δ * 1e6; digits = 2)
@@ -2813,7 +2797,6 @@ end
 # ╠═d2584e28-8317-4801-83a0-5aad59faf720
 # ╠═10838b83-10c1-40d5-81fe-3c2b78037cc7
 # ╠═dd082fcc-a935-4fcb-bc89-788f2cf02978
-# ╠═1c029aec-abde-4fe3-862d-e22b639b0965
 # ╠═bae9426e-f522-4e37-95ed-0e3debc0d633
 # ╠═45ccce6b-794f-4b3a-9be3-ac32c8c2f868
 # ╟─2d950a96-9404-4b78-9db2-42ae2a4c44bf
@@ -2845,7 +2828,6 @@ end
 # ╠═04790584-5822-460a-be5c-c9efb3bc26b5
 # ╠═def960de-f74a-4ca8-9d95-8af4e0240b60
 # ╠═9dc35f7e-cf35-4eda-9d22-28316f1478d4
-# ╠═4f8b852b-3ab3-4c54-8c44-64f6413329ee
 # ╠═0106756b-594d-4fdb-81b5-cf0739898521
 # ╠═d4fb4803-1c1b-4fd7-a782-112777f55be0
 # ╠═8fc7877e-c4e4-40d1-a720-7806f7dbde0a
