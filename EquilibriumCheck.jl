@@ -529,10 +529,73 @@ function Boundary_Layer_LS(electrolyte, sawtooth, rpm)
 	return δ
 end
 
+# ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
+# ╠═╡ disabled = true
+#=╠═╡
+function sweep_over_L(model;
+ 	L_values = 80:132:800,
+	eneutral = true,
+    tunnel = false, bikerman = true,  # celldata에 필드가 있으면 추가
+    bcond = pnp_bcondition,
+    voltages = sawtooth,
+    nperiods = nperiods,
+)
+    results = Dict{Int, Any}()
+
+    for L in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+        celldata.eneutral = eneutral
+        #celldata.tunnel   = tunnel
+        #celldata.bikerman = bikerman
+
+        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
+
+        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction_arg=reaction_kw)
+
+        results[L] = cvsweep(
+            pnpcell;
+            voltages = voltages,
+            nperiods = nperiods,
+            store_solutions = true,
+        )
+    end
+
+    return results
+end
+  ╠═╡ =#
+
+# ╔═╡ 45ccce6b-794f-4b3a-9be3-ac32c8c2f868
+#=╠═╡
+Lresult = sweep_over_L(model; eneutral = false, tunnel = false)
+  ╠═╡ =#
+
 # ╔═╡ 2d950a96-9404-4b78-9db2-42ae2a4c44bf
 md"""
 #### pressure varied CV function
 """
+
+# ╔═╡ 3ec78a69-a7b3-4c32-82cb-5b863c88798a
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+    PHCO3 = [0.01, 0.05, 0.1, 0.5, 1]
+    base_CO3 = elydata_Gold.c_bulk[3]
+	Pr_HCO3 = []
+    for p in PHCO3
+        ely_pressure = deepcopy(elydata_Gold)   
+		ely_pressure.c_bulk[3] = base_CO2 .* p
+
+        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
+
+        push!(Pr_HCO3, pnp_rec)              
+    end
+end
+  ╠═╡ =#
 
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
 md"""
@@ -544,10 +607,70 @@ md"""
 #### Koper paper Figure 5 CV function
 """
 
+# ╔═╡ fee347ff-5401-4540-a1ce-fc2e8ff0ce63
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+    c_bulk2 = [0.2, 1, 5]
+    F5 = [8.9, 9.3, 8.8]
+    
+    F5_vec = Any[]
+
+    for p in 1:length(c_bulk2)
+        ely_pH = deepcopy(elydata_Gold)
+        ely_pH.c_bulk[5] = elydata_Gold.c_bulk[5] * 0
+        ely_pH.c_bulk .*= c_bulk2[p]
+        ely_pH.c_bulk[2] = 10^(-F5[p])
+        ely_pH.c_bulk[6] = 10^(F5[p]-14)
+        pnp_pH = sweep(ely_pH; eneutral=false, tunnel=false)
+
+        push!(F5_vec, pnp_pH)
+    end
+end
+  ╠═╡ =#
+
+# ╔═╡ d38c2b43-4d8b-4be7-8d77-5a30da384541
+# ╠═╡ disabled = true
+#=╠═╡
+function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = true)
+    celldata = deepcopy(pnpdata)
+    celldata.eneutral = eneutral
+	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
+    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
+    return result = cvsweep(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
+    )
+
+end
+  ╠═╡ =#
+
 # ╔═╡ c048e472-3983-4279-bf60-82784baa145e
 md"""
 #### Scan Rate CV function
 """
+
+# ╔═╡ 1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
+#=╠═╡
+begin
+    scanrates = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0] 
+
+    sweep_vec = Vector{Any}(undef, length(scanrates))
+
+    for (i, sr) in pairs(scanrates)
+        sawtooth = SawTooth(
+            scanrate = sr,
+            vmin     = user_input.vmin,
+            vmax     = user_input.vmax,
+            scanup   = user_input.scanup
+        )
+        sweep_vec[i] = sweep2(elydata_Gold, sawtooth; eneutral = false, tunnel = false)
+    end
+end
+
+  ╠═╡ =#
 
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 md"""
@@ -590,6 +713,35 @@ md"""
 #### Pressure plots
 """
 
+# ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
+#=╠═╡
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], 
+			  ylabel = L"I (mA/cm²)", 
+			  xlabel = L"φ (V vs SHE)",
+			  limits = ((-0.3, 1.0),(-1e-6, 0.5e-4))
+			 )	
+
+    keys_sorted = sort(collect(keys(Lresult)))
+    cols2 = [RGB(1 - i/length(keys_sorted), 0, i/length(keys_sorted)) for i in 1:length(keys_sorted)]
+    plot_objs2 = []
+    labels2 = String[]
+
+    for (j, L) in enumerate(keys_sorted)
+        rec = Lresult[L]  # dict에서 value 가져오기
+        line = lines!(ax, rec.voltages, (currents(rec, iohminus) .* cm^2/mA);
+                      color = cols2[j])
+        push!(plot_objs2, line)
+        push!(labels2, "L = $(L) μm")  # legend 라벨
+    end
+
+    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    fig
+end
+
+  ╠═╡ =#
+
 # ╔═╡ 0106756b-594d-4fdb-81b5-cf0739898521
 let
     fig = Figure(size = (1600, 900))
@@ -619,6 +771,128 @@ let
     Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
 	fig
 end
+
+# ╔═╡ 8fc7877e-c4e4-40d1-a720-7806f7dbde0a
+#=╠═╡
+let
+    fig = Figure(size = (1600, 900))
+       ax = Axis(fig[1, 1],
+        xlabel = L"φ (V vs SHE)",
+        ylabel = L"I (mA/cm²)",
+        yscale = log10,
+        yminorticksvisible = true,  
+        yminorticks = IntervalsBetween(5),
+		#limits = ((-1.3, -0.7),(1e-4, 1e2))
+    )
+
+
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    pink, pblue = RGB(0.0, 0.7, 0.8), RGB(0.2, 0.5, 0.0)
+    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+                 pink.g + t*(pblue.g-pink.g),
+                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], (abs.(num_df[!, ycol])); color = cols1[j])
+        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+        push!(plot_objs1, line)
+    end
+    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
+
+    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
+    plot_objs2 = []
+    labels2 = String[]
+    for (j, rec) in enumerate(F5_vec)
+        label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+        push!(labels2, label2)
+        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* cm^2/mA)); color = cols1[j])
+		#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
+        push!(plot_objs2, line)
+    end
+    Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
+    fig
+end
+  ╠═╡ =#
+
+# ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
+#=╠═╡
+let
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+
+	x_exp_all = table[:, 1]
+	y_exp_all = table[:, 2]
+	
+	mask_exp = (y_exp_all .> 0) .& isfinite.(y_exp_all) .& isfinite.(x_exp_all)
+	x_exp = x_exp_all[mask_exp]
+	y_exp = y_exp_all[mask_exp]
+	
+	volts_mask = ivresult.voltages .< -0.4
+	x_iv  = ivresult.voltages[volts_mask]
+	y_iv0 = abs.(currents(ivresult, iohminus))[volts_mask] .* cm^2/mA
+	mask_iv = (y_iv0 .> 0) .& isfinite.(y_iv0) .& isfinite.(x_iv)
+	x_iv = x_iv[mask_iv]; y_iv = y_iv0[mask_iv]
+	
+	fig = Figure(size = (900, 550))
+	ax  = Axis(fig[1, 1];
+			   xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
+			   ylabel = L"I \; (\mathrm{mA/cm^2})",
+			   yscale = log10,
+			   yminorticksvisible = true,
+			   yminorticks = IntervalsBetween(10),
+			   limits = ((-1.3, -0.4),(1e-12, 1e2))
+			  )
+	
+	scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
+	
+	lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
+
+	
+	u = 7
+	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
+				0.3 + 0.5*(1-i/length(sweep_vec)), 
+				0.8 - 0.7*(i/length(sweep_vec)))
+			for i in 1:length(sweep_vec)]
+    plot_objs = []
+    labels = String[]
+    for (j, rec) in enumerate(sweep_vec)
+        label = "$(scanrates[j])\t\t "
+        push!(labels, label)
+        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* 
+			cm^2/mA));linewidth = 1, color = cols[j], label = "$(scanrates[j])\t\t V/s")
+        push!(plot_objs, line)
+    end
+	pres = vec(Matrix(raw[1:1, :])) 
+	sub = Matrix(raw[4:end, :]) 
+	num = map(x -> x === missing ? NaN : parse(Float64, x), sub) 
+	num_df = DataFrame(num, :auto)
+	npairs = size(num_df, 2) ÷ 2
+	
+	js    = u:npairs
+	xcols = 2 .* js .- 1
+	ycols = 2 .* js
+	
+	xs = [@view num_df[!, i] for i in xcols]
+	ys = [@view num_df[!, i] for i in ycols]
+	
+	lines!.(Ref(ax), xs, [abs.(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
+
+	Legend(fig[1, 2], ax, "Legend"; framevisible=true)
+	fig
+
+end
+  ╠═╡ =#
 
 # ╔═╡ 1753c20f-9b53-4120-a8c8-e2b086f46f44
 md"""
@@ -673,6 +947,57 @@ end
 md"""
 #### Scan Rate CV plots
 """
+
+# ╔═╡ d94ec33c-3d9d-4d70-b0e1-e3d861a62821
+#=╠═╡
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], limits = ((-1.2, 0.9),(-0, 0.0002)), ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	
+	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
+				0.3 + 0.5*(1-i/length(sweep_vec)), 
+				0.8 - 0.7*(i/length(sweep_vec)))
+			for i in 1:length(sweep_vec)]
+    plot_objs = []
+    labels = String[]
+    for (j, rec) in enumerate(sweep_vec)
+        label = "$(scanrates[j])\t\t "
+        push!(labels, label)
+        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
+        push!(plot_objs, line)
+    end
+    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
+    fig
+end
+  ╠═╡ =#
+
+# ╔═╡ 333492ec-9016-44c5-9059-e3cb42c05a89
+#=╠═╡
+let
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	
+	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
+				0.3 + 0.5*(1-i/length(sweep_vec)), 
+				0.8 - 0.7*(i/length(sweep_vec)))
+			for i in 1:length(sweep_vec)]
+    plot_objs = []
+    labels = String[]
+    for (j, rec) in enumerate(sweep_vec)
+        label = "$(scanrates[j])\t\t "
+        push!(labels, label)
+        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
+        push!(plot_objs, line)
+    end
+    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
+    fig
+end
+  ╠═╡ =#
+
+# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
+#=╠═╡
+sweep_vec
+  ╠═╡ =#
 
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
@@ -2090,21 +2415,6 @@ let
     fig
 end
 
-# ╔═╡ 3ec78a69-a7b3-4c32-82cb-5b863c88798a
-begin
-    PHCO3 = [0.01, 0.05, 0.1, 0.5, 1]
-    base_CO3 = elydata_Gold.c_bulk[3]
-	Pr_HCO3 = []
-    for p in PHCO3
-        ely_pressure = deepcopy(elydata_Gold)   
-		ely_pressure.c_bulk[3] = base_CO2 .* p
-
-        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
-
-        push!(Pr_HCO3, pnp_rec)              
-    end
-end
-
 # ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
 begin
     pH_var = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0]	
@@ -2261,76 +2571,6 @@ let
 end
 
 
-# ╔═╡ fee347ff-5401-4540-a1ce-fc2e8ff0ce63
-begin
-    c_bulk2 = [0.2, 1, 5]
-    F5 = [8.9, 9.3, 8.8]
-    
-    F5_vec = Any[]
-
-    for p in 1:length(c_bulk2)
-        ely_pH = deepcopy(elydata_Gold)
-        ely_pH.c_bulk[5] = elydata_Gold.c_bulk[5] * 0
-        ely_pH.c_bulk .*= c_bulk2[p]
-        ely_pH.c_bulk[2] = 10^(-F5[p])
-        ely_pH.c_bulk[6] = 10^(F5[p]-14)
-        pnp_pH = sweep(ely_pH; eneutral=false, tunnel=false)
-
-        push!(F5_vec, pnp_pH)
-    end
-end
-
-# ╔═╡ 8fc7877e-c4e4-40d1-a720-7806f7dbde0a
-let
-    fig = Figure(size = (1600, 900))
-       ax = Axis(fig[1, 1],
-        xlabel = L"φ (V vs SHE)",
-        ylabel = L"I (mA/cm²)",
-        yscale = log10,
-        yminorticksvisible = true,  
-        yminorticks = IntervalsBetween(5),
-		#limits = ((-1.3, -0.7),(1e-4, 1e2))
-    )
-
-
-    # Experimental Data Plotting based on M.T.M Koper
-    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
-    pres = vec(Matrix(raw[1:1, :]))
-    sub = Matrix(raw[4:end, :])
-    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-    num_df = DataFrame(num, :auto)
-    npairs = size(num_df, 2) ÷ 2
-    pink, pblue = RGB(0.0, 0.7, 0.8), RGB(0.2, 0.5, 0.0)
-    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
-                 pink.g + t*(pblue.g-pink.g),
-                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
-
-    plot_objs1 = []
-    labels1 = String[]
-    for j in 1:npairs
-        xcol, ycol = 2j - 1, 2j
-        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-        push!(labels1, label)
-        line = lines!(ax, num_df[!, xcol], (abs.(num_df[!, ycol])); color = cols1[j])
-        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
-        push!(plot_objs1, line)
-    end
-    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
-
-    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-    plot_objs2 = []
-    labels2 = String[]
-    for (j, rec) in enumerate(F5_vec)
-        label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-        push!(labels2, label2)
-        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* cm^2/mA)); color = cols1[j])
-		#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
-        push!(plot_objs2, line)
-    end
-    Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
-    fig
-end
-
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function RDE_BL(model;
     rpms::AbstractVector{<:Real} = 10:390:4000,
@@ -2391,88 +2631,6 @@ RDE_result = RDE_BL(elydata_Gold)
 # ╔═╡ 10838b83-10c1-40d5-81fe-3c2b78037cc7
 max(Boundary_Layer_LS(model, sawtooth, 400) * 1e-5, 1.0e-6 * μm)
 
-# ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
-function sweep_over_L(model;
- 	L_values = 80:132:800,
-	eneutral = true,
-    tunnel = false, bikerman = true,  # celldata에 필드가 있으면 추가
-    bcond = pnp_bcondition,
-    voltages = sawtooth,
-    nperiods = nperiods,
-)
-    results = Dict{Int, Any}()
-
-    for L in L_values
-        hmin = 1.0e-6 * μm
-        hmax = 1.0    * μm
-        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
-        grid = ExtendableGrids.simplexgrid(X)
-
-        celldata = deepcopy(model)
-        celldata.eneutral = eneutral
-        #celldata.tunnel   = tunnel
-        #celldata.bikerman = bikerman
-
-        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
-
-        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction_arg=reaction_kw)
-
-        results[L] = cvsweep(
-            pnpcell;
-            voltages = voltages,
-            nperiods = nperiods,
-            store_solutions = true,
-        )
-    end
-
-    return results
-end
-
-# ╔═╡ 45ccce6b-794f-4b3a-9be3-ac32c8c2f868
-Lresult = sweep_over_L(model; eneutral = false, tunnel = false)
-
-# ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
-let
-    fig = Figure(size = (1600, 900))
-    ax = Axis(fig[1, 1], 
-			  ylabel = L"I (mA/cm²)", 
-			  xlabel = L"φ (V vs SHE)",
-			  limits = ((-0.3, 1.0),(-1e-6, 0.5e-4))
-			 )	
-
-    keys_sorted = sort(collect(keys(Lresult)))
-    cols2 = [RGB(1 - i/length(keys_sorted), 0, i/length(keys_sorted)) for i in 1:length(keys_sorted)]
-    plot_objs2 = []
-    labels2 = String[]
-
-    for (j, L) in enumerate(keys_sorted)
-        rec = Lresult[L]  # dict에서 value 가져오기
-        line = lines!(ax, rec.voltages, (currents(rec, iohminus) .* cm^2/mA);
-                      color = cols2[j])
-        push!(plot_objs2, line)
-        push!(labels2, "L = $(L) μm")  # legend 라벨
-    end
-
-    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
-    fig
-end
-
-
-# ╔═╡ d38c2b43-4d8b-4be7-8d77-5a30da384541
-function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = true)
-    celldata = deepcopy(pnpdata)
-    celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
-    return result = cvsweep(
-        pnpcell;
-        voltages = sawtooth,
-        nperiods,
-        store_solutions = true,
-    )
-
-end
-
 # ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
 let
     fig = Figure()
@@ -2524,136 +2682,6 @@ let
     fig
 end
 
-
-# ╔═╡ 1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
-begin
-    scanrates = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0] 
-
-    sweep_vec = Vector{Any}(undef, length(scanrates))
-
-    for (i, sr) in pairs(scanrates)
-        sawtooth = SawTooth(
-            scanrate = sr,
-            vmin     = user_input.vmin,
-            vmax     = user_input.vmax,
-            scanup   = user_input.scanup
-        )
-        sweep_vec[i] = sweep2(elydata_Gold, sawtooth; eneutral = false, tunnel = false)
-    end
-end
-
-
-# ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
-
-	x_exp_all = table[:, 1]
-	y_exp_all = table[:, 2]
-	
-	mask_exp = (y_exp_all .> 0) .& isfinite.(y_exp_all) .& isfinite.(x_exp_all)
-	x_exp = x_exp_all[mask_exp]
-	y_exp = y_exp_all[mask_exp]
-	
-	volts_mask = ivresult.voltages .< -0.4
-	x_iv  = ivresult.voltages[volts_mask]
-	y_iv0 = abs.(currents(ivresult, iohminus))[volts_mask] .* cm^2/mA
-	mask_iv = (y_iv0 .> 0) .& isfinite.(y_iv0) .& isfinite.(x_iv)
-	x_iv = x_iv[mask_iv]; y_iv = y_iv0[mask_iv]
-	
-	fig = Figure(size = (900, 550))
-	ax  = Axis(fig[1, 1];
-			   xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
-			   ylabel = L"I \; (\mathrm{mA/cm^2})",
-			   yscale = log10,
-			   yminorticksvisible = true,
-			   yminorticks = IntervalsBetween(10),
-			   limits = ((-1.3, -0.4),(1e-12, 1e2))
-			  )
-	
-	scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
-	
-	lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
-
-	
-	u = 7
-	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
-				0.3 + 0.5*(1-i/length(sweep_vec)), 
-				0.8 - 0.7*(i/length(sweep_vec)))
-			for i in 1:length(sweep_vec)]
-    plot_objs = []
-    labels = String[]
-    for (j, rec) in enumerate(sweep_vec)
-        label = "$(scanrates[j])\t\t "
-        push!(labels, label)
-        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* 
-			cm^2/mA));linewidth = 1, color = cols[j], label = "$(scanrates[j])\t\t V/s")
-        push!(plot_objs, line)
-    end
-	pres = vec(Matrix(raw[1:1, :])) 
-	sub = Matrix(raw[4:end, :]) 
-	num = map(x -> x === missing ? NaN : parse(Float64, x), sub) 
-	num_df = DataFrame(num, :auto)
-	npairs = size(num_df, 2) ÷ 2
-	
-	js    = u:npairs
-	xcols = 2 .* js .- 1
-	ycols = 2 .* js
-	
-	xs = [@view num_df[!, i] for i in xcols]
-	ys = [@view num_df[!, i] for i in ycols]
-	
-	lines!.(Ref(ax), xs, [abs.(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
-
-	Legend(fig[1, 2], ax, "Legend"; framevisible=true)
-	fig
-
-end
-
-# ╔═╡ d94ec33c-3d9d-4d70-b0e1-e3d861a62821
-let
-    fig = Figure(size = (1600, 900))
-    ax = Axis(fig[1, 1], limits = ((-1.2, 0.9),(-0, 0.0002)), ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
-	
-	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
-				0.3 + 0.5*(1-i/length(sweep_vec)), 
-				0.8 - 0.7*(i/length(sweep_vec)))
-			for i in 1:length(sweep_vec)]
-    plot_objs = []
-    labels = String[]
-    for (j, rec) in enumerate(sweep_vec)
-        label = "$(scanrates[j])\t\t "
-        push!(labels, label)
-        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
-        push!(plot_objs, line)
-    end
-    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
-    fig
-end
-
-# ╔═╡ 333492ec-9016-44c5-9059-e3cb42c05a89
-let
-    fig = Figure(size = (1600, 900))
-    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
-	
-	cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
-				0.3 + 0.5*(1-i/length(sweep_vec)), 
-				0.8 - 0.7*(i/length(sweep_vec)))
-			for i in 1:length(sweep_vec)]
-    plot_objs = []
-    labels = String[]
-    for (j, rec) in enumerate(sweep_vec)
-        label = "$(scanrates[j])\t\t "
-        push!(labels, label)
-        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
-        push!(plot_objs, line)
-    end
-    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
-    fig
-end
-
-# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
-sweep_vec
 
 # ╔═╡ b64c0d67-016d-4bca-9fae-150cf50efc77
 let
