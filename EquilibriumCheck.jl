@@ -53,6 +53,9 @@ end
 # ╔═╡ a94bc4e1-506f-4e40-bfe8-1ce7e6093974
 pkgdir(CatmapInterface)
 
+# ╔═╡ bd8134d8-5a69-486e-8429-7cf810b3ccbe
+Pkg.status()
+
 # ╔═╡ beae1479-1c0f-4a55-86e1-ad2b50174c83
 md"""
 ## Setup
@@ -291,6 +294,16 @@ where the gap capacitance between the working electrode and the reaction plane (
 
 __Question is the pH-dependence only in the reaction rate constants (i.e. activity of OH⁻ must be set to 0)?__
 """
+
+# ╔═╡ 646337bb-1dbd-4d6d-a68c-4e8362c8861b
+begin
+	energy = CSV.read("catmap_CO2R_data/catmap_CO2R_energies.txt", DataFrame; delim='\t', header=true)
+	g_energy = energy[energy.surface_name .== "None", :]
+	t_energy = energy[energy.surface_name .== "Au", :]
+end
+
+# ╔═╡ b3f76def-f30d-4593-80a2-2724050cce96
+Catalyst.parameters(rn)
 
 # ╔═╡ d0093605-0e35-4888-a93c-8456c698e6f0
 md"""
@@ -757,6 +770,7 @@ let
 end
 
 # ╔═╡ 8fc7877e-c4e4-40d1-a720-7806f7dbde0a
+#=╠═╡
 let
 	try
 	    fig = Figure(size = (1600, 900))
@@ -815,6 +829,7 @@ let
 	    end
 	end
 end
+  ╠═╡ =#
 
 # ╔═╡ 1753c20f-9b53-4120-a8c8-e2b086f46f44
 md"""
@@ -869,11 +884,6 @@ end
 md"""
 #### Scan Rate CV plots
 """
-
-# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
-#=╠═╡
-sweep_vec
-  ╠═╡ =#
 
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
@@ -978,6 +988,9 @@ Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 #=╠═╡
 plot1d(ivresult, celldata, vshow)
   ╠═╡ =#
+
+# ╔═╡ 180c12b0-d410-4a5f-97bb-226e6624a39b
+catmap_params
 
 # ╔═╡ f8b5dc8f-1f41-4600-825e-2f9653f2d925
 md"""
@@ -1603,7 +1616,7 @@ end;
 
 # ╔═╡ 91113083-d80e-4528-be41-82d10f6860fc
 begin
-	const ps_cache = DiffCache(zeros(8), 13)
+	const ps_cache = DiffCache(zeros(18), 13)
 	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
 	
 	function we_breactions(f, 
@@ -1621,7 +1634,6 @@ begin
 		local_pH 	= -log10(u[ihplus] / (mol/dm^3))
 
 	
-		ps = get_tmp(ps_cache, u[iϕ])
 		#for (p, default_value) in odesys.defaults
 		#	ps[paramsidx[p]] = default_value
 		#	println(default_value)
@@ -1634,9 +1646,18 @@ begin
 		ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ] 
 		ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we 
 		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
-		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co 
+		#ps[paramsidx[Symbolics.rename(odesys.γCO_g, :γCO_g)]] = γ_co 
 		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
-
+		#ps[paramsidx[Symbolics.rename(odesys.ECO2_g, :ECO2_g)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.ECO2_t, :ECO2_t)]] = 0.65*e
+		ps[paramsidx[Symbolics.rename(odesys.ECOOHΔH2OΔele_t, :ECOOHΔH2OΔele_t)]] = 0.95*e
+		ps[paramsidx[Symbolics.rename(odesys.E_t, :E_t)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.ECO_g, :ECO_g)]] = 0.270185*e 
+		#ps[paramsidx[Symbolics.rename(odesys.ECO_t, :ECO_t)]] = -0.02145*e 
+		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_g, :ECOOH_g)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_t, :ECOOH_t)]] = 0.1282*e
+		#ps[paramsidx[Symbolics.rename(odesys.EH2O_g, :EH2O_g)]] = 0.0 
 
 	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
 
@@ -2619,6 +2640,9 @@ let
 	end
 end
 
+# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
+sweep_vec
+
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
     kwargs 	 	= merge(solver_control, kwargs) 
@@ -3010,6 +3034,7 @@ floataside(
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═a94bc4e1-506f-4e40-bfe8-1ce7e6093974
+# ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
@@ -3030,7 +3055,9 @@ floataside(
 # ╠═6b5cf93c-0df3-4a18-8786-502361736838
 # ╟─d2c0642d-dfa5-4a76-bd36-ac4a735a3299
 # ╟─06d45088-ab8b-4e5d-931d-b58701bf8464
+# ╠═646337bb-1dbd-4d6d-a68c-4e8362c8861b
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
+# ╠═b3f76def-f30d-4593-80a2-2724050cce96
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
 # ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
@@ -3100,9 +3127,9 @@ floataside(
 # ╟─b3649b03-25cd-4f3e-99c4-85e24ddd3d11
 # ╠═fee347ff-5401-4540-a1ce-fc2e8ff0ce63
 # ╟─c048e472-3983-4279-bf60-82784baa145e
-# ╠═3bdaab98-c0f7-46af-86b7-d68374e8a5d0
-# ╠═d38c2b43-4d8b-4be7-8d77-5a30da384541
-# ╠═1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
+# ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
+# ╟─d38c2b43-4d8b-4be7-8d77-5a30da384541
+# ╟─1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 # ╟─79018ef0-6ab1-4420-9a52-8f8e2812fd40
 # ╠═f9dade9f-8431-48a6-a2ee-2c88f178e76e
@@ -3150,6 +3177,7 @@ floataside(
 # ╟─659091d3-60b2-4158-80e2-cd28a492e870
 # ╟─c4876d26-e841-4e28-8303-131d4635fc23
 # ╠═5dd1a1e6-7db1-479e-a684-accec53ce06a
+# ╠═180c12b0-d410-4a5f-97bb-226e6624a39b
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╠═f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═70c2fa00-a51f-4920-ba11-5a4e2fadc579
