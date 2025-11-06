@@ -50,7 +50,7 @@ voltage_diff_drop = 0.5
 
 gas_thermo_mode = 'ideal_gas' 
 adsorbate_thermo_mode = 'harmonic_adsorbate'
-beta_mode = 'none'
+#beta_mode = 'none'
 electrochemical_thermo_mode = 'hbond_surface_charge_density' #hbond_surface_charge_density' #homogeneous_field' #simple_electrochemical'
 #electrochemical_thermo_mode = 'simple_electrochemical'
 #specify field in V/Ang
