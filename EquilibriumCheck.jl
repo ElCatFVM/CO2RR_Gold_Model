@@ -53,6 +53,9 @@ end
 # ╔═╡ a94bc4e1-506f-4e40-bfe8-1ce7e6093974
 pkgdir(CatmapInterface)
 
+# ╔═╡ 22f2574c-abbe-4a06-89e9-14635fb30932
+pkgdir(LiquidElectrolytes)
+
 # ╔═╡ bd8134d8-5a69-486e-8429-7cf810b3ccbe
 Pkg.status()
 
@@ -182,7 +185,7 @@ begin
 	function BulkSpecies(;name, z, c_bulk=nothing, a, D, κ=nothing, color)
 		D *= m^2/s
 		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
-		a = 0.0 #8.2 * Å#8.2 * Å            # (v0/N_A)^(1/3)
+		a *= Å #8.2 * Å#8.2 * Å            # (v0/N_A)^(1/3)
 		v = N_A * (a * Å)^3 #v0 * (κ + 1)
 		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
@@ -1541,6 +1544,9 @@ elydata_Gold = ElectrolyteData(;
 							   	actcoeff! = Lγ_mode
 							   )
 
+# ╔═╡ 60698d90-e67d-4d85-bc00-6935c95b5a69
+println(nc, elydata_Gold.cspecies)
+
 # ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
 function activity_coefficient!(
     γ::AbstractVector,
@@ -1561,8 +1567,8 @@ function activity_coefficient!(
         # Dreyer et al. approach
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
-        for ic in nc
-            γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] #* (1 /barc)
+        for ic in cspecies
+            γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc)) #* (1 /barc)
 		end
 
     else
@@ -1646,20 +1652,20 @@ begin
 		ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ] 
 		ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we 
 		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
-		#ps[paramsidx[Symbolics.rename(odesys.γCO_g, :γCO_g)]] = γ_co 
+		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co 
 		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO2_g, :ECO2_g)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO2_t, :ECO2_t)]] = 0.65*e
+		ps[paramsidx[Symbolics.rename(odesys.ECO2_g, :ECO2_g)]] = 0.0 
+		ps[paramsidx[Symbolics.rename(odesys.ECO2_t, :ECO2_t)]] = 0.65*e
 		ps[paramsidx[Symbolics.rename(odesys.ECOOHΔH2OΔele_t, :ECOOHΔH2OΔele_t)]] = 0.95*e
 		ps[paramsidx[Symbolics.rename(odesys.E_t, :E_t)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO_g, :ECO_g)]] = 0.270185*e 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO_t, :ECO_t)]] = -0.02145*e 
-		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_g, :ECOOH_g)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_t, :ECOOH_t)]] = 0.1282*e
-		#ps[paramsidx[Symbolics.rename(odesys.EH2O_g, :EH2O_g)]] = 0.0 
+		ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
+		ps[paramsidx[Symbolics.rename(odesys.ECO_g, :ECO_g)]] = 0.270185*e 
+		ps[paramsidx[Symbolics.rename(odesys.ECO_t, :ECO_t)]] = -0.02145*e 
+		ps[paramsidx[Symbolics.rename(odesys.ECOOH_t, :ECOOH_t)]] = 0.1282*e
+		ps[paramsidx[Symbolics.rename(odesys.EH2O_g, :EH2O_g)]] = 0.0 
 
 	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
+		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_g, :ECOOH_g)]] = 0.0 
 
 		
 		@views f_microkinetics!(
@@ -1700,7 +1706,7 @@ is_Landstorfer = model != elydata_Gold
 # ╔═╡ 36e756a9-4d9b-40ef-9e37-d86f1194cc51
 function capscalc(sys, molarities)
     result = []
-	vrange = range(-1.0, 1.0, length = 202)
+	vrange = range(-1.0 - ϕ_pzc, 1.0 - ϕ_pzc, length = 202)
 	if is_Landstorfer
 		for imol in 1:length(molarities)
 		    if !isa(sys, AbstractElectrochemicalSystem)
@@ -1834,13 +1840,16 @@ function pnp_bcondition(
 		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
 	else
 		# Neumann b.c. for the Poisson equation
-	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_bulk, value = C_gap * (ϕ_we - ϕ_pzc))
 		
 	end
 	
 	if bnode.region == Γ_we && model == elydata_Gold
 			we_breactions(f, u, bnode, data)
 	end
+
+
+	
 	nothing
 end;
 
@@ -2416,8 +2425,8 @@ let
     ax = Axis(fig[1, 1], 
 			  ylabel = L"I (mA/cm²)", 
 			  xlabel = L"φ (V vs SHE)",
-			  limits = ((-1.25, -0.6),(1e-3, 1e2)),
-			  yscale = log10
+			#  limits = ((-1.25, -0.6),(1e-3, 1e2)),
+			 # yscale = log10
 			 )	
 
     keys_sorted = sort(collect(keys(Lresult)))
@@ -2427,7 +2436,7 @@ let
 
     for (j, L) in enumerate(keys_sorted)
         rec = Lresult[L] 
-        line = lines!(ax, rec.voltages, abs.(currents(rec, iohminus) .* cm^2/mA);
+        line = lines!(ax, rec.voltages, (currents(rec, iohminus) .* cm^2/mA);
                       color = cols2[j])
         push!(plot_objs2, line)
         push!(labels2, "L = $(L) μm")
@@ -2448,7 +2457,7 @@ end
 
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function CV_RPM(model;
-    rpms::AbstractVector{<:Real} = 10 .^ range(-5, stop=5, length = 50),
+    rpms::AbstractVector{<:Real} = 10 .^ range(-5, stop=3, length = 25),
     eneutral::Bool = true,
     tunnel::Bool = false,
     bikerman::Bool = true,
@@ -2497,12 +2506,12 @@ let
 				  xlabel = L"φ (V vs SHE)", 
 				  title = @sprintf("v=%.1f mV/s", sawtooth.scanrate * 10^3), 
 				  titlesize=30,
-				  limits = ((-1.3, 1.0),(-40, 5))
+				  #limits = ((-1.3, 1.0),(-10, 5))
 				 )
 	    rpms = sort(collect(keys(RDE_result)))
 		cols = [RGB(0.3 + 0.7*(i/length(RDE_result)), 
 					0.1 + 0.7*(1-i/length(RDE_result)), 
-					0.9 - 06*(i/length(RDE_result)))
+					0.9 - 0.6*(i/length(RDE_result)))
 				for i in 1:length(RDE_result)]
 	    plot_objs = Any[]
 	    labels    = String[]
@@ -2569,9 +2578,9 @@ begin
 	    for (i, sr) in pairs(scanrates)
 	        sawtooth = SawTooth(
 	            scanrate = sr,
-	            vmin     = user_input_CV.vmin,
-	            vmax     = user_input_CV.vmax,
-	            scanup   = user_input_CV.scanup
+	            vmin     = user_input_cv.vmin,
+	            vmax     = user_input_cv.vmax,
+	            scanup   = user_input_cv.scanup
 	        )
 	        sweep_vec[i] = sweep2(elydata_Gold, sawtooth; eneutral = false, tunnel = 
 								  false)
@@ -2678,10 +2687,10 @@ let
 		ax  = Axis(fig[1, 1];
 				   xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
 				   ylabel = L"I \; (\mathrm{mA/cm^2})",
-				   yscale = log10,
-				   yminorticksvisible = true,
-				   yminorticks = IntervalsBetween(10),
-				   limits = ((-1.3, -0.4),(1e-12, 1e2))
+				   #yscale = log10,
+				   #yminorticksvisible = true,
+				   #yminorticks = IntervalsBetween(10),
+				   #limits = ((-1.3, -0.4),(1e-12, 1e2))
 				  )
 		
 		scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
@@ -2716,7 +2725,7 @@ let
 		xs = [@view num_df[!, i] for i in xcols]
 		ys = [@view num_df[!, i] for i in ycols]
 		
-		lines!.(Ref(ax), xs, [abs.(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
+		lines!.(Ref(ax), xs, [(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
 	
 		Legend(fig[1, 2], ax, "Legend"; framevisible=true)
 		fig
@@ -2846,7 +2855,7 @@ begin
 
 		#pnp
 		reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
-		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = model, reaction_arg...)
+		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction=reaction)
 
 		result_pnp = capscalc(sys_pnp, molarities)
 	else 
@@ -3034,6 +3043,7 @@ floataside(
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═a94bc4e1-506f-4e40-bfe8-1ce7e6093974
+# ╠═22f2574c-abbe-4a06-89e9-14635fb30932
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
@@ -3075,6 +3085,7 @@ floataside(
 # ╠═161a810d-c05e-42ad-97ab-131059d6784a
 # ╠═9d814b85-a5b6-42e5-abf4-15500bbdb717
 # ╠═5f17b4f7-54d6-4ad0-9886-252854840a80
+# ╠═60698d90-e67d-4d85-bc00-6935c95b5a69
 # ╠═2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
 # ╠═952a26ce-2610-48cc-9158-eda816da3a1c
@@ -3102,7 +3113,7 @@ floataside(
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╟─b95160b5-18f7-49d9-80be-9159abd2dcd1
-# ╟─9fb47b83-a853-4316-bb8d-30e65b16ef78
+# ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╟─39c8ef0d-aac2-4c7f-8004-4166c460ebc5
 # ╟─491f83c9-b26d-490e-bd3f-126b73d50184
 # ╟─e327dc0d-a5e8-457e-a7a9-5ff4e634e687
@@ -3111,8 +3122,8 @@ floataside(
 # ╟─45ccce6b-794f-4b3a-9be3-ac32c8c2f868
 # ╟─fba53a72-5d27-4db7-8453-41200db29481
 # ╟─4af42420-4630-42a8-8941-6702c16beb99
-# ╟─dd082fcc-a935-4fcb-bc89-788f2cf02978
-# ╟─d2584e28-8317-4801-83a0-5aad59faf720
+# ╠═dd082fcc-a935-4fcb-bc89-788f2cf02978
+# ╠═d2584e28-8317-4801-83a0-5aad59faf720
 # ╟─83defc30-2532-490f-ac19-f883f06e6e2d
 # ╟─57a4947d-8de3-42de-b17a-9b769ca0589d
 # ╠═b2546d23-825e-4356-a640-3fd53852cdcf
