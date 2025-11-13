@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.13
+# v0.20.8
 
 using Markdown
 using InteractiveUtils
@@ -266,7 +266,7 @@ $*CO_{(ad)} \rightleftharpoons CO_{(aq)} + *$
 # ╔═╡ 6b5cf93c-0df3-4a18-8786-502361736838
 begin
 	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_data/catmap_CO2R_template.mkm")
-	rn 					= create_reaction_network(catmap_params)
+	rn 					= create_reaction_network(catmap_params; symbolic_formation_energies = false)
 	odesys 				= convert(ODESystem, rn; combinatoric_ratelaws=false)
 	odesys 				= CatmapInterface.liquidize(odesys, catmap_params)
 	vars 				= Catalyst.unknowns(odesys)
@@ -304,9 +304,6 @@ begin
 	g_energy = energy[energy.surface_name .== "None", :]
 	t_energy = energy[energy.surface_name .== "Au", :]
 end
-
-# ╔═╡ b3f76def-f30d-4593-80a2-2724050cce96
-Catalyst.parameters(rn)
 
 # ╔═╡ d0093605-0e35-4888-a93c-8456c698e6f0
 md"""
@@ -514,6 +511,9 @@ begin
 	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
 end;
 
+# ╔═╡ c05c51e2-ac3a-436d-91e9-529def56a416
+methods(boundary_neumann!)
+
 # ╔═╡ 44258eea-f114-4dfe-aa61-1e2cac31baa4
 function capsplot(vis, ::Nothing, title)
     scalarplot!(
@@ -639,6 +639,9 @@ md"""
 Run bicarbonate pressure varied CV calculation $(@bind CO3_pressure_varied_checkbox PlutoUI.CheckBox())
 """
 
+# ╔═╡ 3ba47c4f-b8f8-41e1-bada-8146062b099e
+ihco3
+
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
 md"""
 #### pH varied CV function
@@ -700,12 +703,6 @@ md"""
 md"""
 #### Time-Concentration plots
 """
-
-# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
-# ╠═╡ disabled = true
-#=╠═╡
-plot_concentration_profile(pnpresult, X, bulk)
-  ╠═╡ =#
 
 # ╔═╡ 3f30fae0-18d4-4e5f-9618-cbd9852d7857
 function zstr(z::Int)
@@ -986,12 +983,6 @@ md"""
 Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 """
 
-# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
-# ╠═╡ disabled = true
-#=╠═╡
-plot1d(ivresult, celldata, vshow)
-  ╠═╡ =#
-
 # ╔═╡ 180c12b0-d410-4a5f-97bb-226e6624a39b
 catmap_params
 
@@ -1000,26 +991,15 @@ md"""
 ### Polarization Curve
 """
 
-# ╔═╡ 70c2fa00-a51f-4920-ba11-5a4e2fadc579
-
-
-# ╔═╡ 1219baf6-dac9-46c7-af9d-5472c8c3238f
-
-
 # ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═╡ disabled = true
 #=╠═╡
 ivL = ivsweep_over_L(elydata_Gold)
   ╠═╡ =#
 
-# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
-#=╠═╡
-plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
-  ╠═╡ =#
-
 # ╔═╡ a81dd9a4-7938-4a72-b3d2-1780e8ecd536
 function plotcurr_over_L(results::Dict{Int,Any};
-    species=iohminus, cutoff=-0.4, title="IV vs L"
+    species=ico, cutoff=-0.4, title="IV vs L"
 )
     vis = GridVisualizer(;
         size   = (800, 500),
@@ -1040,8 +1020,11 @@ function plotcurr_over_L(results::Dict{Int,Any};
             label = "L = $(L) μm"
         )
     end
-    display(reveal(vis))
+	    reveal(vis)
 end
+
+# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
+plotcurr_over_L(ivL; species=ico, cutoff=-0.4, title="IV vs L (log scale)")
 
 # ╔═╡ af083be0-efea-497c-908e-dec9505a92d0
 #=╠═╡
@@ -1056,6 +1039,47 @@ end
 md"""
 ### Plotting Functions
 """
+
+# ╔═╡ d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
+begin
+	curr(J, ix) = [F * abs(j[ix]) for j in J]
+	
+	function plotcurr(result; df = nothing)
+	    scale = 1 / (mol / dm^3)
+	    volts = result.voltages[result.voltages .< -0.4]
+	    vis = GridVisualizer(;
+	                         size = (600, 400),
+	                         tilte = "IV Curve",
+	                         xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
+	                         ylabel = L"I / (\mathrm{mA/cm^2})",       
+	                         legend = :lb,
+							 yscale = :log,
+		)
+							 
+	    scalarplot!(vis,
+	                volts,
+	                #abs.(currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
+					curr(result.j_we, ico)[result.voltages .< -0.4] .* cm^2/mA;
+	                color = :green,
+	                clear = false,
+	                linestyle = :solid,
+	                label = "e⁻, we")
+		if !isnothing(df)
+			scalarplot!(vis,
+						df[:voltage],
+						df[:current],
+						clear = false,
+						linewidth = 0,
+						markershape = :cross,
+						markersize = 8,
+						markevery = 1,
+						color = :red,
+						label = "Ringe et. al")
+		end
+		
+	    reveal(vis)
+	end
+end
 
 # ╔═╡ 686ac3dc-c191-4575-ba0c-d4c2551474b5
 md"""
@@ -1392,8 +1416,8 @@ if runregtest
 
 	@testset "Currents" begin
 		for (vidx_result, vidx_sresult) in zip(vidxs_result, vidxs_sresult)
-			for (j_result, j_sresult) in zip(result.j_we[vidx_result][iohminus], 
-											sresult.j_we[vidx_result][iohminus])
+			for (j_result, j_sresult) in zip(result.j_we[vidx_result][ico], 
+											sresult.j_we[vidx_result][ico])
 				@test isapprox(j_result, j_sresult, rtol=1.0e-5)
 			end
 		end
@@ -1416,7 +1440,7 @@ floataside(
 			###### __Activity Coefficient__  
 			- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
 			- NoteBook.Mode: $(Child("Nmode", Select(["Stefan_γ", "Potassium_γ", "DMGL_γ"])))
-			- Boundary Condition : $(Child("BC_Select", Select(["Neumann", "Dirichlet", "Robin"])))
+			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Robin"])))
 			"""
 	    end;
 	    label = "Submit"
@@ -1438,6 +1462,17 @@ begin
 
     grid = ExtendableGrids.simplexgrid(X)
 end;
+
+# ╔═╡ 1d825cb9-2620-4d72-8b42-38f65cc97a26
+begin
+    hmin_cv = 1.0e-8	* μm
+
+    hmax_cv = 1.0	* μm 
+
+    X_cv = ExtendableGrids.geomspace(0, L, hmin_cv, hmax_cv)
+
+    grid_cv = ExtendableGrids.simplexgrid(X_cv)
+end
 
 # ╔═╡ 2ce5aa45-4aa5-4c2a-a608-f581266e55f0
 begin
@@ -1656,9 +1691,9 @@ begin
 		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
 		#ps[paramsidx[Symbolics.rename(odesys.ECO2_g, :ECO2_g)]] = 0.0 
 		#ps[paramsidx[Symbolics.rename(odesys.ECO2_t, :ECO2_t)]] = 0.65*e
-		ps[paramsidx[Symbolics.rename(odesys.ECOOHΔH2OΔele_t, :ECOOHΔH2OΔele_t)]] = 0.95*e
-		ps[paramsidx[Symbolics.rename(odesys.E_t, :E_t)]] = 0.0 
-		ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.ECOOHΔH2OΔele_t, :ECOOHΔH2OΔele_t)]] = 0.95*e
+		#ps[paramsidx[Symbolics.rename(odesys.E_t, :E_t)]] = 0.0 
+		#ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
 		#ps[paramsidx[Symbolics.rename(odesys.ECO_g, :ECO_g)]] = 0.270185*e 
 		#ps[paramsidx[Symbolics.rename(odesys.ECO_t, :ECO_t)]] = -0.02145*e 
 		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_t, :ECOOH_t)]] = 0.1282*e
@@ -1820,6 +1855,37 @@ let
     fig
 end
 
+# ╔═╡ c9afd17b-7c8c-408f-b063-371a5eda9cc4
+function bulkbcondition(f, u, bnode, electrolyte; region = electrolyte.Γ_bulk)
+    (; iϕ, ip, cspecies, ϕ_bulk, p_bulk, c_bulk) = electrolyte
+
+
+	#zero-flux for pressure concentration
+	if bnode.region == region
+        boundary_dirichlet!(f, u, bnode; species = iϕ, region, value = ϕ_bulk)
+        boundary_dirichlet!(f, u, bnode; species = ip, region, value = p_bulk)
+        for ic in cspecies
+			if ic == ico2 && user_input_model.BC_Select == "Neumann"
+           		boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
+			else
+				boundary_dirichlet!(f, u, bnode; species = ic, region, value = c_bulk[ic])
+			end
+        end
+    end
+	
+	#default
+	"""
+	if bnode.region == region
+        boundary_dirichlet!(f, u, bnode; species = iϕ, region, value = ϕ_bulk)
+        boundary_dirichlet!(f, u, bnode; species = ip, region, value = p_bulk)
+        for ic in cspecies
+            boundary_dirichlet!(f, u, bnode; species = ic, region, value = c_bulk[ic])
+        end
+    end
+	"""
+    return nothing
+end
+
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
 	f,
@@ -1828,24 +1894,17 @@ function pnp_bcondition(
 	data
 ) where {Tval, Tv, Tc, Tp, Ti}
 	
-	(; Γ_we, Γ_bulk, ϕ_we, iϕ) = data
+	(; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
 
 	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
-
-	if user_input_model.BC_Select == "Dirichlet"
-	    ## Dirichlet ϕ=ϕ_we at Γ_we
-	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)	
-	elseif user_input_model.BC_Select == "Robin" 
-		# Robin b.c. for the Poisson equation
-		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-	else
-		# Neumann b.c. for the Poisson equation
-	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_bulk, value = C_gap * (ϕ_we - ϕ_pzc))
-		
-	end
 	
+	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+	
+	#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
+ 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+
 	if bnode.region == Γ_we && model == elydata_Gold
-			we_breactions(f, u, bnode, data)
+		we_breactions(f, u, bnode, data)
 	end
 
 
@@ -1858,7 +1917,7 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     celldata = deepcopy(pnpdata)
     celldata.eneutral = eneutral
 	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
+    pnpcell = PNPSystem(grid_cv; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
     return result = cvsweep(
         pnpcell;
         voltages = sawtooth,
@@ -1916,7 +1975,7 @@ let
 		ic = model.cspecies
 	    fig = Figure(size = (650, 400))
 	    ax = Axis(fig[1, 1], 
-	 			  limits = ((-0.5, 0.9),(-0.00000002, 0.0000002)),
+	 			  limits = ((-0.5, 0.9),(-2e-19, 2e-13)),
 	              ylabel = L"I (mA/cm²)",
 	              xlabel = L"φ (V vs SHE)",
 				 )
@@ -1925,7 +1984,7 @@ let
 	    #for s in ic
 	    #    total_current .+= (currents(result, s) * mA / cm^2)
 	    #end
-		total_current = ((currents(pnpresult, iohminus) .* cm^2/mA))
+		total_current = ((currents(pnpresult, ico) .* cm^2/mA))
 	
 		
 	    lines!(ax, pnpresult.voltages, total_current,
@@ -1969,6 +2028,9 @@ begin
 	    end
 	end
 end
+
+# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
+plot_concentration_profile(pnpresult, X, bulk)
 
 # ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
 let
@@ -2029,7 +2091,7 @@ let
 	    fig = Figure(size = (1600, 900))
 	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
 	
-		total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
+		total_current = currents(pnpresult, ico) .* (cm^2/mA)
 	    gold_line = lines!(ax, pnpresult.voltages, total_current,
 	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
 		scatter!(ax, pnpresult.voltages, total_current, markersize = 12,
@@ -2179,15 +2241,53 @@ end
 begin
 	if CO3_pressure_varied_checkbox
 	    PHCO3 = [0.01, 0.05, 0.1, 0.5, 1]
-	    base_CO3 = elydata_Gold.c_bulk[3]
+	    base_CO3 = elydata_Gold.c_bulk[ihco3]
 		Pr_HCO3 = []
 	    for p in PHCO3
 	        ely_pressure = deepcopy(elydata_Gold)   
-			ely_pressure.c_bulk[3] = base_CO2 .* p
+			ely_pressure.c_bulk[ihco3] = base_CO3 .* p
 	
 	        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
 	
 	        push!(Pr_HCO3, pnp_rec)              
+	    end
+	end
+end
+
+# ╔═╡ cd8a368c-ba13-4622-9433-a333f5629f22
+Pr_HCO3
+
+# ╔═╡ 780e8faa-e346-45cb-81f1-34df2a99bc17
+let
+    try
+	    fig = Figure(size = (1600, 900))
+	    ax = Axis(fig[1, 1];
+	        xlabel = L"φ (V vs SHE)",
+	        ylabel = L"I (mA/cm²)",
+			limits = ((-0.5, 1.5),(-2e-14, 2e-7)),	
+	        #yscale = log10
+	    )
+	
+	    n = length(Pr_HCO3)
+	
+		cols = [RGB(1 - t, 0, t) for t in LinRange(0, 1, n)]
+	
+	    plots = Makie.AbstractPlot[] 
+	    labels = String[]
+	    for (j, rec) in enumerate(Pr_HCO3)
+	        label2 = "$(j)\t pCO2(atm)"
+	        push!(labels, label2)
+	        line = lines!(ax, rec.voltages, ((currents(rec, ico) .* cm^2/mA)); color = cols[j])
+	        push!(plots, line)
+	    end
+	    Legend(fig[1, 2], plots, labels, "Theoretical"; framevisible = true)
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
 	    end
 	end
 end
@@ -2377,7 +2477,7 @@ end
 
 # ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
 function sweep_over_L(model;
- 	L_values = range(80, stop=8000, length=10),
+ 	L_values = round.(range(80, 5000, length=10)),
 	eneutral = true,
     tunnel = false, bikerman = true, 
     bcond = pnp_bcondition,
@@ -2425,8 +2525,8 @@ let
     ax = Axis(fig[1, 1], 
 			  ylabel = L"I (mA/cm²)", 
 			  xlabel = L"φ (V vs SHE)",
-			#  limits = ((-1.25, -0.6),(1e-3, 1e2)),
-			 # yscale = log10
+			  #limits = ((0.25, 1.6),(1e-12, 1e2)),
+			  #yscale = log10
 			 )	
 
     keys_sorted = sort(collect(keys(Lresult)))
@@ -2436,7 +2536,7 @@ let
 
     for (j, L) in enumerate(keys_sorted)
         rec = Lresult[L] 
-        line = lines!(ax, rec.voltages, (currents(rec, iohminus) .* cm^2/mA);
+        line = lines!(ax, rec.voltages, (currents(rec, ico) .* cm^2/mA);
                       color = cols2[j])
         push!(plot_objs2, line)
         push!(labels2, "L = $(L) μm")
@@ -2457,7 +2557,7 @@ end
 
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function CV_RPM(model;
-    rpms::AbstractVector{<:Real} = 10 .^ range(-5, stop=3, length = 25),
+    rpms::AbstractVector{<:Real} = 10 .^ range(-5, stop=5, length = 70),
     eneutral::Bool = true,
     tunnel::Bool = false,
     bikerman::Bool = true,
@@ -2518,20 +2618,23 @@ let
 		#cols = [get(ColorSchemes.winter, i/length(RDE_result)) for i in 1:length(RDE_result)]
 	
 		
-	
-	    for (j, rpm) in enumerate(rpms)
-	        rec = RDE_result[rpm].result
-	        δ   = RDE_result[rpm].δ
-	
-	        I = currents(rec, iohminus) .* (cm^2/mA)
-	        ϕ = rec.voltages
-	
-	        line = lines!(ax, ϕ, I; color = cols[j])
-	        push!(plot_objs, line)
-			δ_um = round(δ * 1e6; digits = 2)
-	        rpm_label = round(rpm ; digits = 7)
-	        push!(labels,"rpm = ($rpm_label), (δ = $(δ_um) μm)")
-	    end
+			
+		for (j, rpm) in enumerate(rpms)
+		    rec = RDE_result[rpm].result
+		    δ   = RDE_result[rpm].δ
+		
+		    I = currents(rec, ico) .* (cm^2/mA)
+		    ϕ = rec.voltages
+		
+		    line = lines!(ax, ϕ, I; color = cols[j])
+		    push!(plot_objs, line)
+		
+		    rpm_str = @sprintf("%7.4f", rpm)   # 예: " 0.0153", "1234.0000"
+		    δ_um = δ * 1e6
+		    δ_str  = @sprintf("%9.6f", δ_um)   # 예: "  0.015300", "100000.000000"
+		
+		    push!(labels, "rpm = $(rpm_str), δ = $(δ_str) μm")
+		end
 	
 		Legend(fig[1, 2], plot_objs, labels, "Theoretical";
 		    framevisible = true,
@@ -2623,7 +2726,9 @@ end
 let
 	try
 	    fig = Figure(size = (1600, 900))
-	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)", 
+				  #limits = ((-0.8, 1.5),(-2e-8, 10)))
+				 )
 		
 		cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
 					0.3 + 0.5*(1-i/length(sweep_vec)), 
@@ -2634,7 +2739,7 @@ let
 	    for (j, rec) in enumerate(sweep_vec)
 	        label = "$(scanrates[j])\t\t "
 	        push!(labels, label)
-	        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA));linewidth = 3, color = cols[j])
+	        line = lines!(ax, rec.voltages, log.(abs.(currents(rec, ico) .* cm^2/mA));linewidth = 3, color = cols[j])
 	        push!(plot_objs, line)
 	    end
 	    Legend(fig[1, 2], plot_objs, labels, "Scan Rates (V/s)"; framevisible = true)
@@ -2649,12 +2754,9 @@ let
 	end
 end
 
-# ╔═╡ 983948d7-0628-407a-ba68-393ba5ed94eb
-sweep_vec
-
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
-    kwargs 	 	= merge(solver_control, kwargs) 
+	kwargs 	 	= merge(solver_control, kwargs) 
     cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
 	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
 
@@ -2745,14 +2847,20 @@ end
 # ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 plot1d(ivresult, celldata)
 
-# ╔═╡ d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
-begin
-	#curr(J, ix) = [F * abs(j[ix]) for j in J]
-	
-	function plotcurr(result; df = nothing)
-	    scale = 1 / (mol / dm^3)
-	    volts = result.voltages[result.voltages .< -0.4]
-	    vis = GridVisualizer(;
+# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
+let
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	df = Dict(:voltage => table[:,1], :current => table[:,2])
+	table2 = readdlm("./catmap_CO2R_data/Ringe-theorical.csv", ',', Float64, '\n')
+	df2 = Dict(:voltage => table2[:,1], :current => table2[:,2])
+	plotcurr(ivresult; df=df2)
+end
+
+# ╔═╡ afb700c7-ef29-4c13-b9ea-1d40ea9534dd
+let
+	scale = 1 / (mol / dm^3)
+	volts = ivresult.voltages[ivresult.voltages .< -0.4]
+	vis = GridVisualizer(;
 	                         size = (600, 400),
 	                         tilte = "IV Curve",
 	                         xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
@@ -2761,15 +2869,22 @@ begin
 							 yscale = :log,
 		)
 							 
-	    scalarplot!(vis,
+	scalarplot!(vis,
 	                volts,
-	                abs.(currents(ivresult, iohminus))[result.voltages .< -0.4] .* cm^2/mA;
+	                abs.(currents(ivresult, ico))[ivresult.voltages .< -0.4] .* cm^2/mA;
 	                color = :green,
 	                clear = false,
 	                linestyle = :solid,
 	                label = "e⁻, we")
-		if !isnothing(df)
-			scalarplot!(vis,
+	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+	df = Dict(:voltage => table[:,1], :current => table[:,2])
+	table2 = readdlm("./catmap_CO2R_data/Ringe-theorical.csv", ',', Float64, '\n')
+	df2 = Dict(:voltage => table2[:,1], :current => table2[:,2])
+	table3 = readdlm("./catmap_CO2R_data/Ringe-experimental.csv", ',', Float64, '\n')
+	df3 = Dict(:voltage => table3[:,1], :current => table3[:,2])
+
+	
+	scalarplot!(vis,
 						df[:voltage],
 						df[:current],
 						clear = false,
@@ -2779,17 +2894,29 @@ begin
 						markevery = 1,
 						color = :red,
 						label = "Ringe et. al")
-		end
-		
-	    reveal(vis)
-	end
-end
 
-# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	plotcurr(ivresult; df=df)
+	scalarplot!(vis,
+						df2[:voltage],
+						df2[:current],
+						clear = false,
+						linewidth = 0,
+						markershape = :circle,
+						markersize = 4,
+						markevery = 1,
+						color = :blue,
+						label = "Ringe et. al : Theorical")
+	scalarplot!(vis,
+						df3[:voltage],
+						df3[:current],
+						clear = false,
+						linewidth = 0,
+						markershape = :utriangle,
+						markersize = 8,
+						markevery = 1,
+						color = :magenta,
+						label = "Ringe et. al : Experimental")
+	
+	    reveal(vis)
 end
 
 # ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
@@ -2839,7 +2966,7 @@ function pb_bcondition(f, u, bnode, data)
 	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
 	else
 		## neumann ϕ=dϕ₀/dx 
-	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
 	
 	end
 
@@ -3031,6 +3158,9 @@ Potential at the working electrode
 $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 """
 
+# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
+plot1d(ivresult, celldata, vshow)
+
 # ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
 floataside(
 	md"""
@@ -3067,12 +3197,12 @@ floataside(
 # ╟─06d45088-ab8b-4e5d-931d-b58701bf8464
 # ╠═646337bb-1dbd-4d6d-a68c-4e8362c8861b
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
-# ╠═b3f76def-f30d-4593-80a2-2724050cce96
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
 # ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
+# ╠═1d825cb9-2620-4d72-8b42-38f65cc97a26
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 # ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
@@ -3090,6 +3220,7 @@ floataside(
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
 # ╠═952a26ce-2610-48cc-9158-eda816da3a1c
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
+# ╠═c9afd17b-7c8c-408f-b063-371a5eda9cc4
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
 # ╠═d76d8413-c019-4728-b182-7f7cb78dede4
@@ -3105,6 +3236,7 @@ floataside(
 # ╠═f2043f2c-f3c8-4b0f-944c-7b55624dac08
 # ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
+# ╠═c05c51e2-ac3a-436d-91e9-529def56a416
 # ╠═b21c8394-f847-477e-ac8f-713398b81166
 # ╠═44258eea-f114-4dfe-aa61-1e2cac31baa4
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
@@ -3118,7 +3250,7 @@ floataside(
 # ╟─491f83c9-b26d-490e-bd3f-126b73d50184
 # ╟─e327dc0d-a5e8-457e-a7a9-5ff4e634e687
 # ╟─c2e572b2-fa74-44bc-ae18-59442b4c3206
-# ╟─bae9426e-f522-4e37-95ed-0e3debc0d633
+# ╠═bae9426e-f522-4e37-95ed-0e3debc0d633
 # ╟─45ccce6b-794f-4b3a-9be3-ac32c8c2f868
 # ╟─fba53a72-5d27-4db7-8453-41200db29481
 # ╟─4af42420-4630-42a8-8941-6702c16beb99
@@ -3131,22 +3263,23 @@ floataside(
 # ╟─dfd42e6e-a98e-4759-b988-52dc5a793f15
 # ╠═12a4df23-3c63-41d6-bd50-d7209e423cb8
 # ╟─05c8e2fa-8650-49d0-a190-b865c0fb3261
+# ╠═3ba47c4f-b8f8-41e1-bada-8146062b099e
 # ╠═3ec78a69-a7b3-4c32-82cb-5b863c88798a
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
 # ╟─11892724-1851-46f2-802d-4da45127b0af
-# ╟─a42b1afb-86f2-4a11-8328-c726b614aaba
+# ╠═a42b1afb-86f2-4a11-8328-c726b614aaba
 # ╟─b3649b03-25cd-4f3e-99c4-85e24ddd3d11
 # ╠═fee347ff-5401-4540-a1ce-fc2e8ff0ce63
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
-# ╟─d38c2b43-4d8b-4be7-8d77-5a30da384541
+# ╠═d38c2b43-4d8b-4be7-8d77-5a30da384541
 # ╟─1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 # ╟─79018ef0-6ab1-4420-9a52-8f8e2812fd40
-# ╠═f9dade9f-8431-48a6-a2ee-2c88f178e76e
-# ╠═cb9b0158-f17d-4136-8994-360f3078c7df
+# ╟─f9dade9f-8431-48a6-a2ee-2c88f178e76e
+# ╟─cb9b0158-f17d-4136-8994-360f3078c7df
 # ╠═c62ab378-0988-4fa5-b21d-5e1622c63c87
-# ╠═52a5bbd2-0278-4d92-95f1-367797f636e6
+# ╟─52a5bbd2-0278-4d92-95f1-367797f636e6
 # ╟─278dd577-2d1f-4608-aee4-f7de466cf736
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 # ╠═b64c0d67-016d-4bca-9fae-150cf50efc77
@@ -3154,30 +3287,31 @@ floataside(
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
 # ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
 # ╟─27075c18-4da9-42f4-b5a8-d36bc7b4930d
-# ╠═3d661549-a8d2-40b0-add8-b186193f90fe
+# ╟─3d661549-a8d2-40b0-add8-b186193f90fe
 # ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
 # ╟─0607672c-9177-4717-8ddf-e07a5dd82ec4
 # ╟─04790584-5822-460a-be5c-c9efb3bc26b5
+# ╠═cd8a368c-ba13-4622-9433-a333f5629f22
+# ╠═780e8faa-e346-45cb-81f1-34df2a99bc17
 # ╠═def960de-f74a-4ca8-9d95-8af4e0240b60
-# ╠═0106756b-594d-4fdb-81b5-cf0739898521
-# ╠═d4fb4803-1c1b-4fd7-a782-112777f55be0
-# ╠═8fc7877e-c4e4-40d1-a720-7806f7dbde0a
+# ╟─0106756b-594d-4fdb-81b5-cf0739898521
+# ╟─d4fb4803-1c1b-4fd7-a782-112777f55be0
+# ╟─8fc7877e-c4e4-40d1-a720-7806f7dbde0a
 # ╠═81c4e515-89b5-4ecf-8437-070e5a51cb4c
-# ╠═58ac8edc-2432-4054-88d8-52dafe0a2a61
+# ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
 # ╠═e1ef1e83-c472-4267-8450-38c65f48d3dc
 # ╟─9a92d4a9-f489-4bba-9361-03cad3ea12e1
-# ╠═6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
-# ╠═df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
-# ╠═e5956bb0-a33a-488d-906e-fb5a7e2473a9
+# ╟─6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
+# ╟─df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+# ╟─e5956bb0-a33a-488d-906e-fb5a7e2473a9
 # ╟─fe1e2a72-4772-4482-88da-f9e5f90e928a
-# ╠═d94ec33c-3d9d-4d70-b0e1-e3d861a62821
+# ╟─d94ec33c-3d9d-4d70-b0e1-e3d861a62821
 # ╠═333492ec-9016-44c5-9059-e3cb42c05a89
-# ╠═983948d7-0628-407a-ba68-393ba5ed94eb
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
-# ╠═82baec54-048a-4851-8808-dd8c31eae4b9
+# ╟─82baec54-048a-4851-8808-dd8c31eae4b9
 # ╠═8c367e8f-df43-4f21-bef0-55060f36f44e
-# ╠═b7cb5183-65e8-4ee8-af86-2bedd11daecc
+# ╟─b7cb5183-65e8-4ee8-af86-2bedd11daecc
 # ╟─842b074b-f808-48d8-8dc5-110ddd907f90
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
@@ -3191,9 +3325,8 @@ floataside(
 # ╠═180c12b0-d410-4a5f-97bb-226e6624a39b
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╠═f8b5dc8f-1f41-4600-825e-2f9653f2d925
-# ╠═70c2fa00-a51f-4920-ba11-5a4e2fadc579
 # ╠═1cd669ac-05eb-48b2-b457-8c395cd5807d
-# ╠═1219baf6-dac9-46c7-af9d-5472c8c3238f
+# ╠═afb700c7-ef29-4c13-b9ea-1d40ea9534dd
 # ╠═60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╠═5caca8ea-82af-4999-93bb-a72252c456c7
