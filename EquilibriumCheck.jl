@@ -523,9 +523,6 @@ begin
 	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
 end;
 
-# ╔═╡ c05c51e2-ac3a-436d-91e9-529def56a416
-methods(boundary_neumann!)
-
 # ╔═╡ 44258eea-f114-4dfe-aa61-1e2cac31baa4
 function capsplot(vis, ::Nothing, title)
     scalarplot!(
@@ -913,11 +910,21 @@ md"""
 #### Scan Rate CV plots
 """
 
-# ╔═╡ 3f8d45e8-034d-4135-9ffb-87e92f64a985
-# ╠═╡ disabled = true
-#=╠═╡
-fig = conc_xt_3d(RDE_result, 1000, ico)
-  ╠═╡ =#
+# ╔═╡ be26b92a-14e2-45bc-bb6f-a2664e2e3cd9
+md"""
+#### Electrode concentration_Boundary Thickness Layer Function
+"""
+
+# ╔═╡ 89520d6a-7a44-41f6-92ba-3d9416ac2047
+md"""
+#### Constant time_Boundary Thickness Layer Function
+"""
+
+# ╔═╡ dadf76f0-cbea-4c34-a142-41e120679674
+function voltage_at_time(result::CVSweepResult, t_input)
+    idx = argmin(abs.(result.times .- t_input))  
+    return result.voltages[idx]
+end
 
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
@@ -1476,7 +1483,7 @@ function conc_time_vs_L(Lresult, ico; nspecies = 7)
     nt = length(times)
 
     species = getproperty.(bulk, :name)
-    colors =  resample_cmap(:winter, 15)
+    colors =  resample_cmap(:winter, length(Lresult))
 
     fig = Figure(size = (1290, 960))
     ax = Axis(
@@ -1520,9 +1527,7 @@ end
 # ╔═╡ deb15672-0e35-4855-b1c0-b2c0b7e78d41
 function conc_time_vs_RPM(RDE_result, ico; nspecies = 7)
     rpms = sort(collect(keys(RDE_result)))
-    first_rec = RDE_result[rpms[1]].result
-    times     = first_rec.tsol.t
-    nt        = length(times)
+
     species = getproperty.(bulk, :name)
     colors  = resample_cmap(:winter, length(rpms))
 
@@ -1539,9 +1544,14 @@ function conc_time_vs_RPM(RDE_result, ico; nspecies = 7)
     labels    = String[]
 
     for (j, rpm) in enumerate(rpms)
-        rec = RDE_result[rpm].result
-        δ   = RDE_result[rpm].δ         
-        δ_um = δ * 1e6                   
+        entry = RDE_result[rpm]     
+        rec   = entry.result        
+        δ     = entry.δ              
+        δ_um  = δ * 1e6
+
+        times = rec.tsol.t
+        nt    = length(times)
+
         conc_at_electrode_ico = [
             rec.tsol[ico, 1, t] / (mol / dm^3) for t in 1:nt
         ]
@@ -1560,9 +1570,123 @@ function conc_time_vs_RPM(RDE_result, ico; nspecies = 7)
 
     Legend(
         fig[1, 2], plot_objs, labels;
-        labelsize        = 10,
-        backgroundcolor  = RGBA(1.0, 1.0, 1.0, 0.5),
-        title            = "RDE rotation & boundary-layer thickness"
+        labelsize       = 10,
+        backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5),
+        title           = "RDE rotation & boundary-layer thickness"
+    )
+
+    fig
+end
+
+
+# ╔═╡ b48b4acb-ed25-4d9b-bee6-2e316ecb44c3
+function conc_x_vs_L_at_time(Lresult, ico; target_time = 20.0)
+
+	L_values = sort(collect(keys(Lresult)))
+
+    first_result = Lresult[L_values[1]]
+    times = first_result.tsol.t
+    nt    = length(times)
+
+    t_idx = argmin(abs.(times .- target_time))
+
+    species = getproperty.(bulk, :name)
+    colors  = resample_cmap(:autumn1, length(L_values))
+
+    fig = Figure(size = (1290, 960))
+    ax  = Axis(
+        fig[1, 1];
+        xlabel = L"x \; (\mu m)",
+        ylabel = L"c_{i}(x, t^*) \; (mol/dm^3)",
+        title  = L"c_{\mathrm{%$(species[ico])}}(x, t^*) \text{ for different } L \; \text{(}t^* = %$(round(target_time, digits=2)) \text{ s)}",
+		
+    )
+	xlims!(ax, -1, 250)
+    plot_objs = AbstractPlot[]
+    labels    = String[]
+	
+    for (j, L) in enumerate(L_values)
+        result_L = Lresult[L]
+
+        nx = size(result_L.tsol, 2)
+
+        xvals_um  = range(0, L; length = nx)
+
+        conc_profile = [
+            result_L.tsol[ico, ix, t_idx] / (mol / dm^3) for ix in 1:nx
+        ]
+
+        line = lines!(
+            ax, xvals_um, conc_profile;
+            color     = colors[j],
+            linewidth = 1,
+        )
+
+        push!(plot_objs, line)
+        push!(labels, @sprintf("L = %.1f μm", L))
+    end
+
+    Legend(
+        fig[1, 2], plot_objs, labels;
+        labelsize       = 10,
+        backgroundcolor = RGBA(1.0, 1.0, 1.0, 0.5),
+        title           = @sprintf("Profiles at t = %.1f s", target_time)
+    )
+
+    fig
+end
+
+
+# ╔═╡ 0a665fc0-1230-4978-8ebd-e551c595e857
+function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
+    rpms = sort(collect(keys(RDE_result)))
+
+    first_rec = RDE_result[rpms[1]].result
+    times = first_rec.tsol.t
+    t_idx = argmin(abs.(times .- target_time))
+
+    species = getproperty.(bulk, :name)
+    colors  = resample_cmap(:autumn1, length(rpms))
+
+    fig = Figure(size = (1290, 960))
+    ax  = Axis(
+        fig[1, 1];
+        xlabel = L"x \; (\mu m)",
+        ylabel = L"c_{i}(x, t^*) \; (mol/dm^3)",
+        title  = L"c_{\mathrm{%$(species[ico])}}(x, t^*) \text{ for different rpm}"
+    )
+	xlims!(ax, -1, 100)
+
+    plot_objs = AbstractPlot[]
+    labels    = String[]
+
+    for (j, rpm) in enumerate(rpms)
+        rec = RDE_result[rpm].result
+        δ   = RDE_result[rpm].δ        
+        nx  = size(rec.tsol, 2)
+
+        xvals_m  = range(0, δ; length = nx)
+        xvals_um = collect(xvals_m .* 1e6)
+
+        conc_profile = [
+            rec.tsol[ico, ix, t_idx] / (mol / dm^3) for ix in 1:nx
+        ]
+
+        line = lines!(
+            ax, xvals_um, conc_profile;
+            color = colors[j],
+            linewidth = 1,
+        )
+
+        push!(plot_objs, line)
+        push!(labels, @sprintf("ω = %4d rpm (L = %.1f μm)", rpm, δ * 1e6))
+    end
+
+    Legend(
+        fig[1, 2], plot_objs, labels;
+        labelsize       = 10,
+        backgroundcolor = RGBA(1,1,1,0.5),
+        title           = @sprintf("Profiles at t = %.1f s", target_time)
     )
 
     fig
@@ -2110,9 +2234,6 @@ if CV
 	pnpresult = sweep(model; eneutral = false, tunnel = false)
 end
 
-# ╔═╡ 393512e2-a8eb-4729-ac7e-405b09641ab5
-sqrt(elydata_Gold.D[ico2] * pnpresult.times[end]) / μm
-
 # ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
 let
 	try
@@ -2520,7 +2641,7 @@ let
 	    for (j, (p, rec)) in enumerate(zip(pH_var[1:ntheo], pH_vec[1:ntheo]))
 	        label2 = (j == 1) ? "pH=$(p)" : "⋅ pH=$(p)"
 	        push!(labels2, label2)
-	        I = currents(rec, iohminus) .* cm^2/mA
+	        I = currents(rec, ico) .* cm^2/mA
 	        push!(plot_objs2, scatterlines!(ax, rec.voltages, I; color = cols2[j]))
 	    end
 	
@@ -2672,7 +2793,7 @@ end
 
 # ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
 function sweep_over_L(model;
- 	L_values = round.(range(50, 2500, length=14)),
+ 	L_values = round.(range(50, 2500, length=26)),
 	eneutral = true,
     tunnel = false, bikerman = true, 
     bcond = pnp_bcondition,
@@ -2737,7 +2858,7 @@ let
         push!(plot_objs2, line)
         push!(labels2, "L = $(L) μm")
     end
-	vspan!(ax,  -1.2,  -1.19, color=(colorant"#000000"))
+	#vspan!(ax,  -1.2,  -1.19, color=(colorant"#000000"))
     #Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
 		Legend(fig[1, 2], plot_objs2, labels2, "Theoretical";
 		    framevisible = true,
@@ -2762,48 +2883,52 @@ end
 
 # ╔═╡ 61be3485-960b-42f8-82e6-71e213a5c9a1
 let
-    δ_keys = sort(collect(keys(Lresult)))          
-    δ_um = Float64.(δ_keys)                       
+    δ_keys = sort(collect(keys(Lresult)))
+    δ_um   = Float64.(δ_keys)
+
     I_pos_peaks  = Float64[]
     I_neg_peaks  = Float64[]
     I_at_voltage = Float64[]
 
-    target_time = 24.0  
+    target_time = 85.0
+
+    rec_ref = Lresult[δ_keys[1]]
+    idx_ref = argmin(abs.(rec_ref.times .- target_time))
+    V_target = rec_ref.voltages[idx_ref]   
 
     for δ in δ_keys
         rec = Lresult[δ]
 
         I = currents(rec, ico) .* (cm^2/mA)
 
-        # 1) positive / negative peak
         push!(I_pos_peaks, maximum(I))
         push!(I_neg_peaks, minimum(I))
 
-        # 2) 특정 시간에서의 current (target_time)
         times = rec.times
         idx   = argmin(abs.(times .- target_time))
         push!(I_at_voltage, I[idx])
     end
 
-    # 3) x축 tick 라벨
     δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_um ]
 
     fig = Figure(size = (1200, 800))
     ax  = Axis(fig[1, 1],
-               xlabel = L"\text{L}\;(\mu m)",
-               ylabel = L"I_{peak} \; (mA/cm^2)",
-               title  = @sprintf("Peak current vs boundary layer thickness (V = -1.2V)"),
-               xticklabelrotation = π/4,
-               xticks = (δ_um, δ_labels),
-               #xscale = log10,
-              )
+        xlabel = L"\text{L}\;(\mu\mathrm{m})",
+        ylabel = L"I_{\text{peak}} \; (\mathrm{mA}/\mathrm{cm}^2)",
+        title  = @sprintf("Peak current vs boundary layer thickness (V = %.2f V, t = %.1f s) [Scan Rate = 50 mV/s]",
+                          round(V_target, digits=2), target_time),
+        xticklabelrotation = π/4,
+        xticks = (δ_um, δ_labels),
+    )
 
-    # 4) 세 종류의 current 플롯
-    plot1 = scatterlines!(ax, δ_um, I_pos_peaks; marker = :circle)
-    plot2 = scatterlines!(ax, δ_um, I_neg_peaks; marker = :utriangle)
+    plot1 = scatterlines!(ax, δ_um, I_pos_peaks;  marker = :circle)
+    plot2 = scatterlines!(ax, δ_um, I_neg_peaks;  marker = :utriangle)
     plot3 = scatterlines!(ax, δ_um, I_at_voltage; marker = :diamond)
 
-    Legend(fig[1, 2], [plot1, plot2, plot3], ["Positive", "Negative", "I(24), -1.2V"])
+    Legend(fig[1, 2],
+           [plot1, plot2, plot3],
+           ["Positive peak", "Negative peak",
+            @sprintf("I at V = %.2f V", round(V_target, digits=2))])
 
     fig
 end
@@ -2849,6 +2974,50 @@ end
 
 # ╔═╡ 3b41341e-d174-4b2f-8c19-068cb84ba571
 conc_time_vs_L(Lresult, ico; nspecies = 7)
+
+# ╔═╡ 666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
+conc_x_vs_L_at_time(Lresult, ico; target_time = 40.0)
+
+# ╔═╡ 59f05654-a8de-4e17-b2ad-60a7ac64e122
+let
+    # ico = ico2  
+
+    target_time = 76
+
+    L_values = sort(collect(keys(Lresult)))
+    species = getproperty.(bulk, :name)
+
+    conc_vals = Float64[]
+
+    for L in L_values
+        result_L = Lresult[L]
+
+        times = result_L.tsol.t
+        idx = argmin(abs.(times .- target_time))
+
+        c_ico2 = result_L.tsol[ico2, 1, idx] / (mol / dm^3)
+        push!(conc_vals, c_ico2)
+    end
+
+    L_labels = [ @sprintf("%0.1f", L) for L in L_values ]
+
+    fig = Figure(size = (650, 400))
+    ax = Axis(fig[1, 1];
+        xlabel = L"L / \mu\mathrm{m}",
+        ylabel = L"c_{\mathrm{CO_2}}(x=0) / (\mathrm{mol}/\mathrm{dm}^3)",
+        title  = L"\mathrm{CO_2}\ \text{concentration at electrode vs. } L \text{ at } t = %$target_time",
+        xticklabelrotation = π/4,
+        xticks = (L_values, L_labels),
+    )
+
+    scatter!(ax, L_values, conc_vals; markersize = 8, color = :green)
+
+    fig
+end
+
+
+# ╔═╡ 91242a8c-c09b-402c-a0ea-40b8e3e26ae7
+v = voltage_at_time(Lresult[2108], 76.0)
 
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function CV_RPM(model;
@@ -2956,57 +3125,65 @@ RDE_result[1000].result.times[24]
 
 # ╔═╡ 4116166d-5f82-4d9b-80fb-c8035b9b6ade
 let
-    rpms = sort(collect(keys(RDE_result)))
-
-    δ_values        = Float64[] 
-    I_pos_peaks     = Float64[]  
-    I_neg_peaks     = Float64[]  
-    I_at_voltage    = Float64[]  
-    target_time = 24.0 #0.05 * 24 = -1.2V, mass transport limits currents     
-
-    for rpm in rpms
-        rec = RDE_result[rpm].result
-        δ   = RDE_result[rpm].δ        
-        δ_um = δ * 1e6                
-
-        push!(δ_values, δ_um)
-
-        # 전체 CV current
-        I = currents(rec, ico) .* (cm^2/mA)
-
-        # 1) positive / negative peak
-        push!(I_pos_peaks, maximum(I))
-        push!(I_neg_peaks, minimum(I))
-        times = rec.times            
-        idx   = argmin(abs.(times .- target_time))
-
-        push!(I_at_voltage, I[idx])      
-    end
-
-    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_values ]
-
-    fig = Figure(size = (1200, 800))
-    ax  = Axis(fig[1, 1],
-               xlabel = L"\text{L}\;(\mu m)",
-               ylabel = L"I_{peak} \; (mA/cm^2)",
-               title  = @sprintf("Peak current vs boundary layer thickness (t = %.1f s 포함)", target_time),
-			   xticklabelrotation = π/4,
-               xticks = (δ_values, δ_labels),
-               xscale = log10
-              )
-
-    # peak currents
-    plot1 = scatterlines!(ax, δ_values, I_pos_peaks; marker = :circle)
-    plot2 = scatterlines!(ax, δ_values, I_neg_peaks; marker = :utriangle)
-
-    plot3 = scatterlines!(ax, δ_values, I_at_voltage; marker = :diamond)
-
-    Legend(fig[1, 2], [plot1, plot2, plot3], ["Positive", "Negative", "I(t)"])
-
-
-    fig
+    try 
+		rpms = sort(collect(keys(RDE_result)))
+	
+	    δ_values        = Float64[] 
+	    I_pos_peaks     = Float64[]  
+	    I_neg_peaks     = Float64[]  
+	    I_at_voltage    = Float64[]  
+	    target_time = 40.0 #0.05 * 24 = -1.2V, mass transport limits currents     
+	
+	    for rpm in rpms
+	        rec = RDE_result[rpm].result
+	        δ   = RDE_result[rpm].δ        
+	        δ_um = δ * 1e6                
+	
+	        push!(δ_values, δ_um)
+	
+	        # 전체 CV current
+	        I = currents(rec, ico) .* (cm^2/mA)
+	
+	        # 1) positive / negative peak
+	        push!(I_pos_peaks, maximum(I))
+	        push!(I_neg_peaks, minimum(I))
+	        times = rec.times            
+	        idx   = argmin(abs.(times .- target_time))
+	
+	        push!(I_at_voltage, I[idx])      
+	    end
+	
+	    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_values ]
+	
+	    fig = Figure(size = (1200, 800))
+	    ax  = Axis(fig[1, 1],
+	               xlabel = L"\text{L}\;(\mu m)",
+	               ylabel = L"I_{peak} \; (mA/cm^2)",
+	               title  = @sprintf("Peak current vs boundary layer thickness (t = %.1f s 포함)", target_time),
+				   xticklabelrotation = π/4,
+	               xticks = (δ_values, δ_labels),
+	               xscale = log10
+	              )
+	
+	    # peak currents
+	    plot1 = scatterlines!(ax, δ_values, I_pos_peaks; marker = :circle)
+	    plot2 = scatterlines!(ax, δ_values, I_neg_peaks; marker = :utriangle)
+	
+		plot3 = scatterlines!(ax, δ_values, I_at_voltage; marker = :diamond)
+	
+	   	Legend(fig[1, 2], [plot1, plot2, plot3], ["Positive", "Negative", "I(t)"])
+	
+	
+	   	fig
+	catch e
+	   	if e isa UndefVarError
+			# normal case → skip
+	   	else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
 end
-
 
 # ╔═╡ 3f50a881-337f-4578-b0ff-a143439b0a6d
 conc_time_vs_RPM(RDE_result, ico; nspecies = 7)
@@ -3029,7 +3206,7 @@ end
 # ╔═╡ 1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
 begin
 	if scan_rate_varied_checkbox
-	    scanrates = [1e-6, 0.0001, 0.0005, 0.001, 0.005, 0.007, 0.01, 0.03, 0.05, 0.07, 0.1, 0.5, 1] 
+	    scanrates = [0.0001, 0.0005, 0.001, 0.005, 0.007, 0.01, 0.03, 0.05, 0.07, 0.1, 0.5, 1] 
 	
 	    sweep_vec = Vector{Any}(undef, length(scanrates))
 	
@@ -3135,6 +3312,70 @@ let
 	    end
 	end
 end
+
+# ╔═╡ 9e2b6a47-a113-4107-acdf-3901e0578898
+let
+    try
+        target_voltage = -1.2
+
+        fig = Figure(size = (1600, 900))
+        ax = Axis(fig[1, 1],
+                  ylabel = L"I \; (mA/cm^2)",
+                  xlabel = L"v \; (V/s)",
+                  title  = L"I(\varphi = %$(target_voltage) \text{ V vs SHE}) \text{ vs. scan rate}"
+        )
+
+        I_at_V = Float64[]
+        cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)),
+                    0.3 + 0.5*(1-i/length(sweep_vec)),
+                    0.8 - 0.7*(i/length(sweep_vec)))
+                for i in 1:length(sweep_vec)]
+
+        labels    = String[]
+        plot_objs = Any[]
+
+        for (j, rec) in enumerate(sweep_vec)
+            idx = argmin(((rec.voltages .- target_voltage)))
+
+            Ival = currents(rec, ico)[idx] .* (cm^2/mA)
+            push!(I_at_V, Ival)
+
+            color_j = cols[j]
+            lw_j    = 2
+            marker_j = :circle
+
+            if j == length(sweep_vec) - 4
+                color_j  = RGB(1, 0.2, 0.2)  
+                lw_j     = 4
+                marker_j = :utriangle
+            end
+
+            line = scatter!(ax,
+                            ([scanrates[j]]),
+                            ([Ival]);
+                            markersize = 10,
+                            marker     = marker_j,
+                            color      = color_j)
+
+            push!(plot_objs, line)
+            push!(labels, "$(scanrates[j])")
+        end
+
+        Legend(fig[1, 2], plot_objs, labels,
+               "Scan Rates (V/s)";
+               framevisible = true)
+
+        fig
+    catch e
+        if e isa UndefVarError
+            # normal case → skip
+        else
+            println("⚠️ Error occurred: ", e)
+            println(stacktrace(catch_backtrace()))
+        end
+    end
+end
+
 
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
@@ -3621,10 +3862,8 @@ floataside(
 # ╠═f2043f2c-f3c8-4b0f-944c-7b55624dac08
 # ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
-# ╠═c05c51e2-ac3a-436d-91e9-529def56a416
 # ╠═b21c8394-f847-477e-ac8f-713398b81166
 # ╠═44258eea-f114-4dfe-aa61-1e2cac31baa4
-# ╠═393512e2-a8eb-4729-ac7e-405b09641ab5
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
@@ -3682,7 +3921,7 @@ floataside(
 # ╠═cd8a368c-ba13-4622-9433-a333f5629f22
 # ╠═780e8faa-e346-45cb-81f1-34df2a99bc17
 # ╠═def960de-f74a-4ca8-9d95-8af4e0240b60
-# ╟─61be3485-960b-42f8-82e6-71e213a5c9a1
+# ╠═61be3485-960b-42f8-82e6-71e213a5c9a1
 # ╠═7b592fb4-525a-4b7d-9184-a1c08dbc51ab
 # ╠═8cbc4ced-7ac2-4def-97cf-ff056c1dcb4a
 # ╟─0106756b-594d-4fdb-81b5-cf0739898521
@@ -3700,17 +3939,25 @@ floataside(
 # ╟─df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
 # ╟─e5956bb0-a33a-488d-906e-fb5a7e2473a9
 # ╟─fe1e2a72-4772-4482-88da-f9e5f90e928a
-# ╠═d94ec33c-3d9d-4d70-b0e1-e3d861a62821
-# ╠═333492ec-9016-44c5-9059-e3cb42c05a89
+# ╟─d94ec33c-3d9d-4d70-b0e1-e3d861a62821
+# ╟─333492ec-9016-44c5-9059-e3cb42c05a89
+# ╠═9e2b6a47-a113-4107-acdf-3901e0578898
+# ╟─be26b92a-14e2-45bc-bb6f-a2664e2e3cd9
 # ╠═3b41341e-d174-4b2f-8c19-068cb84ba571
 # ╠═3f50a881-337f-4578-b0ff-a143439b0a6d
-# ╠═3f8d45e8-034d-4135-9ffb-87e92f64a985
+# ╟─89520d6a-7a44-41f6-92ba-3d9416ac2047
+# ╠═666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
+# ╠═59f05654-a8de-4e17-b2ad-60a7ac64e122
+# ╠═dadf76f0-cbea-4c34-a142-41e120679674
+# ╠═91242a8c-c09b-402c-a0ea-40b8e3e26ae7
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 # ╟─9cc13c22-edfb-4de8-87cd-c30a87b2aff3
 # ╟─82baec54-048a-4851-8808-dd8c31eae4b9
-# ╠═8c367e8f-df43-4f21-bef0-55060f36f44e
-# ╠═b14d67ca-5f24-4d8a-9334-6e072e2b39eb
-# ╠═deb15672-0e35-4855-b1c0-b2c0b7e78d41
+# ╟─8c367e8f-df43-4f21-bef0-55060f36f44e
+# ╟─b14d67ca-5f24-4d8a-9334-6e072e2b39eb
+# ╟─deb15672-0e35-4855-b1c0-b2c0b7e78d41
+# ╟─b48b4acb-ed25-4d9b-bee6-2e316ecb44c3
+# ╟─0a665fc0-1230-4978-8ebd-e551c595e857
 # ╟─b7cb5183-65e8-4ee8-af86-2bedd11daecc
 # ╟─842b074b-f808-48d8-8dc5-110ddd907f90
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
