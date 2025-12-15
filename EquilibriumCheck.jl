@@ -752,6 +752,15 @@ md"""
 #### Pressure plots
 """
 
+# ╔═╡ f918dc11-80e4-4223-8f02-3d5f0a10f8e5
+function x99_at_time(tsol, ico2, t_index, x, c_bulk)
+    c = tsol[ico2, :, t_index] ./ (mol/dm^3)
+
+    idx = findfirst(ci -> ci ≥ 0.99c_bulk, c)
+
+    return isnothing(idx) ? NaN : x[idx]
+end
+
 # ╔═╡ 7b592fb4-525a-4b7d-9184-a1c08dbc51ab
 
 
@@ -2421,6 +2430,12 @@ begin
 	end
 end
 
+# ╔═╡ b30a03b9-2b6a-42e0-a7e6-8f3e214f3e52
+pnpresult.tsol.t[100]
+
+# ╔═╡ 4e44b293-eec0-4f7e-859c-f4aa6ce0bbf7
+pnpresult.voltages[100]
+
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 let
     try
@@ -2434,13 +2449,14 @@ let
 
         nplot = min(nx, length(X))
         xx = X[1:nplot] / μm   
-        t_index = 1
+        t_index = 140
 
         fig = Figure(size = (650, 400))
 	    ax = Axis(fig[1, 1],
 	    		  xlabel = "x / μm",
 	  			  ylabel = L"\log_{10} c_i\; (mol/dm^3)",
-				  title = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s"
+				  title = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s",
+				 # limits = ((-0.5, 1),(-20, 5))
 				 )
 
 
@@ -2515,6 +2531,75 @@ let
 	    end
 	end
 end
+
+# ╔═╡ 69e6f136-e31c-4d71-a9a7-ea9ca6530669
+let
+    try
+        tsol = pnpresult.tsol ./ (mol / dm^3)
+        nvar, nx, nt = size(tsol)
+
+        species = getproperty.(bulk, :name)
+        colors  = getproperty.(bulk, :color)
+        nspecies = min(nvar, length(species), length(colors))
+
+        nplot = min(nx, length(X))
+        xx = X[1:nplot] ./ μm
+
+        ispec = 5       
+        frac  = 0.99          
+        t_indices = unique(clamp.([1, 10, 50, 100, 140, nt], 1, nt))  
+
+        c_bulk = tsol[ispec, nplot, 1]
+        if !(c_bulk > 0)
+            error("c_bulk is not positive (c_bulk=$(c_bulk)). Try different ispec or far-field index.")
+        end
+
+        function x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
+            c = tsol[ispec, 1:length(xx), t_index]
+            target = frac * c_bulk
+
+            idx = findfirst(ci -> (ci ≥ target), c)
+            return isnothing(idx) ? NaN : xx[idx]
+        end
+
+        δs = Float64[]
+        ts = Float64[]
+        for ti in t_indices
+            δ = x_at_frac(tsol, ispec, ti, xx, c_bulk, frac)
+            push!(δs, δ)
+            push!(ts, pnpresult.tsol.t[ti])
+            @info "t=$(round(ts[end], digits=6)) s → δ$(Int(round(frac*100)))=$(round(δ, digits=6)) μm (c_bulk≈$(round(c_bulk, digits=6)) mol/dm^3)"
+        end
+
+        t_index = min(140, nt)
+
+        fig = Figure(size = (800, 420))
+        ax  = Axis(fig[1, 1],
+                   xlabel = "x / μm",
+                   ylabel = L"\log_{10} c_i\; (mol/dm^3)",
+                   title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s  |  δ$(Int(round(frac*100))) for $(species[ispec])")
+
+        conc = tsol[ispec, 1:nplot, t_index]
+        yvals = [c > 0 ? log10(c) : NaN for c in conc]
+        lines!(ax, xx, yvals; color = colors[ispec], linewidth = 2, label = species[ispec])
+
+        δ_here = x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
+        if isfinite(δ_here)
+            vlines!(ax, [δ_here]; linestyle = :dash, linewidth = 2)
+            text!(ax, δ_here, maximum(skipmissing(yvals));
+                  text = "  δ$(Int(round(frac*100)))≈$(round(δ_here, digits=4)) μm",
+                  align = (:left, :top))
+        end
+
+        axislegend(ax; position = :rb)
+        fig
+
+    catch e
+        println("⚠️ Error occurred: ", e)
+        println(stacktrace(catch_backtrace()))
+    end
+end
+
 
 # ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
 let
@@ -2698,9 +2783,6 @@ begin
 	    end
 	end
 end
-
-# ╔═╡ cd8a368c-ba13-4622-9433-a333f5629f22
-Pr_HCO3
 
 # ╔═╡ 780e8faa-e346-45cb-81f1-34df2a99bc17
 let
@@ -3012,54 +3094,64 @@ end
 
 # ╔═╡ 61be3485-960b-42f8-82e6-71e213a5c9a1
 let
-    δ_keys = sort(collect(keys(Lresult)))
-    δ_um   = Float64.(δ_keys)
-
-    I_pos_peaks  = Float64[]
-    I_neg_peaks  = Float64[]
-    I_at_voltage = Float64[]
-
-    target_time = 85.0
-
-    rec_ref = Lresult[δ_keys[1]]
-    idx_ref = argmin(abs.(rec_ref.times .- target_time))
-    V_target = rec_ref.voltages[idx_ref]   
-
-    for δ in δ_keys
-        rec = Lresult[δ]
-
-        I = currents(rec, ico) .* (cm^2/mA)
-
-        push!(I_pos_peaks, maximum(I))
-        push!(I_neg_peaks, minimum(I))
-
-        times = rec.times
-        idx   = argmin(abs.(times .- target_time))
-        push!(I_at_voltage, I[idx])
-    end
-
-    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_um ]
-
-    fig = Figure(size = (1200, 800))
-    ax  = Axis(fig[1, 1],
-        xlabel = L"\text{L}\;(\mu\mathrm{m})",
-        ylabel = L"I_{\text{peak}} \; (\mathrm{mA}/\mathrm{cm}^2)",
-        title  = @sprintf("Peak current vs boundary layer thickness (V = %.2f V, t = %.1f s) [Scan Rate = 50 mV/s]",
-                          round(V_target, digits=2), target_time),
-        xticklabelrotation = π/4,
-        xticks = (δ_um, δ_labels),
-    )
-
-    plot1 = scatterlines!(ax, δ_um, I_pos_peaks;  marker = :circle)
-    plot2 = scatterlines!(ax, δ_um, I_neg_peaks;  marker = :utriangle)
-    plot3 = scatterlines!(ax, δ_um, I_at_voltage; marker = :diamond)
-
-    Legend(fig[1, 2],
-           [plot1, plot2, plot3],
-           ["Positive peak", "Negative peak",
-            @sprintf("I at V = %.2f V", round(V_target, digits=2))])
-
-    fig
+	try
+	    δ_keys = sort(collect(keys(Lresult)))
+	    δ_um   = Float64.(δ_keys)
+	
+	    I_pos_peaks  = Float64[]
+	    I_neg_peaks  = Float64[]
+	    I_at_voltage = Float64[]
+	
+	    target_time = 85.0
+	
+	    rec_ref = Lresult[δ_keys[1]]
+	    idx_ref = argmin(abs.(rec_ref.times .- target_time))
+	    V_target = rec_ref.voltages[idx_ref]   
+	
+	    for δ in δ_keys
+	        rec = Lresult[δ]
+	
+	        I = currents(rec, ico) .* (cm^2/mA)
+	
+	        push!(I_pos_peaks, maximum(I))
+	        push!(I_neg_peaks, minimum(I))
+	
+	        times = rec.times
+	        idx   = argmin(abs.(times .- target_time))
+	        push!(I_at_voltage, I[idx])
+	    end
+	
+	    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_um ]
+	
+	    fig = Figure(size = (1200, 800))
+	    ax  = Axis(fig[1, 1],
+	        xlabel = L"\text{L}\;(\mu\mathrm{m})",
+	        ylabel = L"I_{\text{peak}} \; (\mathrm{mA}/\mathrm{cm}^2)",
+	        title  = @sprintf("Peak current vs boundary layer thickness (V = %.2f V, t = %.1f s) [Scan Rate = 50 mV/s]",
+	                          round(V_target, digits=2), target_time),
+	        xticklabelrotation = π/4,
+	        xticks = (δ_um, δ_labels),
+	    )
+	
+	    plot1 = scatterlines!(ax, δ_um, I_pos_peaks;  marker = :circle)
+	    plot2 = scatterlines!(ax, δ_um, I_neg_peaks;  marker = :utriangle)
+	    plot3 = scatterlines!(ax, δ_um, I_at_voltage; marker = :diamond)
+	
+	    Legend(fig[1, 2],
+	           [plot1, plot2, plot3],
+	           ["Positive peak", "Negative peak",
+	            @sprintf("I at V = %.2f V", round(V_target, digits=2))])
+	
+	    fig
+	catch e
+	    if e isa UndefVarError
+	        # normal → skip
+	    else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+		
 end
 
 
@@ -4133,6 +4225,8 @@ floataside(
 # ╟─278dd577-2d1f-4608-aee4-f7de466cf736
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 # ╠═b64c0d67-016d-4bca-9fae-150cf50efc77
+# ╠═b30a03b9-2b6a-42e0-a7e6-8f3e214f3e52
+# ╠═4e44b293-eec0-4f7e-859c-f4aa6ce0bbf7
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
 # ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
@@ -4140,8 +4234,9 @@ floataside(
 # ╟─3d661549-a8d2-40b0-add8-b186193f90fe
 # ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
 # ╠═0607672c-9177-4717-8ddf-e07a5dd82ec4
+# ╠═f918dc11-80e4-4223-8f02-3d5f0a10f8e5
+# ╠═69e6f136-e31c-4d71-a9a7-ea9ca6530669
 # ╟─04790584-5822-460a-be5c-c9efb3bc26b5
-# ╠═cd8a368c-ba13-4622-9433-a333f5629f22
 # ╠═780e8faa-e346-45cb-81f1-34df2a99bc17
 # ╠═def960de-f74a-4ca8-9d95-8af4e0240b60
 # ╠═61be3485-960b-42f8-82e6-71e213a5c9a1
