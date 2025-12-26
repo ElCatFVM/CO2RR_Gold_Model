@@ -559,6 +559,55 @@ md"""
 Run general cyclic voltammetry curve $(@bind CV PlutoUI.CheckBox())
 """
 
+# ╔═╡ 86ca47fa-c64a-43e0-b0c3-3ce9e03653c2
+# ╠═╡ disabled = true
+#=╠═╡
+if CV
+	res = begin
+	    Vhold  = -0.87 * ufac"V"
+	    tindex = 88
+	    Thold  = 0
+	
+	    pnpcell = PNPSystem(grid; bcondition=pnp_bcondition, celldata=elydata_Gold)
+	    cdata   = celldata(pnpcell)
+	    sys     = pnpcell.vfvmsys
+	
+	    # CV 
+	    pnpresult = cvsweep(
+	        pnpcell;
+	        voltages = sawtooth,
+	        nperiods = nperiods,
+	        store_solutions = true,
+	    )
+	
+	    u0_raw = pnpresult.tsol.u[tindex]
+	    Ut     = VoronoiFVM.unknowns(sys)
+	    @assert size(u0_raw) == size(Ut)
+	
+	    U0 = copy(Ut);  U0 .= u0_raw
+	
+	    tramp = 0.05
+	    function pre_hold(sol, t)
+	        V = (t < tramp) ? (pnpresult.voltages[tindex] + (Vhold - pnpresult.voltages[tindex]) * (t/tramp)) : Vhold
+	        LiquidElectrolytes.working_electrode_voltage!(cdata, V)
+	    end
+	
+	    control_hold = SolverControl(;
+	        verbose = true,
+	        handle_exceptions = false,
+	        damp_initial = 0.02,
+	        Δt      = 1e-6,
+	        Δt_min  = 1e-12,
+	        Δt_max  = 1e-2,
+	    )
+	
+	    hold_tsol = solve(sys; inival=U0, time=Thold, control=control_hold, pre=pre_hold, store_all=true)
+	
+	    (; pnpcell, pnpresult, hold_tsol)
+	end
+end
+  ╠═╡ =#
+
 # ╔═╡ 39c8ef0d-aac2-4c7f-8004-4166c460ebc5
 # ╠═╡ disabled = true
 #=╠═╡
@@ -721,6 +770,25 @@ md"""
 #### Time-Voltage plots
 """
 
+# ╔═╡ cb9b0158-f17d-4136-8994-360f3078c7df
+let
+	try
+	    fig = Figure(size = (600, 200))
+	    ax = Axis(fig[1, 1], yscale = log10)
+	    T = pnpresult.times
+	    #lines!(ax,T, voltages.(T))
+	    lines!(ax, T[2:end], T[2:end] - T[1:(end - 1)])
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
 # ╔═╡ 278dd577-2d1f-4608-aee4-f7de466cf736
 md"""
 #### Time-Concentration plots
@@ -865,6 +933,50 @@ let
 end
   ╠═╡ =#
 
+# ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
+let
+	try
+	    fig = Figure(size = (1600, 900))
+	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+	
+		total_current = currents(pnpresult, ico) .* (cm^2/mA)
+	    gold_line = lines!(ax, pnpresult.voltages, total_current,
+	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+		scatter!(ax, pnpresult.voltages, total_current, markersize = 12,
+	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+	    # Experimental Data Plotting based on M.T.M Koper
+	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+	    pres = vec(Matrix(raw[1:1, :]))
+	    sub = Matrix(raw[4:end, :])
+	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+	    num_df = DataFrame(num, :auto)
+	    npairs = size(num_df, 2) ÷ 2
+	    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
+	    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+	                 pink.g + t*(pblue.g-pink.g),
+	                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+	
+	    plot_objs1 = []
+	    labels1 = String[]
+	    for j in 1:npairs
+	        xcol, ycol = 2j - 1, 2j
+	        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+	        push!(labels1, label)
+	        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+	        push!(plot_objs1, line)
+	    end
+	    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
+		fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
 # ╔═╡ 1753c20f-9b53-4120-a8c8-e2b086f46f44
 md"""
 #### RDE_CV plots
@@ -1002,14 +1114,14 @@ function CVPlot!(result, model)
  			 # limits = ((-1.25, 0.8),(-0.0000002, 0.0000002)),
               ylabel = L"I (mA/cm²)",
               xlabel = L"φ (V vs SHE)",
-			  yscale = log10
+			  #yscale = log10
 			 )
 	
     total_current = zero(currents(result, ic[1]))
     #for s in ic
     #    total_current .+= (currents(result, s) * mA / cm^2)
     #end
-	total_current = abs.(currents(result, ico)) .* cm^2/mA
+	total_current = (currents(result, ico)) .* cm^2/mA
 
 	
     lines!(ax, result.voltages, total_current,
@@ -1279,6 +1391,24 @@ begin
 	    const nperiods = user_input_cv.nperiods
 end
 
+# ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
+let
+	try
+	    fig = Figure()
+	    ax = Axis(fig[1, 1])
+	    T = 0:1.0:pnpresult.tsol.t[end]
+	    lines!(ax, T, sawtooth.(T))
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
 # ╔═╡ d75725cd-0ef6-421f-be56-f559312e73b6
 floataside(
     @bind user_input_ion confirm(
@@ -1495,6 +1625,20 @@ function conc_time_func(result, scan)
     fig
 end
 
+
+# ╔═╡ c23741d2-3ece-41b8-8a2f-16743425c5cd
+begin
+	try
+		conc_time_func(pnpresult, sawtooth)
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
 
 # ╔═╡ b14d67ca-5f24-4d8a-9334-6e072e2b39eb
 function conc_time_vs_L(Lresult, ico; nspecies = 7)
@@ -1798,6 +1942,75 @@ begin
     grid_cv = ExtendableGrids.simplexgrid(X_cv)
 end
 
+# ╔═╡ 69e6f136-e31c-4d71-a9a7-ea9ca6530669
+let
+    try
+        tsol = pnpresult.tsol ./ (mol / dm^3)
+        nvar, nx, nt = size(tsol)
+
+        species = getproperty.(bulk, :name)
+        colors  = getproperty.(bulk, :color)
+        nspecies = min(nvar, length(species), length(colors))
+
+        nplot = min(nx, length(X))
+        xx = X[1:nplot] ./ μm
+
+        ispec = 5       
+        frac  = 0.99          
+        t_indices = unique(clamp.([1, 10, 50, 100, 140, nt], 1, nt))  
+
+        c_bulk = tsol[ispec, nplot, 1]
+        if !(c_bulk > 0)
+            error("c_bulk is not positive (c_bulk=$(c_bulk)). Try different ispec or far-field index.")
+        end
+
+        function x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
+            c = tsol[ispec, 1:length(xx), t_index]
+            target = frac * c_bulk
+
+            idx = findfirst(ci -> (ci ≥ target), c)
+            return isnothing(idx) ? NaN : xx[idx]
+        end
+
+        δs = Float64[]
+        ts = Float64[]
+        for ti in t_indices
+            δ = x_at_frac(tsol, ispec, ti, xx, c_bulk, frac)
+            push!(δs, δ)
+            push!(ts, pnpresult.tsol.t[ti])
+            @info "t=$(round(ts[end], digits=6)) s → δ$(Int(round(frac*100)))=$(round(δ, digits=6)) μm (c_bulk≈$(round(c_bulk, digits=6)) mol/dm^3)"
+        end
+
+        t_index = min(140, nt)
+
+        fig = Figure(size = (800, 420))
+        ax  = Axis(fig[1, 1],
+                   xlabel = "x / μm",
+                   ylabel = L"\log_{10} c_i\; (mol/dm^3)",
+                   title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s  |  δ$(Int(round(frac*100))) for $(species[ispec])")
+
+        conc = tsol[ispec, 1:nplot, t_index]
+        yvals = [c > 0 ? log10(c) : NaN for c in conc]
+        lines!(ax, xx, yvals; color = colors[ispec], linewidth = 2, label = species[ispec])
+
+        δ_here = x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
+        if isfinite(δ_here)
+            vlines!(ax, [δ_here]; linestyle = :dash, linewidth = 2)
+            text!(ax, δ_here, maximum(skipmissing(yvals));
+                  text = "  δ$(Int(round(frac*100)))≈$(round(δ_here, digits=4)) μm",
+                  align = (:left, :top))
+        end
+
+        axislegend(ax; position = :rb)
+        fig
+
+    catch e
+        println("⚠️ Error occurred: ", e)
+        println(stacktrace(catch_backtrace()))
+    end
+end
+
+
 # ╔═╡ 3a7f5ebe-aed6-4edb-84de-a99de0755453
 function cv_conc_gif(pnpresult; file="concentrations_cv.gif", framerate=10, step=5)
     tsol = pnpresult.tsol ./ (mol / dm^3)
@@ -1965,7 +2178,7 @@ begin
 	function plot1d(result, celldata)
     	tsol  	= LiquidElectrolytes.voltages_solutions(result)
 		vis  	= GridVisualizer(; 
-								 size 	= (600, 300),
+								 size = (650, 400),
 								 clear 	= true,
 							 	 legend = :rt,
 								 limits = (-14, 2),
@@ -2256,6 +2469,38 @@ function capsplot(vis, result, title)
     return vis
 end;
 
+# ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
+let
+	try
+		ic = model.cspecies
+	    fig = Figure(size = (650, 400))
+	    ax = Axis(fig[1, 1], 
+	 			  #limits = ((-0.5, 0.9),(-2e-20, 2e-20)),
+	              ylabel = L"I (mA/cm²)",
+	              xlabel = L"φ (V vs SHE)",
+				 )
+		
+	    total_current = zero(currents(pnpresult, ic[1]))
+	    #for s in ic
+	    #    total_current .+= (currents(result, s) * mA / cm^2)
+	    #end
+		total_current = ((currents(pnpresult, ico) .* cm^2/mA))
+	
+		
+	    lines!(ax, pnpresult.voltages, total_current,
+	           color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+	
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
 # ╔═╡ 27075c18-4da9-42f4-b5a8-d36bc7b4930d
 let
     ic = model.cspecies
@@ -2287,6 +2532,116 @@ let
 
     axislegend(ax, position = :rt)
     fig
+end
+
+# ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
+let
+	try
+	    ic = model.cspecies
+	    fig = Figure(size = (1050, 650))
+	    ax = Axis(fig[1, 1],
+				  #limits = ((-1.3, 1.2),(-6, 2)),
+	              ylabel = L"I (mA/cm²)",
+	              xlabel = L"φ (V vs SHE)"
+	    )
+	    
+	    colors = (:pink, :skyblue, :lightgreen) 
+	    
+	    # === Gold Model ===
+	    total_current = currents(pnpresult, iohminus).* cm^2/mA
+	    gold_line = lines!(ax, pnpresult.voltages, total_current,                        color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+	    labels1 = ["CO2RR Gold Model"]
+	
+	    # === Koper Data ===
+	    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_1.csv", DataFrame; header=false)
+	    facet_row = collect(raw_df[1, :])
+	    
+	    numeric_data = [
+	        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
+	        for i in 3:nrow(raw_df)
+	    ]
+	    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
+	
+	    # === Facet data ===
+	    facet_lines = [
+	        lines!(ax, num_df[!, 1].-0.4, num_df[!, 2], color = colors[1]),
+	        lines!(ax, num_df[!, 3].-0.4, num_df[!, 4], color = colors[2]),
+	        lines!(ax, num_df[!, 5].-0.4, num_df[!, 6], color = colors[3])
+	    ]
+	    labels2 = [facet_row[1], facet_row[3], facet_row[5]]
+	
+	    Legend(fig[1, 2],
+	        [[gold_line], facet_lines],   
+	        [labels1, labels2],           
+	        ["Model", "Koper\nFacets"];          
+	    )
+	
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
+# ╔═╡ e5956bb0-a33a-488d-906e-fb5a7e2473a9
+let
+	try
+	    ic = model.cspecies
+	    fig = Figure(size = (1050, 650))
+	    ax = Axis(fig[1, 1], 
+	  			  #limits = ((-1.25, 0.8),(-0.02, 0.1
+										 
+										 #)),
+	              ylabel = L"I (mA/cm²)",
+	              xlabel = L"φ (V vs SHE)"
+	    )
+	    colors = [RGB(i/3, 0, 1-(i/3)) for i in 1:3]
+	
+	    total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
+	    gold_line = lines!(ax, pnpresult.voltages, total_current,
+	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+	    labels1 = ["CO2RR Gold Model"]
+	
+	    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
+	    pH_row = collect(raw_df[1, :])
+	    electrolyte_row = collect(raw_df[2, :])
+	
+	    numeric_data = [
+	        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
+	        for i in 4:nrow(raw_df)
+	    ]
+	    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
+	
+	    conc_lines = [
+	        lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1]),
+	        lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2]),
+	        lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3])
+	    ]
+	    labels2 = [
+	        electrolyte_row[1]*"\t"*pH_row[2]*"pH",
+	        electrolyte_row[3]*"\t\t"*pH_row[4]*"pH",
+	        electrolyte_row[5]*"\t\t"*pH_row[6]*"pH"
+	    ]
+	
+	    Legend(fig[1, 2],
+	        [[gold_line], conc_lines], 
+	        [labels1, labels2],         
+	        ["Model", "Koper\nElectrolyte"];   
+	    )
+	
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
 end
 
 # ╔═╡ c9afd17b-7c8c-408f-b063-371a5eda9cc4
@@ -2357,8 +2712,8 @@ end;
 function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     celldata = deepcopy(pnpdata)
     celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid_cv; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
+	#reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
+    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata)
     return result = cvsweep(
         pnpcell;
         voltages = sawtooth,
@@ -2367,6 +2722,14 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     )
 
 end
+
+# ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
+if CV
+	cpnpresult = sweep(model; eneutral = false, tunnel = false)
+end
+
+# ╔═╡ 4a0eed34-d25d-4695-9bad-bc8210092e13
+cv_conc_gif(cpnpresult; file="concentrations_cv2.gif", framerate=8, step=3)
 
 # ╔═╡ 12a4df23-3c63-41d6-bd50-d7209e423cb8
 begin
@@ -2654,156 +3017,80 @@ let
 	end
 end
 
-# ╔═╡ 7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
-let
-    # --- helpers ---
-    lastU(sol) = hasproperty(sol, :u) ? (sol.u isa AbstractVector ? sol.u[end] : sol.u) : sol
-	
-    function to_inival(sys, u_raw)
-        Ut = VoronoiFVM.unknowns(sys)                 # template
-        u  = u_raw
-        if size(u) != size(Ut)
-            if size(u,1) == size(Ut,1) && size(u,2) ≥ size(Ut,2)
-                u = u[:, 1:size(Ut,2)]
-            elseif reverse(size(u)) == size(Ut)
-                u = permutedims(u)
-            else
-                error("Shape mismatch: u=$(size(u)) vs Ut=$(size(Ut))")
-            end
+# ╔═╡ e7183a15-629f-46c5-8c28-42eff6c1a375
+if CV
+    res = let
+        Vhold  = -0.87 * ufac"V"
+        tindex = 88
+        Thold  = 0
+
+        pnpcell = PNPSystem(grid_cv; bcondition=pnp_bcondition, celldata=elydata_Gold)
+        cdata   = celldata(pnpcell)
+        sys     = pnpcell.vfvmsys
+
+        # CV
+        pnpresult = cvsweep(
+            pnpcell;
+            voltages = sawtooth,
+            nperiods = nperiods,
+            store_solutions = true,
+        )
+
+        u0_raw = pnpresult.tsol.u[tindex]
+        Ut     = VoronoiFVM.unknowns(sys)
+        @assert size(u0_raw) == size(Ut)
+
+        U0 = copy(Ut);  U0 .= u0_raw
+
+		bulk = cdata.c_bulk
+		cbulk = bulk
+		
+		# if !(eltype(bulk) <: Number)
+		#     if hasproperty(bulk[1], :c_bulk)
+		#         cbulk = getproperty.(bulk, :c_bulk)
+		#     elseif hasproperty(bulk[1], :c)
+		#         cbulk = getproperty.(bulk, :c)
+		#     else
+		#         error("Unknown bulk type: cannot find concentration field in cdata.bulk elements.")
+		#     end
+		# end
+		
+		nspecies = min(length(cbulk), size(U0, 1)) 
+		for i in 1:nspecies
+		    U0[i, :] .= cbulk[i]
+		end
+
+        tramp = 5
+        function pre_hold(sol, t)
+            V0 = pnpresult.voltages[tindex]
+            V  = (t < tramp) ? (V0 + (Vhold - V0) * (t/tramp)) : Vhold
+            LiquidElectrolytes.working_electrode_voltage!(cdata, V)
+            return nothing
         end
-        U0 = copy(Ut);  U0 .= u
-        return U0
+
+        control_hold = SolverControl(;
+            verbose = true,
+            handle_exceptions = false,
+            damp_initial = 0.02,
+            Δt      = 1e-6,
+            Δt_min  = 1e-12,
+            Δt_max  = 1e-2,
+        )
+
+        hold_tsol = solve(sys; inival=U0, time=Thold, control=control_hold, pre=pre_hold, store_all=true)
+
+        (; pnpcell, pnpresult, hold_tsol, U0)
     end
-
-    # --- settings ---
-    tindex = 88
- 
-	Vhold  = round(res.pnpresult.voltages[tindex], digits = 2) #-0.87 * ufac"V"
-	thold  = round(res.pnpresult.tsol.t[tindex], digits = 2)
-    ispec  = ico
-
-    # --- x axis ---
-    x  = grid.components[XCoordinates]
-    xx = x ./ μm
-
-    # --- CV snapshot ---
-    u_cv = res.pnpresult.tsol.u[tindex]               # Matrix
-    c_cv = @view u_cv[ispec, :]
-
-    # --- HOLD end (transient) ---
-    u_hold = lastU(res.hold_tsol)                     # Matrix
-    c_hold = @view u_hold[ispec, :]
-
-    # --- IV / steady at the same Vhold ---
-    pnpcell = res.pnpcell
-    sys     = pnpcell.vfvmsys
-    cdata   = celldata(pnpcell)
-
-    function pre_iv(sol, t)
-        LiquidElectrolytes.working_electrode_voltage!(cdata, Vhold)
-    end
-
-    control_iv = SolverControl(; verbose="", handle_exceptions=true, damp_initial=0.1)
-
-    Uinit = to_inival(sys, u_hold)
-
-    iv_sol = solve(sys; inival=Uinit, control=control_iv, pre=pre_iv)  # steady solve
-    u_iv   = lastU(iv_sol)
-    c_iv   = @view u_iv[ispec, :]
-
-    # --- plotting (log10 mol/dm^3) ---
-    to_moldm3(v) = v .* 1e-3
-    y(v) = [vv > 0 ? log10(vv) : NaN for vv in to_moldm3(v)]
-
-    fig = Figure(size=(780, 450))
-    ax  = Axis(fig[1,1],
-        xlabel="x / μm",
-        ylabel=L"\log_{10} c \; (mol/dm^3)",
-        title="CO2 @ $Vhold V, $thold s: CV snapshot vs HOLD end vs IV(steady)",
-		xscale = log10,
-		#limits = ((1e-20, 1000), (1e-50, 1e2)), 
-    )
-    lines!(ax, xx, y(c_cv),   label="CV (t=$thold)", linewidth=2)
-    lines!(ax, xx, y(c_hold), label="HOLD end", linewidth=2)
-    lines!(ax, xx, y(c_iv),   label="IV (steady)", linewidth=2, linestyle = :dash)
-    axislegend(ax; position=:rb)
-    fig
 end
 
 
-# ╔═╡ f9dade9f-8431-48a6-a2ee-2c88f178e76e
-let
-	try
-	    fig = Figure()
-	    ax = Axis(fig[1, 1])
-	    T = 0:1.0:pnpresult.tsol.t[end]
-	    lines!(ax, T, sawtooth.(T))
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-# ╔═╡ cb9b0158-f17d-4136-8994-360f3078c7df
-let
-	try
-	    fig = Figure(size = (600, 200))
-	    ax = Axis(fig[1, 1], yscale = log10)
-	    T = pnpresult.times
-	    #lines!(ax,T, voltages.(T))
-	    lines!(ax, T[2:end], T[2:end] - T[1:(end - 1)])
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-# ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
-let
-	try
-		ic = model.cspecies
-	    fig = Figure(size = (650, 400))
-	    ax = Axis(fig[1, 1], 
-	 			  #limits = ((-0.5, 0.9),(-2e-20, 2e-20)),
-	              ylabel = L"I (mA/cm²)",
-	              xlabel = L"φ (V vs SHE)",
-				 )
-		
-	    total_current = zero(currents(pnpresult, ic[1]))
-	    #for s in ic
-	    #    total_current .+= (currents(result, s) * mA / cm^2)
-	    #end
-		total_current = ((currents(pnpresult, ico) .* cm^2/mA))
-	
-		
-	    lines!(ax, pnpresult.voltages, total_current,
-	           color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-	
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
+# ╔═╡ fd8229b4-a2f9-4144-943a-ca77c8916140
+res.pnpresult
 
 # ╔═╡ 52a5bbd2-0278-4d92-95f1-367797f636e6
 begin
 	try
-		CVPlot!(pnpresult, model)
+		CVPlot!(res.pnpresult, model)
 	catch e
 	   if e isa UndefVarError
 			# normal case → skip
@@ -2817,7 +3104,7 @@ end
 # ╔═╡ 4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 begin
 	try
-		conc_time_func(pnpresult, sawtooth)
+		conc_time_func(res.pnpresult, sawtooth)
 	catch e
 	   if e isa UndefVarError
 			# normal case → skip
@@ -2831,7 +3118,7 @@ end
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 let
     try
-        tsol = pnpresult.tsol ./ (mol / dm^3)
+        tsol = res.pnpresult.tsol ./ (mol / dm^3)
         nvar, nx, nt = size(tsol)
 
         species = getproperty.(bulk, :name)
@@ -2839,7 +3126,7 @@ let
         nspecies = min(nvar, length(species), length(colors))
 
         nplot = min(nx, length(X))
-        t_index = 88
+        t_index = 1
 
         xx = X[1:nplot] .+ 1e-14   # [m]
 
@@ -2848,8 +3135,9 @@ let
             xlabel = "Distance from electrode [m]",
             ylabel = "log c(aᵢ)",
             xscale = log10,                
-            limits = ((1e-12, 1e-1), (-14, 2)), 
-            title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s | ϕ = $(round(pnpresult.voltages[t_index], digits=2)) V",
+            limits = ((1e-12, 1e-3), (-14, 2)), 
+            title  = "t = $(round(res.pnpresult.tsol.t[t_index], digits=4)) s | ϕ = $(round(res.pnpresult.voltages[t_index], digits=2)) V",
+			
         )
 
         for i in 1:nspecies
@@ -2858,7 +3146,7 @@ let
             lines!(ax, xx, yvals; color = colors[i], label = species[i])
         end
 
-        axislegend(ax)
+        axislegend(ax;position=:rt)
         fig
 
     catch e
@@ -2869,234 +3157,82 @@ end
 
 
 # ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
-cv_conc_gif(pnpresult; file="concentrations_cv.gif", framerate=8, step=3)
+cv_conc_gif(res.pnpresult; file="concentrations_cv.gif", framerate=8, step=3)
 
-# ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
+# ╔═╡ 7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
 let
 	try
-	    ic = model.cspecies
-	    fig = Figure(size = (1050, 650))
-	    ax = Axis(fig[1, 1],
-				  #limits = ((-1.3, 1.2),(-6, 2)),
-	              ylabel = L"I (mA/cm²)",
-	              xlabel = L"φ (V vs SHE)"
-	    )
-	    
-	    colors = (:pink, :skyblue, :lightgreen) 
-	    
-	    # === Gold Model ===
-	    total_current = currents(pnpresult, iohminus).* cm^2/mA
-	    gold_line = lines!(ax, pnpresult.voltages, total_current,                        color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-	    labels1 = ["CO2RR Gold Model"]
-	
-	    # === Koper Data ===
-	    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_1.csv", DataFrame; header=false)
-	    facet_row = collect(raw_df[1, :])
-	    
-	    numeric_data = [
-	        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
-	        for i in 3:nrow(raw_df)
-	    ]
-	    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
-	
-	    # === Facet data ===
-	    facet_lines = [
-	        lines!(ax, num_df[!, 1].-0.4, num_df[!, 2], color = colors[1]),
-	        lines!(ax, num_df[!, 3].-0.4, num_df[!, 4], color = colors[2]),
-	        lines!(ax, num_df[!, 5].-0.4, num_df[!, 6], color = colors[3])
-	    ]
-	    labels2 = [facet_row[1], facet_row[3], facet_row[5]]
-	
-	    Legend(fig[1, 2],
-	        [[gold_line], facet_lines],   
-	        [labels1, labels2],           
-	        ["Model", "Koper\nFacets"];          
-	    )
-	
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
+	    # --- helpers ---
+	    lastU(sol) = hasproperty(sol, :u) ? (sol.u isa AbstractVector ? sol.u[end] : sol.u) : sol
+		
+	    function to_inival(sys, u_raw)
+	        Ut = VoronoiFVM.unknowns(sys)                 # template
+	        u  = u_raw
+	        if size(u) != size(Ut)
+	            if size(u,1) == size(Ut,1) && size(u,2) ≥ size(Ut,2)
+	                u = u[:, 1:size(Ut,2)]
+	            elseif reverse(size(u)) == size(Ut)
+	                u = permutedims(u)
+	            else
+	                error("Shape mismatch: u=$(size(u)) vs Ut=$(size(Ut))")
+	            end
+	        end
+	        U0 = copy(Ut);  U0 .= u
+	        return U0
 	    end
-	end
-end
-
-# ╔═╡ 69e6f136-e31c-4d71-a9a7-ea9ca6530669
-let
-    try
-        tsol = pnpresult.tsol ./ (mol / dm^3)
-        nvar, nx, nt = size(tsol)
-
-        species = getproperty.(bulk, :name)
-        colors  = getproperty.(bulk, :color)
-        nspecies = min(nvar, length(species), length(colors))
-
-        nplot = min(nx, length(X))
-        xx = X[1:nplot] ./ μm
-
-        ispec = 5       
-        frac  = 0.99          
-        t_indices = unique(clamp.([1, 10, 50, 100, 140, nt], 1, nt))  
-
-        c_bulk = tsol[ispec, nplot, 1]
-        if !(c_bulk > 0)
-            error("c_bulk is not positive (c_bulk=$(c_bulk)). Try different ispec or far-field index.")
-        end
-
-        function x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
-            c = tsol[ispec, 1:length(xx), t_index]
-            target = frac * c_bulk
-
-            idx = findfirst(ci -> (ci ≥ target), c)
-            return isnothing(idx) ? NaN : xx[idx]
-        end
-
-        δs = Float64[]
-        ts = Float64[]
-        for ti in t_indices
-            δ = x_at_frac(tsol, ispec, ti, xx, c_bulk, frac)
-            push!(δs, δ)
-            push!(ts, pnpresult.tsol.t[ti])
-            @info "t=$(round(ts[end], digits=6)) s → δ$(Int(round(frac*100)))=$(round(δ, digits=6)) μm (c_bulk≈$(round(c_bulk, digits=6)) mol/dm^3)"
-        end
-
-        t_index = min(140, nt)
-
-        fig = Figure(size = (800, 420))
-        ax  = Axis(fig[1, 1],
-                   xlabel = "x / μm",
-                   ylabel = L"\log_{10} c_i\; (mol/dm^3)",
-                   title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s  |  δ$(Int(round(frac*100))) for $(species[ispec])")
-
-        conc = tsol[ispec, 1:nplot, t_index]
-        yvals = [c > 0 ? log10(c) : NaN for c in conc]
-        lines!(ax, xx, yvals; color = colors[ispec], linewidth = 2, label = species[ispec])
-
-        δ_here = x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
-        if isfinite(δ_here)
-            vlines!(ax, [δ_here]; linestyle = :dash, linewidth = 2)
-            text!(ax, δ_here, maximum(skipmissing(yvals));
-                  text = "  δ$(Int(round(frac*100)))≈$(round(δ_here, digits=4)) μm",
-                  align = (:left, :top))
-        end
-
-        axislegend(ax; position = :rb)
-        fig
-
-    catch e
-        println("⚠️ Error occurred: ", e)
-        println(stacktrace(catch_backtrace()))
-    end
-end
-
-
-# ╔═╡ 81c4e515-89b5-4ecf-8437-070e5a51cb4c
-let
-	try
-	    fig = Figure(size = (1600, 900))
-	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
 	
-		total_current = currents(pnpresult, ico) .* (cm^2/mA)
-	    gold_line = lines!(ax, pnpresult.voltages, total_current,
-	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-		scatter!(ax, pnpresult.voltages, total_current, markersize = 12,
-	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-	    # Experimental Data Plotting based on M.T.M Koper
-	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
-	    pres = vec(Matrix(raw[1:1, :]))
-	    sub = Matrix(raw[4:end, :])
-	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-	    num_df = DataFrame(num, :auto)
-	    npairs = size(num_df, 2) ÷ 2
-	    pink, pblue = RGB(1.0, 0.7, 0.8), RGB(0.2, 0.5, 1.0)
-	    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
-	                 pink.g + t*(pblue.g-pink.g),
-	                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+	    # --- settings ---
+	    tindex = 88
+	 
+		Vhold  = round(res.pnpresult.voltages[tindex], digits = 2) #-0.87 * ufac"V"
+		thold  = round(res.pnpresult.tsol.t[tindex], digits = 2)
+	    ispec  = ico2
 	
-	    plot_objs1 = []
-	    labels1 = String[]
-	    for j in 1:npairs
-	        xcol, ycol = 2j - 1, 2j
-	        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-	        push!(labels1, label)
-	        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
-	        push!(plot_objs1, line)
+	    # --- x axis ---
+	    x  = grid.components[XCoordinates]
+	    xx = x ./ μm
+	
+	    # --- CV snapshot ---
+	    u_cv = res.pnpresult.tsol.u[tindex]               # Matrix
+	    c_cv = @view u_cv[ispec, :]
+	
+	    # --- HOLD end (transient) ---
+	    u_hold = lastU(res.hold_tsol)                     # Matrix
+	    c_hold = @view u_hold[ispec, :]
+	
+	    # --- IV / steady at the same Vhold ---
+	    pnpcell = res.pnpcell
+	    sys     = pnpcell.vfvmsys
+	    cdata   = celldata(pnpcell)
+	
+	    function pre_iv(sol, t)
+	        LiquidElectrolytes.working_electrode_voltage!(cdata, Vhold)
 	    end
-	    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
-		fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-# ╔═╡ c23741d2-3ece-41b8-8a2f-16743425c5cd
-begin
-	try
-		conc_time_func(pnpresult, sawtooth)
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-# ╔═╡ e5956bb0-a33a-488d-906e-fb5a7e2473a9
-let
-	try
-	    ic = model.cspecies
-	    fig = Figure(size = (1050, 650))
-	    ax = Axis(fig[1, 1], 
-	  			  #limits = ((-1.25, 0.8),(-0.02, 0.1
-										 
-										 #)),
-	              ylabel = L"I (mA/cm²)",
-	              xlabel = L"φ (V vs SHE)"
+	
+	    control_iv = SolverControl(; verbose="", handle_exceptions=true, damp_initial=0.1)
+	
+	    Uinit = to_inival(sys, u_hold)
+	
+	    iv_sol = solve(sys; inival=Uinit, control=control_iv, pre=pre_iv)  # steady solve
+	    u_iv   = lastU(iv_sol)
+	    c_iv   = @view u_iv[ispec, :]
+	
+	    # --- plotting (log10 mol/dm^3) ---
+	    to_moldm3(v) = v .* 1e-3
+	    y(v) = [vv > 0 ? log10(vv) : NaN for vv in to_moldm3(v)]
+	
+	    fig = Figure(size=(780, 450))
+	    ax  = Axis(fig[1,1],
+	        xlabel="x / μm",
+	        ylabel=L"\log_{10} c \; (mol/dm^3)",
+	        title="CO2 @ $Vhold V, $thold s: CV snapshot vs HOLD end vs IV(steady)",
+			xscale = log10,
+			#limits = ((1e-20, 1000), (1e-50, 1e2)), 
 	    )
-	    colors = [RGB(i/3, 0, 1-(i/3)) for i in 1:3]
-	
-	    total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
-	    gold_line = lines!(ax, pnpresult.voltages, total_current,
-	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
-	    labels1 = ["CO2RR Gold Model"]
-	
-	    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
-	    pH_row = collect(raw_df[1, :])
-	    electrolyte_row = collect(raw_df[2, :])
-	
-	    numeric_data = [
-	        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
-	        for i in 4:nrow(raw_df)
-	    ]
-	    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
-	
-	    conc_lines = [
-	        lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1]),
-	        lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2]),
-	        lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3])
-	    ]
-	    labels2 = [
-	        electrolyte_row[1]*"\t"*pH_row[2]*"pH",
-	        electrolyte_row[3]*"\t\t"*pH_row[4]*"pH",
-	        electrolyte_row[5]*"\t\t"*pH_row[6]*"pH"
-	    ]
-	
-	    Legend(fig[1, 2],
-	        [[gold_line], conc_lines], 
-	        [labels1, labels2],         
-	        ["Model", "Koper\nElectrolyte"];   
-	    )
-	
+	    lines!(ax, xx, y(c_cv),   label="CV (t=$thold)", linewidth=2)
+	    lines!(ax, xx, y(c_hold), label="HOLD end", linewidth=2)
+	    lines!(ax, xx, y(c_iv),   label="IV (steady)", linewidth=2, linestyle = :dash)
+	    axislegend(ax; position=:rb)
 	    fig
 	catch e
 	   if e isa UndefVarError
@@ -4165,60 +4301,6 @@ floataside(
     top = 925
 )
 
-# ╔═╡ 86ca47fa-c64a-43e0-b0c3-3ce9e03653c2
-if CV
-	res = begin
-	    Vhold  = -0.87 * ufac"V"
-	    tindex = 88
-	    Thold  = 1.0
-	
-	    pnpcell = PNPSystem(grid; bcondition=pnp_bcondition, celldata=elydata_Gold)
-	    cdata   = celldata(pnpcell)
-	    sys     = pnpcell.vfvmsys
-	
-	    # CV 
-	    pnpresult = cvsweep(
-	        pnpcell;
-	        voltages = sawtooth,
-	        nperiods = nperiods,
-	        store_solutions = true,
-	    )
-	
-	    u0_raw = pnpresult.tsol.u[tindex]
-	    Ut     = VoronoiFVM.unknowns(sys)
-	    @assert size(u0_raw) == size(Ut)
-	
-	    U0 = copy(Ut);  U0 .= u0_raw
-	
-	    tramp = 0.05
-	    function pre_hold(sol, t)
-	        V = (t < tramp) ? (pnpresult.voltages[tindex] + (Vhold - pnpresult.voltages[tindex]) * (t/tramp)) : Vhold
-	        LiquidElectrolytes.working_electrode_voltage!(cdata, V)
-	    end
-	
-	    control_hold = SolverControl(;
-	        verbose = true,
-	        handle_exceptions = false,
-	        damp_initial = 0.02,
-	        Δt      = 1e-6,
-	        Δt_min  = 1e-12,
-	        Δt_max  = 1e-2,
-	    )
-	
-	    hold_tsol = solve(sys; inival=U0, time=Thold, control=control_hold, pre=pre_hold, store_all=true)
-	
-	    (; pnpcell, pnpresult, hold_tsol)
-	end
-end
-
-# ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
-# ╠═╡ disabled = true
-#=╠═╡
-if CV
-	pnpresult = sweep(model; eneutral = false, tunnel = false)
-end
-  ╠═╡ =#
-
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═a94bc4e1-506f-4e40-bfe8-1ce7e6093974
@@ -4253,8 +4335,8 @@ end
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
-# ╠═42efe97d-bf43-42b3-8ff0-e3d98a7597f1
 # ╠═1d825cb9-2620-4d72-8b42-38f65cc97a26
+# ╠═42efe97d-bf43-42b3-8ff0-e3d98a7597f1
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 # ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
@@ -4297,6 +4379,8 @@ end
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╟─b95160b5-18f7-49d9-80be-9159abd2dcd1
 # ╠═86ca47fa-c64a-43e0-b0c3-3ce9e03653c2
+# ╠═e7183a15-629f-46c5-8c28-42eff6c1a375
+# ╠═fd8229b4-a2f9-4144-943a-ca77c8916140
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═39c8ef0d-aac2-4c7f-8004-4166c460ebc5
 # ╟─491f83c9-b26d-490e-bd3f-126b73d50184
@@ -4328,7 +4412,6 @@ end
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═d38c2b43-4d8b-4be7-8d77-5a30da384541
 # ╠═1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
-# ╠═7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 # ╟─79018ef0-6ab1-4420-9a52-8f8e2812fd40
 # ╟─f9dade9f-8431-48a6-a2ee-2c88f178e76e
@@ -4339,9 +4422,11 @@ end
 # ╠═4e894347-2ce6-4c5f-a06e-7f1af1983bbc
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╠═2420382d-227a-4063-9450-1f1726df018e
+# ╠═4a0eed34-d25d-4695-9bad-bc8210092e13
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
 # ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
 # ╟─27075c18-4da9-42f4-b5a8-d36bc7b4930d
+# ╠═7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
 # ╟─3d661549-a8d2-40b0-add8-b186193f90fe
 # ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
 # ╠═0607672c-9177-4717-8ddf-e07a5dd82ec4
