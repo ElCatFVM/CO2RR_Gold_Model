@@ -982,6 +982,9 @@ md"""
 #### RDE_CV plots
 """
 
+# ╔═╡ b1e64332-95a4-46a5-a45d-457c26e3fc67
+const target_time = 20
+
 # ╔═╡ 9a92d4a9-f489-4bba-9361-03cad3ea12e1
 md"""
 #### Concentration plots
@@ -1045,9 +1048,6 @@ md"""
 md"""
 #### Target-time CV function
 """
-
-# ╔═╡ b1e64332-95a4-46a5-a45d-457c26e3fc67
-const target_time = 90
 
 # ╔═╡ dadf76f0-cbea-4c34-a142-41e120679674
 function voltage_at_time(result::CVSweepResult, t_input)
@@ -1595,6 +1595,68 @@ function conc_xt_3d(RDE_result, rpm, ico)
 end
 
 
+# ╔═╡ 13645622-ed9d-4843-9b83-e67313473c35
+function plot_pnp_summary(res;
+    ispec::Int,
+    icurr_t::Int = ispec,     
+    icurr_cv::Int = icurr_t,   
+    ix_e::Int = 1,
+    bulk = bulk,
+    fig_size = (950, 1500),
+)
+	_get_name(bulk, i)  = string(getproperty(bulk[i], :name))
+	_get_color(bulk, i) = getproperty(bulk[i], :color)
+
+	
+    # ---- shared pulls (single source) ----
+    pnp = res.pnpresult
+    t   = pnp.tsol.t
+    u   = pnp.tsol.u
+    ϕ   = pnp.voltages
+
+    name  = _get_name(bulk, ispec)
+    col   = _get_color(bulk, ispec)
+
+    # ---- data extraction ----
+    It = currents(pnp, icurr_t) .* (cm^2/mA)
+    n1 = min(length(t), length(It))
+    t1 = t[1:n1]
+    It = It[1:n1]
+
+    Icv = currents(pnp, icurr_cv) .* (cm^2/mA)
+    n2  = min(length(ϕ), length(Icv))
+    ϕ2  = ϕ[1:n2]
+    Icv = Icv[1:n2]
+
+    ce = [u[k][ispec, ix_e] for k in eachindex(t)] ./ (mol/dm^3)
+
+    # ---- plotting (3 axes in one figure) ----
+    fig = Figure(size = fig_size)
+
+    ax1 = Axis(fig[1, 1],
+        xlabel = "t / s",
+        ylabel = L"I\ (mA/cm^2)",
+        title  = "I(t)  |  icurr=$(icurr_t)  |  $(name)"
+    )
+    lines!(ax1, t1, It; linewidth=2, color=col)
+
+    ax2 = Axis(fig[2, 1],
+        xlabel = "t / s",
+        ylabel = L"c(x=0)\ (mol/dm^3)",
+        title  = "c at electrode  |  ispec=$(ispec), ix_e=$(ix_e)  |  $(name)"
+    )
+    lines!(ax2, t, ce; linewidth=2, color=col)
+
+	ax3 = Axis(fig[3, 1],
+        xlabel = L"\phi\ (V\ vs\ SHE)",
+        ylabel = L"I\ (mA/cm^2)",
+        title  = "CV  |  icurr=$(icurr_cv)  |  $(name)"
+    )
+    lines!(ax3, ϕ2, Icv; linewidth=2, color=col)
+
+    fig
+end
+
 # ╔═╡ 8c367e8f-df43-4f21-bef0-55060f36f44e
 function conc_time_func(result, scan)
     species = getproperty.(bulk, :name)
@@ -1610,7 +1672,7 @@ function conc_time_func(result, scan)
         fig[1, 1];
         xlabel = L"time / s",
         ylabel = L"c_{i,\,\text{electrode}} / (mol/dm^3)",
-		limits = ((0, 24),(1e-30, 1e2)),
+		#limits = ((0, 24),(1e-30, 1e2)),
         yscale = log10
     )
 
@@ -2005,8 +2067,12 @@ let
         fig
 
     catch e
-        println("⚠️ Error occurred: ", e)
-        println(stacktrace(catch_backtrace()))
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
     end
 end
 
@@ -2587,6 +2653,39 @@ let
 	end
 end
 
+# ╔═╡ 138948ff-5e55-4d9a-86f8-542e21024964
+let
+    ic = model.cspecies
+    fig = Figure(size = (650, 400))
+    ax = Axis(fig[1, 1], 
+              ylabel = "Current Density (mA/cm²)",
+              xlabel = "Voltage (ϕ-ϕₚ)"
+    )
+    
+    colors = (:pink, :skyblue, :lightgreen) 
+    
+    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_1.csv", DataFrame; header=false)
+
+    facet_row = collect(raw_df[1, :])
+    datatype_row = collect(raw_df[2, :])
+
+	numeric_data = [
+	    parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
+	    for i in 3:nrow(raw_df)
+	]
+	num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
+
+    # Au(110)
+    lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1], label = facet_row[1])
+    # Au(111)
+    #lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2], label = facet_row[3])
+    # Au(100)
+    #lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3], label = facet_row[5])
+
+    axislegend(ax, position = :rt)
+    fig
+end
+
 # ╔═╡ e5956bb0-a33a-488d-906e-fb5a7e2473a9
 let
 	try
@@ -2782,6 +2881,88 @@ let
 	end
 end
 
+# ╔═╡ 37486609-8d20-44ea-a0d5-bfcce7ee4e61
+let
+    try
+        fig = Figure(size = (1600, 900))
+        ax = Axis(fig[1, 1];
+            xlabel = L"φ (V vs SHE)",
+            ylabel = L"I (mA/cm²)",
+        )
+
+        # ---------------------------
+        # 1) Theoretical
+        # ---------------------------
+        rec_th = Pressure_vec[end]
+        x_th = rec_th.voltages
+        y_th = currents(rec_th, iohminus) .* (cm^2 / mA)
+
+        line_th = lines!(ax, x_th, y_th; color = :red, linewidth = 3)
+        label_th = "Theoretical (last)"
+
+        # target_time 점 (이론)
+        times_th = hasproperty(rec_th, :times) ? rec_th.times :
+                   (hasproperty(rec_th, :tsol) ? rec_th.tsol.t : error("rec_th에 times/tsol.t가 없어요"))
+
+        idx_th = argmin(abs.(times_th .- target_time))
+        φ_t    = x_th[idx_th]
+        I_t    = y_th[idx_th]
+
+        sc_th = scatter!(ax, [φ_t], [I_t];
+            markersize = 16, marker = :circle, color = :red
+        )
+        label_th_pt = "Theoretical @ t"
+
+        # ---------------------------
+        # 2) Experimental
+        # ---------------------------
+        raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+        pres = vec(Matrix(raw[1:1, :]))
+        sub  = Matrix(raw[4:end, :])
+        num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+        num_df = DataFrame(num, :auto)
+
+        npairs = size(num_df, 2) ÷ 2
+        xcol = 2*npairs - 1
+        ycol = 2*npairs
+
+        x_exp = num_df[!, xcol]
+        y_exp = num_df[!, ycol]
+
+        line_exp = lines!(ax, x_exp, y_exp; color = :blue, linestyle = :dash, linewidth = 3)
+        label_exp = "Experimental (last)"
+
+        idx_exp = argmin(abs.(x_exp .- φ_t))
+        φ_e = x_exp[idx_exp]
+        I_e = y_exp[idx_exp]
+
+        sc_exp = scatter!(ax, [φ_e], [I_e];
+            markersize = 16, marker = :diamond, color = :blue
+        )
+        label_exp_pt = "Experimental @ φ≈φ(t)"
+
+        # ---------------------------
+        # Legend
+        # ---------------------------
+        Legend(fig[1, 2],
+            [line_th, sc_th, line_exp, sc_exp],
+            [label_th, label_th_pt, label_exp, label_exp_pt],
+            "Last curves + markers";
+            framevisible = true
+        )
+
+        fig
+
+    catch e
+        if e isa UndefVarError
+            # normal case → skip
+        else
+            println("⚠️ Error occurred: ", e)
+            println(stacktrace(catch_backtrace()))
+        end
+    end
+end
+
 # ╔═╡ 3ec78a69-a7b3-4c32-82cb-5b863c88798a
 begin
 	if CO3_pressure_varied_checkbox
@@ -2856,7 +3037,7 @@ end
 let
 	try
 	    fig = Figure(size = (1600, 900))
-	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)", limits = ((-1.0, 1.0),(-1e-5, 1e-4)))
+	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
 	
 		ntheo = min(length(pH_var), length(pH_vec))
 	    cols2 = [RGB(0.5 - 0.1*(i/ntheo), 0.5 - 0.3*(i/ntheo), 0.4 + 0.7*(i/ntheo)) for i in 1:ntheo]
@@ -2868,7 +3049,7 @@ let
 	        label2 = (j == 1) ? "pH=$(p)" : "⋅ pH=$(p)"
 	        push!(labels2, label2)
 	        I = currents(rec, ico) .* cm^2/mA
-	        push!(plot_objs2, scatterlines!(ax, rec.voltages, I; color = cols2[j]))
+	        push!(plot_objs2, lines!(ax, rec.voltages, I; color = cols2[j]))
 	    end
 	
 	    Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
@@ -2893,7 +3074,7 @@ let
 	        #yscale = log10,
 	       # yminorticksvisible = true,  
 	       # yminorticks = IntervalsBetween(5),
-			limits = ((-0.3, 1.0),(1e-4, 1.5e-1))
+			#limits = ((-0.3, 1.0),(1e-4, 1.5e-1))
 	    )
 	
 	
@@ -3027,7 +3208,7 @@ if CV
         pnpcell = PNPSystem(grid_cv; bcondition=pnp_bcondition, celldata=elydata_Gold)
         cdata   = celldata(pnpcell)
         sys     = pnpcell.vfvmsys
-
+	
         # CV
         pnpresult = cvsweep(
             pnpcell;
@@ -3243,6 +3424,9 @@ let
 	    end
 	end
 end
+
+# ╔═╡ 323abbb8-6f34-4b8b-839c-e0682fed1971
+plot_pnp_summary(res; ispec = ico2)
 
 # ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
 function sweep_over_L(model;
@@ -3514,49 +3698,6 @@ let
 end
 
 
-# ╔═╡ 59f05654-a8de-4e17-b2ad-60a7ac64e122
-let
-	try
-	    L_values = sort(collect(keys(Lresult)))
-	    species = getproperty.(bulk, :name)
-	
-	    conc_vals = Float64[]
-	
-	    for L in L_values
-	        result_L = Lresult[L]
-	
-	        times = result_L.tsol.t
-	        idx = argmin(abs.(times .- target_time))
-	
-	        c_ico2 = result_L.tsol[ico2, 1, idx] / (mol / dm^3)
-	        push!(conc_vals, c_ico2)
-	    end
-	
-	    L_labels = [ @sprintf("%0.1f", L) for L in L_values ]
-	
-	    fig = Figure(size = (650, 400))
-	    ax = Axis(fig[1, 1];
-	        xlabel = L"L / \mu\mathrm{m}",
-	        ylabel = L"c_{\mathrm{CO_2}}(x=0) / (\mathrm{mol}/\mathrm{dm}^3)",
-	        title  = L"\mathrm{CO_2}\ \text{concentration at electrode vs. } L \text{ at } t = %$target_time",
-	        xticklabelrotation = π/4,
-	        xticks = (L_values, L_labels),
-	    )
-	
-	    scatter!(ax, L_values, conc_vals; markersize = 8, color = :green)
-	
-	    fig
-	catch
-		if e isa UndefVarError
-	        # normal → skip
-	    else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-
 # ╔═╡ 91242a8c-c09b-402c-a0ea-40b8e3e26ae7
 if @isdefined Lresult
     v = voltage_at_time(Lresult[2108], 76.0)
@@ -3566,7 +3707,7 @@ end
 
 # ╔═╡ d2584e28-8317-4801-83a0-5aad59faf720
 function CV_RPM(model;
-    rpms::AbstractVector{<:Real} = 10 .^ range(-3, stop=3, length = 40),
+    rpms::AbstractVector{<:Real} = 10 .^ range(-3, stop=3, length = 20),
     eneutral::Bool = true,
     tunnel::Bool = false,
     bikerman::Bool = true,
@@ -3608,62 +3749,117 @@ end
 
 # ╔═╡ e1ef1e83-c472-4267-8450-38c65f48d3dc
 let
-	try
-	    fig = Figure(size = (1920, 1080), title = "pH = 9")
-	    ax = Axis(fig[1, 1], 
-				  ylabel = L"I (mA/cm²)", 
-				  xlabel = L"φ (V vs SHE)", 
-				  title = @sprintf("v=%.1f mV/s", sawtooth.scanrate * 10^3), 
-				  titlesize=30,
-				  #limits = ((-1.3, 1.0),(-10, 5))
-				 )
-	    rpms = sort(collect(keys(RDE_result)))
-		cols = [RGB(0.3 + 0.7*(i/length(RDE_result)), 
-					0.1 + 0.7*(1-i/length(RDE_result)), 
-					0.9 - 0.6*(i/length(RDE_result)))
-				for i in 1:length(RDE_result)]
-	    plot_objs = Any[]
-	    labels    = String[]
-		#cols = [get(ColorSchemes.winter, i/length(RDE_result)) for i in 1:length(RDE_result)]
-	
-		
-			
-		for (j, rpm) in enumerate(rpms)
-		    rec = RDE_result[rpm].result
-		    δ   = RDE_result[rpm].δ
-		
-		    I = currents(rec, ico) .* (cm^2/mA)
-		    ϕ = rec.voltages
-		
-		    line = lines!(ax, ϕ, I; color = cols[j])
-		    push!(plot_objs, line)
-		
-		    rpm_str = @sprintf("%7.4f", rpm)   # 예: " 0.0153", "1234.0000"
-		    δ_um = δ * 1e6
-		    δ_str  = @sprintf("%9.6f", δ_um)   # 예: "  0.015300", "100000.000000"
-		
-		    push!(labels, "rpm = $(rpm_str), δ = $(δ_str) μm")
-		end
-	
-		Legend(fig[1, 2], plot_objs, labels, "Theoretical";
-		    framevisible = true,
-		    labelsize = 12,      
-		    titlesize = 13,      
-		    patchsize = (15, 5), 
-		    rowgap = 1, colgap = 1,
-		    patchlineattrs = (linewidth = 30,) 
-		)
-	
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
+    try
+        fig = Figure(size = (1920, 1080))
+        ax = Axis(fig[1, 1],
+            ylabel = L"I (mA/cm^2)",
+            xlabel = L"\phi\ (V\ vs\ SHE)",
+            title  = @sprintf("pH = 9 | v=%.1f mV/s", sawtooth.scanrate * 1e3),
+            titlesize = 30,
+        )
+
+        rpms = sort(collect(keys(RDE_result)))
+
+        cols = [RGB(0.3 + 0.7*(i/length(rpms)),
+                    0.1 + 0.7*(1 - i/length(rpms)),
+                    0.9 - 0.6*(i/length(rpms)))
+                for i in 1:length(rpms)]
+
+        plot_objs = Any[]
+        labels    = String[]
+
+        for (j, rpm) in enumerate(rpms)
+            recNT = RDE_result[rpm]
+            rec   = recNT.result
+            δ     = recNT.δ
+
+            ϕ = rec.voltages
+            I = currents(rec, ico) .* (cm^2/mA)
+
+            line = lines!(ax, ϕ, I; color = cols[j], linewidth=2)
+            push!(plot_objs, line)
+
+            # --- target_time에 해당하는 점 찍기 ---
+            t = rec.tsol.t
+            n = min(length(t), length(ϕ), length(I))   # 길이 mismatch 방어
+            idx = argmin(abs.(t[1:n] .- target_time))
+
+            scatter!(ax, [ϕ[idx]], [I[idx]];
+                     markersize = 12,
+                     marker = :circle,
+                     color = cols[j])
+
+            # --- legend label ---
+            rpm_str = @sprintf("%7.4f", rpm)
+            δ_um    = δ * 1e6
+            δ_str   = @sprintf("%9.6f", δ_um)
+            push!(labels, "rpm=$(rpm_str), δ=$(δ_str) μm")
+        end
+
+        Legend(fig[1, 2], plot_objs, labels, "Theoretical";
+            framevisible = true,
+            labelsize = 12,
+            titlesize = 13,
+            patchsize = (15, 5),
+            rowgap = 1, colgap = 1,
+            patchlineattrs = (linewidth = 6,)
+        )
+
+        fig
+    catch e
+        if e isa UndefVarError
+            # normal → skip
+        else
+            println("⚠️ Error occurred: ", e)
+            println(stacktrace(catch_backtrace()))
+        end
+    end
 end
+
+
+# ╔═╡ 48029647-f162-459b-8824-fbf652d127f7
+let
+    try
+        L_values = sort(collect(keys(RDE_result)))
+
+        conc_vals = Float64[]
+
+        for L in L_values
+            rec = RDE_result[L]              # NamedTuple(δ, result)
+            result_L = rec.result            # ✅ CVSweepResult
+
+            times = result_L.tsol.t
+            idx   = argmin(abs.(times .- target_time))
+
+            c_ico2 = result_L.tsol.u[idx][ico2, 1] / (mol / dm^3)   # ✅ 안전하게 u로 접근
+            push!(conc_vals, c_ico2)
+        end
+
+        L_labels = [ @sprintf("%0.4f", L) for L in L_values ]
+
+        fig = Figure(size = (650, 400))
+        ax = Axis(fig[1, 1];
+            xlabel = L"L / \mu\mathrm{m}",
+            ylabel = L"c_{\mathrm{CO_2}}(x=0)\ /(\mathrm{mol}/\mathrm{dm}^3)",
+            title  = L"\mathrm{CO_2}\ \text{at electrode vs } L \text{ at } t \approx %$target_time",
+            xticklabelrotation = π/4,
+            xticks = (L_values, L_labels),
+			xscale = log10
+        )
+
+        scatter!(ax, L_values, conc_vals; markersize = 8)
+        fig
+
+    catch e
+        if e isa UndefVarError
+            # normal → skip
+        else
+            println("⚠️ Error occurred: ", e)
+            println(stacktrace(catch_backtrace()))
+        end
+    end
+end
+
 
 # ╔═╡ 4116166d-5f82-4d9b-80fb-c8035b9b6ade
 let
@@ -3733,6 +3929,49 @@ if @isdefined RDE_result
 else
     @info "RDE_result undefined — skipping"
 end
+
+# ╔═╡ 59f05654-a8de-4e17-b2ad-60a7ac64e122
+let
+	try
+	    L_values = sort(collect(keys(RDE_result)))
+	    species = getproperty.(bulk, :name)
+	
+	    conc_vals = Float64[]
+	
+	    for L in L_values
+	        result_L = RDE_result[L]
+	
+	        times = result_L.tsol.t
+	        idx = argmin(abs.(times .- target_time))
+	
+	        c_ico2 = result_L.tsol[ico2, 1, idx] / (mol / dm^3)
+	        push!(conc_vals, c_ico2)
+	    end
+	
+	    L_labels = [ @sprintf("%0.1f", L) for L in L_values ]
+	
+	    fig = Figure(size = (650, 400))
+	    ax = Axis(fig[1, 1];
+	        xlabel = L"L / \mu\mathrm{m}",
+	        ylabel = L"c_{\mathrm{CO_2}}(x=0) / (\mathrm{mol}/\mathrm{dm}^3)",
+	        title  = L"\mathrm{CO_2}\ \text{concentration at electrode vs. } L \text{ at } t = %$target_time",
+	        xticklabelrotation = π/4,
+	        xticks = (L_values, L_labels),
+	    )
+	
+	    scatter!(ax, L_values, conc_vals; markersize = 8, color = :green)
+	
+	    fig
+	catch e
+		if e isa UndefVarError
+	        # normal → skip
+	    else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
 
 # ╔═╡ d38c2b43-4d8b-4be7-8d77-5a30da384541
 function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = true)
@@ -3961,12 +4200,12 @@ let
 				   #yscale = log10,
 				   #yminorticksvisible = true,
 				   #yminorticks = IntervalsBetween(10),
-				   #limits = ((-1.3, -0.4),(1e-12, 1e2))
+				   #limits = ((-1.3, -0.4),(1e-12, 1e-7))
 				  )
 		
-		scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
+		#scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
 		
-		lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
+		#lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
 	
 		
 		u = 7
@@ -3979,7 +4218,7 @@ let
 	    for (j, rec) in enumerate(sweep_vec)
 	        label = "$(scanrates[j])\t\t "
 	        push!(labels, label)
-	        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* 
+	        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* 
 				cm^2/mA));linewidth = 1, color = cols[j], label = "$(scanrates[j])\t\t V/s")
 	        push!(plot_objs, line)
 	    end
@@ -4425,27 +4664,32 @@ floataside(
 # ╠═4a0eed34-d25d-4695-9bad-bc8210092e13
 # ╟─3f30fae0-18d4-4e5f-9618-cbd9852d7857
 # ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
-# ╟─27075c18-4da9-42f4-b5a8-d36bc7b4930d
-# ╠═7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
+# ╠═27075c18-4da9-42f4-b5a8-d36bc7b4930d
+# ╟─7b032dac-97fb-4fd7-adc7-0dbd0e34d1a5
 # ╟─3d661549-a8d2-40b0-add8-b186193f90fe
+# ╠═138948ff-5e55-4d9a-86f8-542e21024964
 # ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
 # ╠═0607672c-9177-4717-8ddf-e07a5dd82ec4
 # ╠═f918dc11-80e4-4223-8f02-3d5f0a10f8e5
 # ╠═69e6f136-e31c-4d71-a9a7-ea9ca6530669
-# ╟─04790584-5822-460a-be5c-c9efb3bc26b5
+# ╠═04790584-5822-460a-be5c-c9efb3bc26b5
 # ╠═780e8faa-e346-45cb-81f1-34df2a99bc17
 # ╠═def960de-f74a-4ca8-9d95-8af4e0240b60
 # ╠═61be3485-960b-42f8-82e6-71e213a5c9a1
 # ╠═7b592fb4-525a-4b7d-9184-a1c08dbc51ab
 # ╠═8cbc4ced-7ac2-4def-97cf-ff056c1dcb4a
-# ╟─0106756b-594d-4fdb-81b5-cf0739898521
-# ╟─d4fb4803-1c1b-4fd7-a782-112777f55be0
+# ╠═0106756b-594d-4fdb-81b5-cf0739898521
+# ╠═37486609-8d20-44ea-a0d5-bfcce7ee4e61
+# ╠═d4fb4803-1c1b-4fd7-a782-112777f55be0
+# ╠═323abbb8-6f34-4b8b-839c-e0682fed1971
 # ╟─8fc7877e-c4e4-40d1-a720-7806f7dbde0a
 # ╠═81c4e515-89b5-4ecf-8437-070e5a51cb4c
 # ╠═58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
-# ╠═e1ef1e83-c472-4267-8450-38c65f48d3dc
-# ╠═4116166d-5f82-4d9b-80fb-c8035b9b6ade
+# ╟─e1ef1e83-c472-4267-8450-38c65f48d3dc
+# ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
+# ╟─48029647-f162-459b-8824-fbf652d127f7
+# ╟─4116166d-5f82-4d9b-80fb-c8035b9b6ade
 # ╠═c23741d2-3ece-41b8-8a2f-16743425c5cd
 # ╟─9a92d4a9-f489-4bba-9361-03cad3ea12e1
 # ╟─6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
@@ -4461,21 +4705,21 @@ floataside(
 # ╠═89520d6a-7a44-41f6-92ba-3d9416ac2047
 # ╠═666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
 # ╟─d3493ce8-85d1-4132-b3e0-4ec35ac9d36d
-# ╟─f90190cc-555d-47e1-a2cb-99e5d78d4ff5
-# ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
-# ╟─59f05654-a8de-4e17-b2ad-60a7ac64e122
+# ╠═f90190cc-555d-47e1-a2cb-99e5d78d4ff5
+# ╠═59f05654-a8de-4e17-b2ad-60a7ac64e122
 # ╠═dadf76f0-cbea-4c34-a142-41e120679674
 # ╠═91242a8c-c09b-402c-a0ea-40b8e3e26ae7
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 # ╟─9cc13c22-edfb-4de8-87cd-c30a87b2aff3
-# ╠═82baec54-048a-4851-8808-dd8c31eae4b9
-# ╠═8c367e8f-df43-4f21-bef0-55060f36f44e
+# ╟─13645622-ed9d-4843-9b83-e67313473c35
+# ╟─82baec54-048a-4851-8808-dd8c31eae4b9
+# ╟─8c367e8f-df43-4f21-bef0-55060f36f44e
 # ╟─b14d67ca-5f24-4d8a-9334-6e072e2b39eb
 # ╟─deb15672-0e35-4855-b1c0-b2c0b7e78d41
 # ╟─b48b4acb-ed25-4d9b-bee6-2e316ecb44c3
 # ╟─0a665fc0-1230-4978-8ebd-e551c595e857
 # ╟─b7cb5183-65e8-4ee8-af86-2bedd11daecc
-# ╠═3a7f5ebe-aed6-4edb-84de-a99de0755453
+# ╟─3a7f5ebe-aed6-4edb-84de-a99de0755453
 # ╟─842b074b-f808-48d8-8dc5-110ddd907f90
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
