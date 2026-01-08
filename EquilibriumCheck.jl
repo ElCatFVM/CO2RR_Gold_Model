@@ -903,7 +903,7 @@ end
 
 # ╔═╡ fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 md"""
-#### Position at 0.99 C_bulk at a Given Time
+#### Position at 0.99 Cbulk at a Given Time
 """
 
 # ╔═╡ f918dc11-80e4-4223-8f02-3d5f0a10f8e5
