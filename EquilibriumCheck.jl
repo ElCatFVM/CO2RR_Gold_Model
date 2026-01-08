@@ -82,7 +82,7 @@ begin
 	@phconstants N_A c_0 k_B e h
 	const F = N_A * e
 
-	const voltages = (-1.5:0.1:-0.0) * V
+	const voltages = (-1.15:0.1:-0.0) * V
 	
 	# geometrical constants
 	const Γ_we 		= 1
@@ -443,7 +443,7 @@ function Stefan_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
     for ic in cspecies
-        γ[ic] = v0 * (1.0 / (1 - sum(c[i] * v[i] for i in 1:nc) / (mol/dm^3)))
+        γ[ic] = (1.0 / (1 - sum(c[i] * v[i] for i in 1:nc)))# / (mol/dm^3)))
     end
     return γ
 end
@@ -636,6 +636,14 @@ function Boundary_Layer_LS(electrolyte, sawtooth, rpm)
 	δ = 1.61 * (D[5])^(1/3) * (rpm)^(-1/2) * (1)^(1/6) 
 	return δ
 end;
+
+# ╔═╡ 45ccce6b-794f-4b3a-9be3-ac32c8c2f868
+# ╠═╡ disabled = true
+#=╠═╡
+if δ
+	Lresult = sweep_over_L(model; eneutral = false, tunnel = false)
+end
+  ╠═╡ =#
 
 # ╔═╡ 50c6e785-bf96-4c7c-b31c-cacb24e506eb
 function extract_solution_at_time(rec, target_time)
@@ -1174,17 +1182,6 @@ md"""
 ### **Polarization Curve**
 """
 
-# ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
-# ╠═╡ disabled = true
-#=╠═╡
-ivL = ivsweep_over_L(elydata_Gold)
-  ╠═╡ =#
-
-# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
-#=╠═╡
-plotcurr_over_L(ivL; species=ico, cutoff=-0.4, title="IV vs L (log scale)")
-  ╠═╡ =#
-
 # ╔═╡ a81dd9a4-7938-4a72-b3d2-1780e8ecd536
 function plotcurr_over_L(results::Dict{Int,Any};
     species=ico, cutoff=-0.4, title="IV vs L"
@@ -1210,15 +1207,6 @@ function plotcurr_over_L(results::Dict{Int,Any};
     end
 	    reveal(vis)
 end
-
-# ╔═╡ af083be0-efea-497c-908e-dec9505a92d0
-#=╠═╡
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	plotcurrL(ivL; df=df)
-end
-  ╠═╡ =#
 
 # ╔═╡ c1d2305e-fb8b-4845-a414-08fff84aa9b0
 md"""
@@ -1265,65 +1253,6 @@ begin
 	    reveal(vis)
 	end
 end
-
-# ╔═╡ 25ec2810-3976-46c6-9b32-f91a81d839e0
-begin
-
-    """
-        plot_ico_vs_L_rgb(results;
-            ico = ico,
-            vmax = -0.4,
-            cm2_over_mA = cm^2/mA,
-            legend = :rb,
-            yscale = :log,
-        )
-
-    results: Dict{Int, Any} where value is ivresult or (cell, ivresult)
-    """
-    function plot_ico_vs_L_rgb(results;
-        ico = ico,
-        vmax = -0.4,
-        cm2_over_mA = cm^2/mA,
-        legend = :rb,
-        yscale = :log,
-    )
-        Ls = sort(collect(keys(results)))
-        n  = length(Ls)
-
-        cols = [RGB(0.3 + 0.7*(i/n),
-                    0.1 + 0.7*(1 - i/n),
-                    0.9 - 0.6*(i/n)) for i in 1:n]
-
-        vis = GridVisualizer(;
-            size   = (1200, 650),
-            title  = "Ico vs Voltage (varying L)",
-            xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
-            ylabel = L"I_{\mathrm{co}} / (\mathrm{mA/cm^2})",
-            legend = legend,
-            yscale = yscale,
-        )
-
-        first = true
-        for (i, L) in enumerate(Ls)
-            val = results[L]
-            ivr = (val isa Tuple) ? val[2] : val
-
-            mask  = ivr.voltages .< vmax
-            volts = ivr.voltages[mask]
-            Ico   = curr(ivr.j_we, ico)[mask] .* cm2_over_mA
-
-            scalarplot!(vis, volts, Ico;
-                clear = first,
-                label = "L=$(L) μm",
-                color = cols[i],
-            )
-            first = false
-        end
-
-        reveal(vis)
-    end
-end
-
 
 # ╔═╡ 686ac3dc-c191-4575-ba0c-d4c2551474b5
 md"""
@@ -1690,7 +1619,7 @@ function plot_pnp_summary(res;
     t1 = t[1:n1]
     It = It[1:n1]
 
-    Icv = currents(pnp, icurr_cv) .* (cm^2/mA)
+    Icv = currents(pnp, icurr_t) .* (cm^2/mA)
     n2  = min(length(ϕ), length(Icv))
     ϕ2  = ϕ[1:n2]
     Icv = Icv[1:n2]
@@ -2184,74 +2113,79 @@ function cv_conc_gif(pnpresult; file="concentrations_cv.gif", framerate=10, step
 end
 
 # ╔═╡ c10697b7-6e67-4a5b-937e-09d97ca5b7f8
-function conc_vs_voltage(result; useonly_pH = false)
+function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
     species  = getproperty.(bulk, :name)
     colors   = getproperty.(bulk, :color)
     nspecies = length(species)
 
-    tsol = LiquidElectrolytes.voltages_solutions(result)
-
+    tsol  = LiquidElectrolytes.voltages_solutions(result)
     vgrid = result.voltages
 
-    xcoords     = grid.components[XCoordinates]
-    ielectrode  = argmin(xcoords)
+    xcoords    = grid.components[XCoordinates]
+    ielectrode = argmin(xcoords)
 
-	title = "L = $(round(L / μm)) μm"
     scale = 1.0 / (mol / dm^3)
-    nv    = length(vgrid)
-    conc_electrode = fill(NaN, nspecies, nv) 
+    nv = length(vgrid)
+    conc_electrode = fill(NaN, nspecies, nv)
 
     for (j, v) in enumerate(vgrid)
         sol = tsol(v)
-
         if sol === nothing
             @warn "No solution available at voltage $v; skipping."
             continue
         end
-
-        for ia in 1:nspecies
+        @inbounds for ia in 1:nspecies
             conc_electrode[ia, j] = sol[ia, ielectrode] * scale
         end
     end
 
-    vis = GridVisualizer(;
-        size    = (960, 540),
-        clear   = true,
-        legend  = :rt,
-        limits  = (-14, 2),
-        xlimits = (minimum(vgrid), maximum(vgrid)),
-        xlabel  = "Φ_we [V vs SHE]",
-        ylabel  = "log c(aᵢ)",
-        xscale  = :identity,
-		title  = title,
+    # --- FIGURE STYLE (match screenshot) ---
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
+        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        yscale  = log10,
+        limits = ((-1.25, -0.55), (1e-11, 1e1)),
     )
 
+    # x ticks: -1.2, -1.0, -0.8, -0.6
+    xt = [-1.2, -1.0, -0.8, -0.6]
+    ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+
+    # y ticks: 10^0, 10^-3, 10^-6, 10^-9
+    yt_vals = 10.0 .^ (0:-3:-9)
+    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax.yticks = (yt_vals, yt_lbls)
+
+    # thick spines like screenshot
+    ax.spinewidth = 2.5
+    ax.xtickwidth = 2.0
+    ax.ytickwidth = 2.0
+    ax.xticksize  = 8
+    ax.yticksize  = 8
+    ax.xlabelsize = 26
+    ax.ylabelsize = 26
+    ax.xticklabelsize = 20
+    ax.yticklabelsize = 20
+
+    # --- PLOT ---
     if useonly_pH
         iH = findfirst(isequal("H⁺"), species)
-        scalarplot!(vis,
-                    vgrid,
-                    log10.(conc_electrode[iH, :]),
-                    color = colors[iH],
-                    label = species[iH],
-                    clear = true)
+        iH === nothing && error("H⁺ not found in species list.")
+
+        y = max.(conc_electrode[iH, :], eps(Float64))  # log축 보호
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=3, label=species[iH])
     else
-        scalarplot!(vis,
-                    vgrid,
-                    log10.(conc_electrode[1, :]),
-                    color = colors[1],
-                    label = species[1],
-                    clear = true)
-        for ia in 2:nspecies
-            scalarplot!(vis,
-                        vgrid,
-                        log10.(conc_electrode[ia, :]),
-                        color = colors[ia],
-                        label = species[ia],
-                        clear = false)
+        for ia in 1:nspecies
+            y = max.(conc_electrode[ia, :], eps(Float64))
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=3, label=species[ia])
         end
     end
 
-    reveal(vis)
+    showlegend && axislegend(ax, position=:rt)
+    #display(fig)
+	@show minimum(xcoords) maximum(xcoords) xcoords[ielectrode]
+    return fig
 end
 
 # ╔═╡ 2ce5aa45-4aa5-4c2a-a608-f581266e55f0
@@ -2321,7 +2255,7 @@ begin
 								 xscale = :log,)
 	
 		vrange = result.voltages[end:-5:1]
-		movie(vis, file="concentrations.gif", framerate=3) do vis
+		movie(vis, file="concentrations.gif", framerate=2) do vis
 		for vshow_it in vrange
 			addplot(vis, tsol(vshow_it), vshow_it)
 			reveal(vis)
@@ -2362,6 +2296,264 @@ elydata_Gold = ElectrolyteData(;
 # ╔═╡ 60698d90-e67d-4d85-bc00-6935c95b5a69
 println(nc, elydata_Gold.cspecies)
 
+# ╔═╡ 0836fdf1-6083-4293-8665-ead1cf3f5d02
+# ╠═╡ disabled = true
+#=╠═╡
+if Ldependancy
+	Lresult = sweep_over_L_iv(elydata_Gold)
+end
+  ╠═╡ =#
+
+# ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
+#=╠═╡
+let
+	try
+    fig = Figure(size = (1600, 900))
+    ax = Axis(fig[1, 1], 
+			  ylabel = L"\log|I| (mA/cm²)", 
+			  xlabel = L"φ (V vs SHE)",
+			  #limits = ((-2, -1.4),(10e-1, 1.0e1)),
+			  #yscale = log10
+			 )	
+
+    keys_sorted = sort(collect(keys(Lresult)))
+	cols2 = [RGB(0.3 + 0.7*(i/length(Lresult)), 
+				0.1 + 0.7*(1-i/length(Lresult)), 
+				0.9 - 0.6*(i/length(Lresult)))
+				for i in 1:length(Lresult)]   
+	plot_objs2 = []
+    labels2 = String[]
+
+    for (j, L) in enumerate(keys_sorted)
+        rec = Lresult[L] 
+        line = lines!(ax, rec.voltages, (currents(rec, ico) .* cm^2/mA);
+                      color = cols2[j])
+        push!(plot_objs2, line)
+        push!(labels2, "L = $(L) μm")
+    end
+	#vspan!(ax,  -1.2,  -1.19, color=(colorant"#000000"))
+    #Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
+		Legend(fig[1, 2], plot_objs2, labels2, "Theoretical";
+		    framevisible = true,
+		    labelsize = 12,      
+		    titlesize = 13,      
+		    patchsize = (15, 5), 
+		    rowgap = 1, colgap = 1,
+		    patchlineattrs = (linewidth = 30,) 
+		)
+
+    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
+  ╠═╡ =#
+
+# ╔═╡ 61be3485-960b-42f8-82e6-71e213a5c9a1
+#=╠═╡
+let
+	try
+	    δ_keys = sort(collect(keys(Lresult)))
+	    δ_um   = Float64.(δ_keys)
+	
+	    I_pos_peaks  = Float64[]
+	    I_neg_peaks  = Float64[]
+	    I_at_voltage = Float64[]
+	
+	    target_time = 85.0
+	
+	    rec_ref = Lresult[δ_keys[1]]
+	    idx_ref = argmin(abs.(rec_ref.times .- target_time))
+	    V_target = rec_ref.voltages[idx_ref]   
+	
+	    for δ in δ_keys
+	        rec = Lresult[δ]
+	
+	        I = currents(rec, ico) .* (cm^2/mA)
+	
+	        push!(I_pos_peaks, maximum(I))
+	        push!(I_neg_peaks, minimum(I))
+	
+	        times = rec.times
+	        idx   = argmin(abs.(times .- target_time))
+	        push!(I_at_voltage, I[idx])
+	    end
+	
+	    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_um ]
+	
+	    fig = Figure(size = (1200, 800))
+	    ax  = Axis(fig[1, 1],
+	        xlabel = L"\text{L}\;(\mu\mathrm{m})",
+	        ylabel = L"I_{\text{peak}} \; (\mathrm{mA}/\mathrm{cm}^2)",
+	        title  = @sprintf("Peak current vs boundary layer thickness (V = %.2f V, t = %.1f s) [Scan Rate = 50 mV/s]",
+	                          round(V_target, digits=2), target_time),
+	        xticklabelrotation = π/4,
+	        xticks = (δ_um, δ_labels),
+	    )
+	
+	    plot1 = scatterlines!(ax, δ_um, I_pos_peaks;  marker = :circle)
+	    plot2 = scatterlines!(ax, δ_um, I_neg_peaks;  marker = :utriangle)
+	    plot3 = scatterlines!(ax, δ_um, I_at_voltage; marker = :diamond)
+	
+	    Legend(fig[1, 2],
+	           [plot1, plot2, plot3],
+	           ["Positive peak", "Negative peak",
+	            @sprintf("I at V = %.2f V", round(V_target, digits=2))])
+	
+	    fig
+	catch e
+	    if e isa UndefVarError
+	        # normal → skip
+	    else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+		
+end
+
+  ╠═╡ =#
+
+# ╔═╡ 8cbc4ced-7ac2-4def-97cf-ff056c1dcb4a
+#=╠═╡
+let
+	try
+	    fig = Figure(size = (1600, 900))
+	    ax = Axis(fig[1, 1], 
+			      ylabel = L"I (mA/cm²)", 
+			      xlabel = L"φ (V vs SHE)",
+				  yscale = log10,
+			     )
+
+	    keys_sorted = sort(collect(keys(Lresult)))
+	    idx = 11
+
+	    L = keys_sorted[idx]
+	    rec = Lresult[L]
+
+	    line = lines!(ax, rec.voltages, abs.(currents(rec, ico) .* cm^2/mA))
+	    Legend(fig[1, 2], [line], ["L = $(L) μm"], "Theoretical";
+	        framevisible = true,
+	        labelsize = 12,
+	        titlesize = 13,
+	        patchsize = (15, 5),
+	        rowgap = 1, colgap = 1,
+	        patchlineattrs = (linewidth = 30,)
+	    )
+
+	    fig
+	catch e
+	    if e isa UndefVarError
+	        # normal → skip
+	    else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+
+  ╠═╡ =#
+
+# ╔═╡ 3b41341e-d174-4b2f-8c19-068cb84ba571
+#=╠═╡
+if @isdefined Lresult
+    conc_time_vs_L(Lresult, ico; nspecies = 7)
+else
+    @info "Lresult undefined — skipping"
+end
+  ╠═╡ =#
+
+# ╔═╡ 666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
+#=╠═╡
+if @isdefined Lresult
+    conc_x_vs_L_at_time(Lresult, ico; target_time = 40.0)
+else
+    @info "Lresult undefined — skipping"
+end
+  ╠═╡ =#
+
+# ╔═╡ f90190cc-555d-47e1-a2cb-99e5d78d4ff5
+#=╠═╡
+let
+    try
+        fig = Figure(size = (1600, 900))
+        ax = Axis(fig[1, 1], 
+                  ylabel = L"\log|I| (mA/cm²)", 
+                  xlabel = L"φ (V vs SHE)",
+                  #limits = ((-2, -1.4),(10e-1, 1.0e1)),
+                  #yscale = log10
+        )	
+
+        keys_sorted = sort(collect(keys(Lresult)))
+        cols2 = [RGB(0.3 + 0.7*(i/length(Lresult)), 
+                     0.1 + 0.7*(1-i/length(Lresult)), 
+                     0.9 - 0.6*(i/length(Lresult)))
+                 for i in 1:length(Lresult)]   
+
+        plot_objs2 = Vector{Any}()
+        labels2    = String[]
+
+        for (j, L) in enumerate(keys_sorted)
+            rec = Lresult[L]
+
+            # 전체 CV 곡선
+            I = currents(rec, ico) .* (cm^2/mA)
+            φ = rec.voltages
+
+            line = lines!(ax, φ, I; color = cols2[j])
+            push!(plot_objs2, line)
+            push!(labels2, "L = $(L) μm")
+
+            times = rec.times
+            idx   = argmin(abs.(times .- target_time))
+
+            φ_t = φ[idx]
+            I_t = I[idx]
+
+            scatter!(ax, [φ_t], [I_t];
+                     markersize = 15,
+                     marker = :circle,
+                     color = cols2[j])
+        end
+
+        Legend(fig[1, 2], plot_objs2, labels2, "Theoretical";
+            framevisible   = true,
+            labelsize      = 12,      
+            titlesize      = 13,      
+            patchsize      = (15, 5), 
+            rowgap         = 1, 
+            colgap         = 1,
+            patchlineattrs = (linewidth = 30,) 
+        )
+
+        fig
+    catch e
+        if e isa UndefVarError
+            # normal case → skip
+        else
+            println("⚠️ Error occurred: ", e)
+            println(stacktrace(catch_backtrace()))
+        end
+    end
+end
+
+  ╠═╡ =#
+
+# ╔═╡ 91242a8c-c09b-402c-a0ea-40b8e3e26ae7
+#=╠═╡
+if @isdefined Lresult
+    v = voltage_at_time(Lresult[2108], 76.0)
+else
+    @info "Lresult undefined — skipping"
+end
+  ╠═╡ =#
+
 # ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
 function activity_coefficient!(
     γ::AbstractVector,
@@ -2374,7 +2566,7 @@ function activity_coefficient!(
     if Nγ_mode == Stefan_γ!
         # Ringe et al. approach (volume fraction-based)
     	for ic in cspecies
-        	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc) / (mol/dm^3))
+        	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc))# / (mol/dm^3))
     	end
 		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
     elseif Nγ_mode == DGML_γ!
@@ -3493,7 +3685,7 @@ let
 end
 
 # ╔═╡ 323abbb8-6f34-4b8b-839c-e0682fed1971
-plot_pnp_summary(res; ispec = ico2)
+plot_pnp_summary(res; ispec = iohminus)
 
 # ╔═╡ bae9426e-f522-4e37-95ed-0e3debc0d633
 function sweep_over_L(model;
@@ -3998,7 +4190,7 @@ function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 end;
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
-cell, ivresult = simulate_CO2R(grid, model; voltages)
+cell, ivresult = simulate_CO2R(grid, model)
 
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
 let
@@ -4081,15 +4273,6 @@ end
 # ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 plot1d(ivresult, celldata)
 
-# ╔═╡ 1cd669ac-05eb-48b2-b457-8c395cd5807d
-let
-	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-	df = Dict(:voltage => table[:,1], :current => table[:,2])
-	table2 = readdlm("./catmap_CO2R_data/Ringe-theorical.csv", ',', Float64, '\n')
-	df2 = Dict(:voltage => table2[:,1], :current => table2[:,2])
-	plotcurr(ivresult; df=df2)
-end
-
 # ╔═╡ afb700c7-ef29-4c13-b9ea-1d40ea9534dd
 let
 	scale = 1 / (mol / dm^3)
@@ -4105,11 +4288,14 @@ let
 							 
 	scalarplot!(vis,
 	                volts,
-	                abs.(currents(ivresult, ico))[ivresult.voltages .< -0.4] .* cm^2/mA;
+	                abs.(currents(ivresult, iohminus))[ivresult.voltages .< -0.4] .* cm^2/mA;
 	                color = :green,
 	                clear = false,
 	                linestyle = :solid,
 	                label = "e⁻, we")
+
+
+	
 	table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
 	df = Dict(:voltage => table[:,1], :current => table[:,2])
 	table2 = readdlm("./catmap_CO2R_data/Ringe-theorical.csv", ',', Float64, '\n')
@@ -4154,7 +4340,23 @@ let
 end
 
 # ╔═╡ 2c239f3a-6335-4dde-bdcc-7bf41bc49890
-conc_vs_voltage(ivresult; useonly_pH = false)
+conc_vs_voltage_axis(ivresult; useonly_pH = false)
+
+# ╔═╡ dd5d1ccd-193a-4719-9f9c-937a8745ffec
+function simulate_CO2R_Lvaried(L, celldata;
+    voltages = (-1.5:0.1:0.0) * V,
+    kwargs...
+)
+	L  *= μm
+	X    = ExtendableGrids.geomspace(0, L, hmin, hmax)
+    grid = ExtendableGrids.simplexgrid(X)
+
+    kwargs = merge(solver_control, kwargs)
+    cell   = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+    ivresult = ivsweep(cell; voltages, store_solutions=true, kwargs...)
+
+    return cell, ivresult
+end
 
 # ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
 function ivsweep_over_L(model;
@@ -4189,287 +4391,11 @@ function ivsweep_over_L(model;
     return results
 end
 
-# ╔═╡ 1235a217-d11f-41c0-9f74-3084bbea46ae
-function simulate_CO2R_bcond(grid, celldata; bcond=pnp_bcondition,
-    voltages = (-1.5:0.1:0.0) * V, kwargs...
-)
-    kwargs   = merge(solver_control, kwargs)
-    cell     = PNPSystem(grid; bcondition=bcond, reaction=reaction, celldata)
-    ivresult = ivsweep(cell; voltages, store_solutions=true, kwargs...)
-    return cell, ivresult
-end
+# ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
+ivL = ivsweep_over_L(elydata_Gold)
 
-# ╔═╡ adfba900-e423-42de-b075-14041c7c5ed5
-function sweep_over_L_iv(model;
-    L_values   = round.(range(50, 1000, length=20)),
-    eneutral   = true,
-    bcond      = pnp_bcondition,
-    voltages   = (-1.5:0.1:0.0) * V,
-    make_grid  = nothing,
-    return_cell::Bool = false,
-    kwargs...
-)
-    default_make_grid = (L) -> begin
-        hmin = L * 1e-4 * μm
-        hmax = L * 1e-2 * μm
-        X    = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
-        ExtendableGrids.simplexgrid(X)
-    end
-    make_grid === nothing && (make_grid = default_make_grid)
-
-    results = Dict{Int, Any}()
-
-    for L in L_values
-        grid = make_grid(L)
-
-        celldata = deepcopy(model)
-        celldata.eneutral = eneutral
-        cell, ivresult = simulate_CO2R_bcond(grid, celldata; bcond=bcond, voltages=voltages, kwargs...)
-
-        results[Int(L)] = return_cell ? (cell, ivresult) : ivresult
-    end
-
-    return results
-end
-
-# ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
-let
-	try
-    fig = Figure(size = (1600, 900))
-    ax = Axis(fig[1, 1], 
-			  ylabel = L"\log|I| (mA/cm²)", 
-			  xlabel = L"φ (V vs SHE)",
-			  #limits = ((-2, -1.4),(10e-1, 1.0e1)),
-			  #yscale = log10
-			 )	
-
-    keys_sorted = sort(collect(keys(Lresult)))
-	cols2 = [RGB(0.3 + 0.7*(i/length(Lresult)), 
-				0.1 + 0.7*(1-i/length(Lresult)), 
-				0.9 - 0.6*(i/length(Lresult)))
-				for i in 1:length(Lresult)]   
-	plot_objs2 = []
-    labels2 = String[]
-
-    for (j, L) in enumerate(keys_sorted)
-        rec = Lresult[L] 
-        line = lines!(ax, rec.voltages, (currents(rec, ico) .* cm^2/mA);
-                      color = cols2[j])
-        push!(plot_objs2, line)
-        push!(labels2, "L = $(L) μm")
-    end
-	#vspan!(ax,  -1.2,  -1.19, color=(colorant"#000000"))
-    #Legend(fig[1, 2], plot_objs2, labels2, "Theoretical"; framevisible = true)
-		Legend(fig[1, 2], plot_objs2, labels2, "Theoretical";
-		    framevisible = true,
-		    labelsize = 12,      
-		    titlesize = 13,      
-		    patchsize = (15, 5), 
-		    rowgap = 1, colgap = 1,
-		    patchlineattrs = (linewidth = 30,) 
-		)
-
-    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-
-# ╔═╡ 61be3485-960b-42f8-82e6-71e213a5c9a1
-let
-	try
-	    δ_keys = sort(collect(keys(Lresult)))
-	    δ_um   = Float64.(δ_keys)
-	
-	    I_pos_peaks  = Float64[]
-	    I_neg_peaks  = Float64[]
-	    I_at_voltage = Float64[]
-	
-	    target_time = 85.0
-	
-	    rec_ref = Lresult[δ_keys[1]]
-	    idx_ref = argmin(abs.(rec_ref.times .- target_time))
-	    V_target = rec_ref.voltages[idx_ref]   
-	
-	    for δ in δ_keys
-	        rec = Lresult[δ]
-	
-	        I = currents(rec, ico) .* (cm^2/mA)
-	
-	        push!(I_pos_peaks, maximum(I))
-	        push!(I_neg_peaks, minimum(I))
-	
-	        times = rec.times
-	        idx   = argmin(abs.(times .- target_time))
-	        push!(I_at_voltage, I[idx])
-	    end
-	
-	    δ_labels = [ @sprintf("%0.1f", δ) for δ in δ_um ]
-	
-	    fig = Figure(size = (1200, 800))
-	    ax  = Axis(fig[1, 1],
-	        xlabel = L"\text{L}\;(\mu\mathrm{m})",
-	        ylabel = L"I_{\text{peak}} \; (\mathrm{mA}/\mathrm{cm}^2)",
-	        title  = @sprintf("Peak current vs boundary layer thickness (V = %.2f V, t = %.1f s) [Scan Rate = 50 mV/s]",
-	                          round(V_target, digits=2), target_time),
-	        xticklabelrotation = π/4,
-	        xticks = (δ_um, δ_labels),
-	    )
-	
-	    plot1 = scatterlines!(ax, δ_um, I_pos_peaks;  marker = :circle)
-	    plot2 = scatterlines!(ax, δ_um, I_neg_peaks;  marker = :utriangle)
-	    plot3 = scatterlines!(ax, δ_um, I_at_voltage; marker = :diamond)
-	
-	    Legend(fig[1, 2],
-	           [plot1, plot2, plot3],
-	           ["Positive peak", "Negative peak",
-	            @sprintf("I at V = %.2f V", round(V_target, digits=2))])
-	
-	    fig
-	catch e
-	    if e isa UndefVarError
-	        # normal → skip
-	    else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-		
-end
-
-
-# ╔═╡ 8cbc4ced-7ac2-4def-97cf-ff056c1dcb4a
-let
-	try
-	    fig = Figure(size = (1600, 900))
-	    ax = Axis(fig[1, 1], 
-			      ylabel = L"I (mA/cm²)", 
-			      xlabel = L"φ (V vs SHE)",
-				  yscale = log10,
-			     )
-
-	    keys_sorted = sort(collect(keys(Lresult)))
-	    idx = 11
-
-	    L = keys_sorted[idx]
-	    rec = Lresult[L]
-
-	    line = lines!(ax, rec.voltages, abs.(currents(rec, ico) .* cm^2/mA))
-	    Legend(fig[1, 2], [line], ["L = $(L) μm"], "Theoretical";
-	        framevisible = true,
-	        labelsize = 12,
-	        titlesize = 13,
-	        patchsize = (15, 5),
-	        rowgap = 1, colgap = 1,
-	        patchlineattrs = (linewidth = 30,)
-	    )
-
-	    fig
-	catch e
-	    if e isa UndefVarError
-	        # normal → skip
-	    else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-
-# ╔═╡ 3b41341e-d174-4b2f-8c19-068cb84ba571
-if @isdefined Lresult
-    conc_time_vs_L(Lresult, ico; nspecies = 7)
-else
-    @info "Lresult undefined — skipping"
-end
-
-# ╔═╡ 666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
-if @isdefined Lresult
-    conc_x_vs_L_at_time(Lresult, ico; target_time = 40.0)
-else
-    @info "Lresult undefined — skipping"
-end
-
-# ╔═╡ f90190cc-555d-47e1-a2cb-99e5d78d4ff5
-let
-    try
-        fig = Figure(size = (1600, 900))
-        ax = Axis(fig[1, 1], 
-                  ylabel = L"\log|I| (mA/cm²)", 
-                  xlabel = L"φ (V vs SHE)",
-                  #limits = ((-2, -1.4),(10e-1, 1.0e1)),
-                  #yscale = log10
-        )	
-
-        keys_sorted = sort(collect(keys(Lresult)))
-        cols2 = [RGB(0.3 + 0.7*(i/length(Lresult)), 
-                     0.1 + 0.7*(1-i/length(Lresult)), 
-                     0.9 - 0.6*(i/length(Lresult)))
-                 for i in 1:length(Lresult)]   
-
-        plot_objs2 = Vector{Any}()
-        labels2    = String[]
-
-        for (j, L) in enumerate(keys_sorted)
-            rec = Lresult[L]
-
-            # 전체 CV 곡선
-            I = currents(rec, ico) .* (cm^2/mA)
-            φ = rec.voltages
-
-            line = lines!(ax, φ, I; color = cols2[j])
-            push!(plot_objs2, line)
-            push!(labels2, "L = $(L) μm")
-
-            times = rec.times
-            idx   = argmin(abs.(times .- target_time))
-
-            φ_t = φ[idx]
-            I_t = I[idx]
-
-            scatter!(ax, [φ_t], [I_t];
-                     markersize = 15,
-                     marker = :circle,
-                     color = cols2[j])
-        end
-
-        Legend(fig[1, 2], plot_objs2, labels2, "Theoretical";
-            framevisible   = true,
-            labelsize      = 12,      
-            titlesize      = 13,      
-            patchsize      = (15, 5), 
-            rowgap         = 1, 
-            colgap         = 1,
-            patchlineattrs = (linewidth = 30,) 
-        )
-
-        fig
-    catch e
-        if e isa UndefVarError
-            # normal case → skip
-        else
-            println("⚠️ Error occurred: ", e)
-            println(stacktrace(catch_backtrace()))
-        end
-    end
-end
-
-
-# ╔═╡ 91242a8c-c09b-402c-a0ea-40b8e3e26ae7
-if @isdefined Lresult
-    v = voltage_at_time(Lresult[2108], 76.0)
-else
-    @info "Lresult undefined — skipping"
-end
-
-# ╔═╡ 24cebff4-9e7e-4b3f-9f20-d3ef5647feec
-plot_ico_vs_L_rgb(Lresult; vmax = -0.4)
+# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
+plotcurr_over_L(ivL; species=ico, cutoff=-0.4, title="IV vs L (log scale)")
 
 # ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
 function pb_bcondition(f, u, bnode, data)
@@ -4618,10 +4544,8 @@ steady_state_jac
 floataside(
     md"""
     __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(ivresult.voltages), default=default_index))
-
-    __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
     """,
-    top = 925
+    top = 855
 )
 
 
@@ -4634,10 +4558,17 @@ $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 # ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
 plot1d(ivresult, celldata, vshow)
 
+# ╔═╡ 06ae600d-3f73-49e6-858c-539079c117ab
+floataside(
+    md"""
+    __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
+    """,
+    top = 965
+)
+
 # ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
 floataside(
 	md"""
-	**Voltage:** $(round(ivresult.voltages[vindex], digits=3)) V    
 	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
 	""",
 	top = 865
@@ -4648,21 +4579,8 @@ floataside(
     md"""
     **Input Voltage Index:** $(@bind vindex2 PlutoUI.Slider(1:5:length(target_time), default=40))
     """,
-    top = 925
+    top = 910
 )
-
-# ╔═╡ 45ccce6b-794f-4b3a-9be3-ac32c8c2f868
-# ╠═╡ disabled = true
-#=╠═╡
-if δ
-	Lresult = sweep_over_L(model; eneutral = false, tunnel = false)
-end
-  ╠═╡ =#
-
-# ╔═╡ 0836fdf1-6083-4293-8665-ead1cf3f5d02
-if Ldependancy
-	Lresult = sweep_over_L_iv(elydata_Gold)
-end
 
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
@@ -4815,7 +4733,7 @@ end
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
 # ╟─48029647-f162-459b-8824-fbf652d127f7
 # ╟─4116166d-5f82-4d9b-80fb-c8035b9b6ade
-# ╠═c23741d2-3ece-41b8-8a2f-16743425c5cd
+# ╟─c23741d2-3ece-41b8-8a2f-16743425c5cd
 # ╟─9a92d4a9-f489-4bba-9361-03cad3ea12e1
 # ╟─6a11b8e7-ed7f-4972-a4d5-d713e045ee1c
 # ╟─df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
@@ -4850,35 +4768,30 @@ end
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 # ╠═84d1270b-8df5-4d5d-a153-da4ffdb1d283
 # ╠═11b12556-5b61-42c2-a911-4ea98a0a1e85
+# ╠═dd5d1ccd-193a-4719-9f9c-937a8745ffec
 # ╠═b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
 # ╠═0836fdf1-6083-4293-8665-ead1cf3f5d02
 # ╟─7a02463d-cfd9-4648-af53-f1e65d46733f
 # ╠═114d2324-5289-4e44-8d77-736a9bdec365
 # ╟─659091d3-60b2-4158-80e2-cd28a492e870
-# ╟─c4876d26-e841-4e28-8303-131d4635fc23
+# ╠═c4876d26-e841-4e28-8303-131d4635fc23
 # ╠═5dd1a1e6-7db1-479e-a684-accec53ce06a
 # ╠═180c12b0-d410-4a5f-97bb-226e6624a39b
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-# ╠═f8b5dc8f-1f41-4600-825e-2f9653f2d925
-# ╠═1cd669ac-05eb-48b2-b457-8c395cd5807d
-# ╠═24cebff4-9e7e-4b3f-9f20-d3ef5647feec
+# ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═afb700c7-ef29-4c13-b9ea-1d40ea9534dd
 # ╠═2c239f3a-6335-4dde-bdcc-7bf41bc49890
+# ╠═c10697b7-6e67-4a5b-937e-09d97ca5b7f8
 # ╠═60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╠═5caca8ea-82af-4999-93bb-a72252c456c7
 # ╠═a81dd9a4-7938-4a72-b3d2-1780e8ecd536
-# ╠═af083be0-efea-497c-908e-dec9505a92d0
 # ╟─c1d2305e-fb8b-4845-a414-08fff84aa9b0
-# ╠═c10697b7-6e67-4a5b-937e-09d97ca5b7f8
 # ╠═2ce5aa45-4aa5-4c2a-a608-f581266e55f0
 # ╠═d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
-# ╠═25ec2810-3976-46c6-9b32-f91a81d839e0
 # ╟─686ac3dc-c191-4575-ba0c-d4c2551474b5
 # ╠═d1ab199f-1a40-4377-bca3-7f72f3cde3a9
 # ╠═32eb1122-5013-4a8e-be54-18a30c151515
-# ╠═adfba900-e423-42de-b075-14041c7c5ed5
-# ╠═1235a217-d11f-41c0-9f74-3084bbea46ae
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
 # ╠═d0985ca6-fef5-4b67-9ad6-f51d84b595b4
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c
@@ -4890,5 +4803,6 @@ end
 # ╠═7454f68a-64dc-4676-b2b2-ed8fcb35d81e
 # ╠═46d92e15-38ca-4857-8db4-60c1519523f6
 # ╠═315dd351-9d68-48f1-aa7a-8f43f3dec6ac
+# ╠═06ae600d-3f73-49e6-858c-539079c117ab
 # ╠═39683e98-dcbb-458b-817f-856fc6498730
 # ╠═3ac837b8-559b-41c2-8f83-1331839dcf7e
