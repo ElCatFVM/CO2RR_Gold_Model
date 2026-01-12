@@ -1283,6 +1283,9 @@ md"
 ### Voltage Concentration Plots
 "
 
+# ╔═╡ 38e147f2-7175-4975-a799-0a2e12c24368
+sim_line
+
 # ╔═╡ c1d2305e-fb8b-4845-a414-08fff84aa9b0
 md"""
 ### Plotting Functions
@@ -1971,6 +1974,99 @@ function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
 end
 
 
+# ╔═╡ dcc86f13-4fef-4755-ba01-b50b09810790
+let
+    species = getproperty.(bulk, :name)
+    colors  = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    # --- catmap CSV ---
+    df = CSV.read("catmap_CO2R_data/Dist-conc.csv", DataFrame)
+    rename!(df, Dict(names(df)[1]=>:Index, names(df)[2]=>:Voltage, names(df)[3]=>:Concentration))
+
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
+        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        yscale  = log10,
+       	xscale = log10
+    )
+
+    yt_vals = 10.0 .^ (0:-3:-9)
+    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax.yticks = (yt_vals, yt_lbls)
+
+    for g in groupby(df, :Index)
+        idx = Int(first(g.Index))
+        p = sortperm(g.Voltage)
+
+        V = g.Voltage[p]
+        y = max.(g.Concentration[p], eps(Float64))  
+
+        if 1 <= idx <= nspecies
+            lines!(ax, V, y; color=colors[idx], linewidth=3, label=species[idx])
+        else
+            lines!(ax, V, y; linewidth=3, label="Index = $idx")
+        end
+    end
+
+    axislegend(ax; position=:rt) 
+    fig
+end
+
+# ╔═╡ 960ee06e-b15f-4890-912c-851691e5c1a7
+begin
+    species = getproperty.(bulk, :name)
+    colors  = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    # --- catmap CSV ---
+    df = CSV.read("catmap_CO2R_data/voltage-conc.csv", DataFrame)
+    rename!(df, Dict(names(df)[1]=>:Index, names(df)[2]=>:Voltage, names(df)[3]=>:Concentration))
+
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
+        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        yscale  = log10,
+        limits = ((-1.25, -0.55), (1e-11, 1e1)),
+    )
+
+    xt = [-1.2, -1.0, -0.8, -0.6]
+    ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+
+    yt_vals = 10.0 .^ (0:-3:-9)
+    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax.yticks = (yt_vals, yt_lbls)
+
+    ax.spinewidth = 2.5
+    ax.xtickwidth = 2.0
+    ax.ytickwidth = 2.0
+    ax.xticksize  = 8
+    ax.yticksize  = 8
+    ax.xlabelsize = 30
+    ax.ylabelsize = 30
+    ax.xticklabelsize = 20
+    ax.yticklabelsize = 20
+
+    for g in groupby(df, :Index)
+        idx = Int(first(g.Index))
+        p = sortperm(g.Voltage)
+
+        V = g.Voltage[p]
+        y = max.(g.Concentration[p], eps(Float64))  
+
+        if 1 <= idx <= nspecies
+            lines!(ax, V, y; color=colors[idx], linewidth=3, label=species[idx])
+        else
+            lines!(ax, V, y; linewidth=3, label="Index = $idx")
+        end
+    end
+
+    axislegend(ax; position=:rt) 
+    fig
+end
+
 # ╔═╡ 32eb1122-5013-4a8e-be54-18a30c151515
 if runregtest
 	sresult = load("./data/regressionresults.jld2")["regressionresults"]
@@ -2165,6 +2261,94 @@ function cv_conc_gif(pnpresult; file="concentrations_cv.gif", framerate=10, step
 
     return LocalResource(abspath(file))
 end
+
+# ╔═╡ a7537912-16d8-4312-a1a7-513695ad86de
+function conc_vs_voltage_axis_compare(result; useonly_pH=false, showlegend=true,
+                              catmap_csv::Union{Nothing,String}=nothing)
+
+    species  = getproperty.(bulk, :name)
+    colors   = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    tsol  = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = result.voltages
+
+    xcoords    = grid.components[XCoordinates]
+    ielectrode = argmin(xcoords)
+
+    scale = 1.0 / (mol / dm^3)
+    nv = length(vgrid)
+    conc_electrode = fill(NaN, nspecies, nv)
+
+    for (j, v) in enumerate(vgrid)
+        sol = tsol(v)
+        if sol === nothing
+            @warn "No solution available at voltage $v; skipping."
+            continue
+        end
+        @inbounds for ia in 1:nspecies
+            conc_electrode[ia, j] = sol[ia, ielectrode] * scale
+        end
+    end
+
+    # --- FIGURE STYLE (keep exactly) ---
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
+        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        yscale  = log10,
+        limits = ((-1.25, -0.55), (1e-11, 1e1)),
+    )
+
+    xt = [-1.2, -1.0, -0.8, -0.6]
+    ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+
+    yt_vals = 10.0 .^ (0:-3:-9)
+    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax.yticks = (yt_vals, yt_lbls)
+
+    ax.spinewidth = 2.5
+    ax.xtickwidth = 2.0
+    ax.ytickwidth = 2.0
+    ax.xticksize  = 8
+    ax.yticksize  = 8
+    ax.xlabelsize = 30
+    ax.ylabelsize = 30
+    ax.xticklabelsize = 20
+    ax.yticklabelsize = 20
+
+    # --- SIMULATION: solid thick ---
+    if useonly_pH
+        iH = findfirst(isequal("H⁺"), species)
+        iH === nothing && error("H⁺ not found in species list.")
+
+        y = max.(conc_electrode[iH, :], eps(Float64))
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=3, label=species[iH])
+    else
+        for ia in 1:nspecies
+            y = max.(conc_electrode[ia, :], eps(Float64))
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=3, label=species[ia])
+        end
+    end
+
+     for g in groupby(df, :Index)
+        idx = Int(first(g.Index))
+        p = sortperm(g.Voltage)
+
+        V = g.Voltage[p]
+        y = max.(g.Concentration[p], eps(Float64)) 
+
+        if 1 <= idx <= nspecies
+            lines!(ax, V, y; color=colors[idx], linewidth=2, label=species[idx], linestyle = :dashdot)
+        else
+            lines!(ax, V, y; linewidth=3, label="Index = $idx")
+        end
+    end
+
+    axislegend(ax; position=:rt)  
+    fig
+end
+
 
 # ╔═╡ 2ce5aa45-4aa5-4c2a-a608-f581266e55f0
 begin
@@ -4049,8 +4233,11 @@ let
 	    reveal(vis)
 end
 
-# ╔═╡ 2c239f3a-6335-4dde-bdcc-7bf41bc49890
+# ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
 conc_vs_voltage_axis(ivresult; useonly_pH = false)
+
+# ╔═╡ 2c239f3a-6335-4dde-bdcc-7bf41bc49890
+conc_vs_voltage_axis_compare(ivresult; useonly_pH = false)
 
 # ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
 function ivsweep_over_L(model;
@@ -4470,7 +4657,12 @@ floataside(
 # ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
-# ╟─2c239f3a-6335-4dde-bdcc-7bf41bc49890
+# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═dcc86f13-4fef-4755-ba01-b50b09810790
+# ╠═960ee06e-b15f-4890-912c-851691e5c1a7
+# ╠═2c239f3a-6335-4dde-bdcc-7bf41bc49890
+# ╠═a7537912-16d8-4312-a1a7-513695ad86de
+# ╠═38e147f2-7175-4975-a799-0a2e12c24368
 # ╟─c1d2305e-fb8b-4845-a414-08fff84aa9b0
 # ╟─a81dd9a4-7938-4a72-b3d2-1780e8ecd536
 # ╠═2ce5aa45-4aa5-4c2a-a608-f581266e55f0
