@@ -763,6 +763,7 @@ md"""
 """
 
 # ╔═╡ 8cbc4ced-7ac2-4def-97cf-ff056c1dcb4a
+#=╠═╡
 let
 	try
 	    fig = Figure(size = (1600, 900))
@@ -799,6 +800,7 @@ let
 	end
 end
 
+  ╠═╡ =#
 
 # ╔═╡ 0106756b-594d-4fdb-81b5-cf0739898521
 let
@@ -978,6 +980,7 @@ md"""
 """
 
 # ╔═╡ 61be3485-960b-42f8-82e6-71e213a5c9a1
+#=╠═╡
 let
 	try
 	    δ_keys = sort(collect(keys(Lresult)))
@@ -1038,8 +1041,10 @@ let
 	end
 		
 end
+  ╠═╡ =#
 
 # ╔═╡ def960de-f74a-4ca8-9d95-8af4e0240b60
+#=╠═╡
 let
 	try
     fig = Figure(size = (1600, 900))
@@ -1086,11 +1091,30 @@ let
 	    end
 	end
 end
+  ╠═╡ =#
+
+# ╔═╡ 3b41341e-d174-4b2f-8c19-068cb84ba571
+#=╠═╡
+if @isdefined Lresult
+    conc_time_vs_L(Lresult, ico; nspecies = 7)
+else
+    @info "Lresult undefined — skipping"
+end
+  ╠═╡ =#
 
 # ╔═╡ 89520d6a-7a44-41f6-92ba-3d9416ac2047
 md"""
 #### Constant time_Boundary Thickness Layer Function
 """
+
+# ╔═╡ 666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
+#=╠═╡
+if @isdefined Lresult
+    conc_x_vs_L_at_time(Lresult, ico; target_time = 40.0)
+else
+    @info "Lresult undefined — skipping"
+end
+  ╠═╡ =#
 
 # ╔═╡ d3493ce8-85d1-4132-b3e0-4ec35ac9d36d
 md"""
@@ -1098,6 +1122,7 @@ md"""
 """
 
 # ╔═╡ f90190cc-555d-47e1-a2cb-99e5d78d4ff5
+#=╠═╡
 let
     try
         fig = Figure(size = (1600, 900))
@@ -1161,6 +1186,7 @@ let
     end
 end
 
+  ╠═╡ =#
 
 # ╔═╡ dadf76f0-cbea-4c34-a142-41e120679674
 function voltage_at_time(result::CVSweepResult, t_input)
@@ -1169,11 +1195,13 @@ function voltage_at_time(result::CVSweepResult, t_input)
 end
 
 # ╔═╡ 91242a8c-c09b-402c-a0ea-40b8e3e26ae7
+#=╠═╡
 if @isdefined Lresult
     v = voltage_at_time(Lresult[2108], 76.0)
 else
     @info "Lresult undefined — skipping"
 end
+  ╠═╡ =#
 
 # ╔═╡ bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 md"""
@@ -1774,13 +1802,6 @@ function conc_time_vs_L(Lresult, ico; nspecies = 7)
 end
 
 
-# ╔═╡ 3b41341e-d174-4b2f-8c19-068cb84ba571
-if @isdefined Lresult
-    conc_time_vs_L(Lresult, ico; nspecies = 7)
-else
-    @info "Lresult undefined — skipping"
-end
-
 # ╔═╡ deb15672-0e35-4855-b1c0-b2c0b7e78d41
 function conc_time_vs_RPM(RDE_result, ico; nspecies = 7)
     rpms = sort(collect(keys(RDE_result)))
@@ -1893,13 +1914,6 @@ function conc_x_vs_L_at_time(Lresult, ico; target_time = 20.0)
     fig
 end
 
-
-# ╔═╡ 666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
-if @isdefined Lresult
-    conc_x_vs_L_at_time(Lresult, ico; target_time = 40.0)
-else
-    @info "Lresult undefined — skipping"
-end
 
 # ╔═╡ 0a665fc0-1230-4978-8ebd-e551c595e857
 function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
@@ -2194,8 +2208,8 @@ begin
 								 size 	= (600, 300),
 								 clear 	= true,
 								 legend 	= :rt,
-								 limits 	= (-14, 2),
-								 xlimits    = (10e-12, 80 * μm),
+								 limits 	= (-11, 1),
+								 xlimits    = (10e-12, L*1.2),
 								 xlabel 	= "Distance from electrode [m]",
 	 							 ylabel 	= "log c(aᵢ)", 
 								 xscale 	= :log,)
@@ -2212,8 +2226,8 @@ begin
 								 size = (650, 400),
 								 clear 	= true,
 							 	 legend = :rt,
-								 limits = (-14, 2),
-								 xlimits= (10e-12, L ),
+								 limits = (-11, 1),
+								 xlimits= (10e-12, L*1.2),
 								 xlabel = "Distance from electrode [m]",
  								 ylabel = "log c(aᵢ)", 
 								 xscale = :log,)
@@ -2424,11 +2438,12 @@ begin
 		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we) = data
 				
 		γ = get_tmp(γ_cache, u[ico2])
-		γ_co2 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
-		γ_co 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico]
-		#γ_co 	= 1.0
+		γ_co2 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
+		γ_co 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico]
+		#γ_co 	 = 1.0
+		local_pH_n = u[ihplus] * γ[ihplus] / (mol/dm^3)
 		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
-		local_pH 	= -log10(u[ihplus] / (mol/dm^3))
+		local_pH 	= -log10(local_pH_n)
 
 	
 		#for (p, default_value) in odesys.defaults
@@ -3876,7 +3891,7 @@ end
 
 
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
-function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
+function simulate_CO2R(grid, celldata; voltages = (-1.15:0.1:0.0) * V, kwargs...)
 	kwargs 	 	= merge(solver_control, kwargs) 
     cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
 	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
@@ -4070,7 +4085,9 @@ function ivsweep_over_L(model;
 end
 
 # ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
-ivL = ivsweep_over_L(elydata_Gold)
+if Ldependancy
+	ivL = ivsweep_over_L(elydata_Gold)
+end
 
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
 plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
@@ -4438,7 +4455,7 @@ floataside(
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 # ╠═84d1270b-8df5-4d5d-a153-da4ffdb1d283
 # ╠═11b12556-5b61-42c2-a911-4ea98a0a1e85
-# ╟─b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
+# ╠═b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
 # ╠═60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╟─5caca8ea-82af-4999-93bb-a72252c456c7
 # ╟─7a02463d-cfd9-4648-af53-f1e65d46733f
@@ -4449,14 +4466,14 @@ floataside(
 # ╠═180c12b0-d410-4a5f-97bb-226e6624a39b
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
-# ╠═afb700c7-ef29-4c13-b9ea-1d40ea9534dd
-# ╠═f672a256-641a-478e-b0aa-2df6e68b4d86
+# ╟─afb700c7-ef29-4c13-b9ea-1d40ea9534dd
+# ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
-# ╠═904ac4c2-50a8-4f70-8050-a0a1d4a448fa
-# ╠═2c239f3a-6335-4dde-bdcc-7bf41bc49890
+# ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
+# ╟─2c239f3a-6335-4dde-bdcc-7bf41bc49890
 # ╟─c1d2305e-fb8b-4845-a414-08fff84aa9b0
 # ╟─a81dd9a4-7938-4a72-b3d2-1780e8ecd536
-# ╟─2ce5aa45-4aa5-4c2a-a608-f581266e55f0
+# ╠═2ce5aa45-4aa5-4c2a-a608-f581266e55f0
 # ╟─d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
 # ╟─c10697b7-6e67-4a5b-937e-09d97ca5b7f8
 # ╟─686ac3dc-c191-4575-ba0c-d4c2551474b5
