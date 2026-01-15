@@ -443,7 +443,7 @@ function Stefan_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
     for ic in cspecies
-        γ[ic] = (1.0 / (1 - sum(c[i] * v[i] for i in 1:nc)))# / (mol/dm^3)))
+        γ[ic] = (1.0 / (1 - sum(c[i] * v[i] for i in 1:nc))) # (mol/dm^3)))
     end
     return γ
 end
@@ -496,11 +496,11 @@ md"""
 function capsplot_v(vis, result_named)
     color = [:magenta, :blue]
     for (i, (name, res)) in enumerate(result_named)
-		voltages = res[1].voltage_range[1:201]
-        caps = vec(res[1].dlcaps)[1:201]
+		voltages = res[1].voltage_range[1:end]
+        caps = vec(res[1].dlcaps)[1:end]
         scalarplot!(
             vis, voltages, caps / (μF / cm^2);
-            limits = (-1, 40), xlimits = (-1.1, 1.1),
+            limits = (-1, 400), xlimits = (-1.1, 1.1),
             color = color[i], clear = false, label = name,
             markershape = :none, yscale = 10,
             xlabel = "φ / (V vs φ_pzc)", ylabel = "dlcaps / (μF / cm²)"
@@ -1283,9 +1283,6 @@ md"
 ### Voltage Concentration Plots
 "
 
-# ╔═╡ 38e147f2-7175-4975-a799-0a2e12c24368
-sim_line
-
 # ╔═╡ c1d2305e-fb8b-4845-a414-08fff84aa9b0
 md"""
 ### Plotting Functions
@@ -1531,7 +1528,7 @@ begin
 							c_bulk = 0.091, 
 							#v = v0*(κt+1),
 							a = at,
-							κ = κt, 
+							κ = 0, #κt, 
 							color = :brown
 				),
 				BulkSpecies(;name = "CO₃²⁻",
@@ -1540,7 +1537,7 @@ begin
 							c_bulk = 2.68e-6,
 							#v = v0*(κt+1), 
 							a = at,
-							κ = κt, 
+							κ = 0, #κt, 
 							color = :violet
 				),
 				BulkSpecies(;name = "CO₂",
@@ -1550,7 +1547,7 @@ begin
 							c_bulk = 0.033, 
 							#v =v0, 
 							a = at,
-							κ = κt, 
+							κ = 0, #κt, 
 							color=:red
 				),
 				BulkSpecies(;name = "OH⁻",
@@ -1559,7 +1556,7 @@ begin
 							c_bulk = 10^(pH-14), 
 							#v = v0*(κt+1), 
 							a = at,
-							κ = κt, 
+							κ = 0, #κt, 
 							color = :green
 				),
 				BulkSpecies(;name = "H⁺", 
@@ -1568,7 +1565,7 @@ begin
 							c_bulk = 10^(-pH), 
 							#v = v0*(κt+1), 
 							a = at,
-							κ = κt, 
+							κ = 0, #κt, 
 							color = :gray
 				),
 				BulkSpecies(;name="CO",
@@ -1577,7 +1574,7 @@ begin
 							c_bulk = 0.0,
 							#v = v0, 
 							a = at,
-							κ = κt,  
+							κ = 0,#0,# κt,  
 							color=:blue
 				)
 		]
@@ -1974,46 +1971,6 @@ function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
 end
 
 
-# ╔═╡ dcc86f13-4fef-4755-ba01-b50b09810790
-let
-    species = getproperty.(bulk, :name)
-    colors  = getproperty.(bulk, :color)
-    nspecies = length(species)
-
-    # --- catmap CSV ---
-    df = CSV.read("catmap_CO2R_data/Dist-conc.csv", DataFrame)
-    rename!(df, Dict(names(df)[1]=>:Index, names(df)[2]=>:Voltage, names(df)[3]=>:Concentration))
-
-    fig = Figure(size=(960, 540))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
-        ylabel = L"c_i^{+}\;(\mathrm{M})",
-        yscale  = log10,
-       	xscale = log10
-    )
-
-    yt_vals = 10.0 .^ (0:-3:-9)
-    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax.yticks = (yt_vals, yt_lbls)
-
-    for g in groupby(df, :Index)
-        idx = Int(first(g.Index))
-        p = sortperm(g.Voltage)
-
-        V = g.Voltage[p]
-        y = max.(g.Concentration[p], eps(Float64))  
-
-        if 1 <= idx <= nspecies
-            lines!(ax, V, y; color=colors[idx], linewidth=3, label=species[idx])
-        else
-            lines!(ax, V, y; linewidth=3, label="Index = $idx")
-        end
-    end
-
-    axislegend(ax; position=:rt) 
-    fig
-end
-
 # ╔═╡ 960ee06e-b15f-4890-912c-851691e5c1a7
 begin
     species = getproperty.(bulk, :name)
@@ -2029,7 +1986,7 @@ begin
         xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
         ylabel = L"c_i^{+}\;(\mathrm{M})",
         yscale  = log10,
-        limits = ((-1.25, -0.55), (1e-11, 1e1)),
+        limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
 
     xt = [-1.2, -1.0, -0.8, -0.6]
@@ -2297,7 +2254,7 @@ function conc_vs_voltage_axis_compare(result; useonly_pH=false, showlegend=true,
         xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
         ylabel = L"c_i^{+}\;(\mathrm{M})",
         yscale  = log10,
-        limits = ((-1.25, -0.55), (1e-11, 1e1)),
+        limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
 
     xt = [-1.2, -1.0, -0.8, -0.6]
@@ -2316,6 +2273,9 @@ function conc_vs_voltage_axis_compare(result; useonly_pH=false, showlegend=true,
     ax.ylabelsize = 30
     ax.xticklabelsize = 20
     ax.yticklabelsize = 20
+	ax.xgridvisible = false
+	ax.ygridvisible = false
+	
 
     # --- SIMULATION: solid thick ---
     if useonly_pH
@@ -2355,73 +2315,120 @@ begin
 	function addplot(vis, sol, vshow)
 		species = getproperty.(bulk, :name)
 		colors = getproperty.(bulk, :color)
-		
+
 		scale = 1.0 / (mol / dm^3)
-	    title = @sprintf("Φ_we=%+1.2f [V vs. SHE]", vshow)
-	
+		title = @sprintf("Φ_we=%+1.2f [V vs. SHE]", vshow)
+
 		if useonly_pH
 			i = findfirst(isequal("H⁺"), species)
-			scalarplot!(vis, 
-					    grid.components[XCoordinates] .+ 1.0e-14, 
-					    log10.(sol[ihplus, :] * scale), 
+			scalarplot!(vis,
+					    grid.components[XCoordinates] .+ 1.0e-14,
+					    log10.(sol[ihplus, :] * scale),
 					    color = colors[i],
 					    label = species[i],
 					    clear = true,
-						title = title)
+					    title = title)
 		else
-			scalarplot!(vis, 
-						grid.components[XCoordinates] .+ 1.0e-14, 
-						log10.(sol[1, :] * scale), 
+			scalarplot!(vis,
+						grid.components[XCoordinates] .+ 1.0e-14,
+						log10.(sol[1, :] * scale),
 						color = colors[1],
 						label = species[1],
 						clear = true,
 						title = title)
-			for ia = 2:nc			
-				scalarplot!(vis, 
-						    grid.components[XCoordinates] .+ 1.0e-14, 
-						    log10.(sol[ia, :] * scale), 
+			for ia = 2:nc
+				scalarplot!(vis,
+						    grid.components[XCoordinates] .+ 1.0e-14,
+						    log10.(sol[ia, :] * scale),
 						    color = colors[ia],
 						    label = species[ia],
-						    clear = false,)
+						    clear = false)
 			end
 		end
 	end
+
+	function addplot(vis, df::DataFrame, vshow)
+		species  = getproperty.(bulk, :name)
+		colors   = getproperty.(bulk, :color)
+		nspecies = length(species)
+
+		nms = names(df)
+		@assert length(nms) ≥ 3
+		rename!(df, Dict(nms[1]=>:Index, nms[2]=>:Distance, nms[3]=>:Concentration))
+
+		idxs = unique(skipmissing(df.Index))
+
+		for idx_raw in idxs
+			idx = try
+				Int(idx_raw)
+			catch
+				try
+					parse(Int, String(idx_raw))
+				catch
+					continue
+				end
+			end
+
+			(1 <= idx <= nspecies) || continue
+
+			mask = (df.Index .== idx_raw)
+			x = df.Distance[mask]
+			y = df.Concentration[mask]
+
+			x = Float64.(x)
+			if maximum(x) > 1e-3
+				x .*= 1e-6
+			end
+			x .+= 1e-14
+
+			y = max.(Float64.(y), eps(Float64))
+
+			p = sortperm(x)
+
+			scalarplot!(vis, x[p], log10.(y[p]);
+					    color = colors[idx],
+					    clear = false,
+					    label = "")
+		end
+	end
+
 	function plot1d(result, celldata, vshow; df_compare = nothing)
-		tsol 	= LiquidElectrolytes.voltages_solutions(result)
-		vis 	= GridVisualizer(;
-								 size 	= (600, 300),
-								 clear 	= true,
-								 legend 	= :rt,
-								 limits 	= (-11, 1),
-								 xlimits    = (10e-12, L*1.2),
-								 xlabel 	= "Distance from electrode [m]",
-	 							 ylabel 	= "log c(aᵢ)", 
-								 xscale 	= :log,)
-	    addplot(vis, tsol(vshow), vshow)
+		tsol = LiquidElectrolytes.voltages_solutions(result)
+		vis  = GridVisualizer(;
+							  size    = (600, 300),
+							  clear   = true,
+							  legend  = :rt,
+							  limits  = (-11, 1),
+							  xlimits = (10e-12, L*1.2),
+							  xlabel  = "Distance from electrode [m]",
+							  ylabel  = "log c(aᵢ)",
+							  xscale  = :log)
+
+		addplot(vis, tsol(vshow), vshow)
 		if !isnothing(df_compare)
-			addplot(vis, df_compare)
+			addplot(vis, df_compare, vshow)
 		end
 		reveal(vis)
 	end
 
 	function plot1d(result, celldata)
-    	tsol  	= LiquidElectrolytes.voltages_solutions(result)
-		vis  	= GridVisualizer(; 
-								 size = (650, 400),
-								 clear 	= true,
-							 	 legend = :rt,
-								 limits = (-11, 1),
-								 xlimits= (10e-12, L*1.2),
-								 xlabel = "Distance from electrode [m]",
- 								 ylabel = "log c(aᵢ)", 
-								 xscale = :log,)
-	
+		tsol = LiquidElectrolytes.voltages_solutions(result)
+		vis  = GridVisualizer(;
+							  size    = (650, 400),
+							  clear   = true,
+							  legend  = :rt,
+							  limits  = (-11, 1),
+							  xlimits = (10e-12, L*1.2),
+							  xlabel  = "Distance from electrode [m]",
+							  ylabel  = "log c(aᵢ)",
+							  xscale  = :log)
+
 		vrange = result.voltages[end:-5:1]
 		movie(vis, file="concentrations.gif", framerate=2) do vis
-		for vshow_it in vrange
-			addplot(vis, tsol(vshow_it), vshow_it)
-			reveal(vis)
-		end
+			for vshow_it in vrange
+				addplot(vis, tsol(vshow_it), vshow_it)
+				reveal(vis)
+			end
 		end
 		isdefined(Main, :PlutoRunner) && LocalResource("concentrations.gif")
 	end
@@ -2457,10 +2464,10 @@ function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
     # --- FIGURE STYLE (match screenshot) ---
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
-        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
-        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
+        ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
         yscale  = log10,
-        limits = ((-1.25, -0.55), (1e-11, 1e1)),
+        limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
 
     # x ticks: -1.2, -1.0, -0.8, -0.6
@@ -2473,16 +2480,30 @@ function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
     ax.yticks = (yt_vals, yt_lbls)
 
     # thick spines like screenshot
-    ax.spinewidth = 2.5
+    ax.spinewidth = 5.5
     ax.xtickwidth = 2.0
     ax.ytickwidth = 2.0
     ax.xticksize  = 8
     ax.yticksize  = 8
-    ax.xlabelsize = 30
-    ax.ylabelsize = 30
-    ax.xticklabelsize = 20
-    ax.yticklabelsize = 20
+    ax.xlabelsize = 25
+    ax.ylabelsize = 25
+    ax.xticklabelsize = 25
+    ax.yticklabelsize = 25
+	ax.xgridvisible = false
+	ax.ygridvisible = false
+	ax.xlabelpadding = 10
+	ax.ylabelpadding = 10
+	ax.xlabelfont = :bold
 
+ #Species text 	
+	# CO	
+	text!(ax, -1.15, 0.3, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
+	text!(ax, -0.90, 0.00000018, text=L"\mathrm{H^+}", color=colors[ihplus], fontsize=24, font = "sans-bold")
+	text!(ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
+	text!(ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
+	text!(ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
+	text!(ax, -0.90, 8e-10, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
+	text!(ax, -1.15, 0.00024, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")
 
 	
     # --- PLOT ---
@@ -2491,11 +2512,11 @@ function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
         iH === nothing && error("H⁺ not found in species list.")
 
         y = max.(conc_electrode[iH, :], eps(Float64))  # log축 보호
-        lines!(ax, vgrid, y; color=colors[iH], linewidth=3, label=species[iH])
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=5, label=species[iH])
     else
         for ia in 1:nspecies
             y = max.(conc_electrode[ia, :], eps(Float64))
-            lines!(ax, vgrid, y; color=colors[ia], linewidth=3, label=species[ia])
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=5, label=species[ia])
         end
     end
 
@@ -2503,6 +2524,87 @@ function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
     #display(fig)
 	@show minimum(xcoords) maximum(xcoords) xcoords[ielectrode]
     return fig
+end
+
+# ╔═╡ 754ab149-7a65-4227-ba8b-d7d48e0092b8
+begin
+	function addplot_ax!(ax, sol, vshow; clear=true)
+	    species = getproperty.(bulk, :name)
+	    colors  = getproperty.(bulk, :color)
+	
+	    scale = 1.0 / (mol / dm^3)
+	    title = @sprintf("Φ_we=%+1.2f [V vs. SHE]", vshow)
+	
+	    x = grid.components[XCoordinates] .+ 1.0e-14
+	
+	    clear && empty!(ax)        
+	    #ax.title = title          
+	
+	    if useonly_pH
+	        i = findfirst(isequal("H⁺"), species)
+	        i === nothing && error("H⁺ not found in species list.")
+	
+	        y = log10.(sol[ihplus, :] .* scale)
+	        lines!(ax, x, y; color = colors[i], linewidth=5, label = species[i])
+	    else
+	        # first species (clear=true 느낌)
+	        y1 = log10.(sol[1, :] .* scale)
+	        lines!(ax, x, y1; color = colors[1], linewidth=5, label = species[1])
+	
+	        # rest
+	        for ia in 2:nc
+	            y = log10.(sol[ia, :] .* scale)
+	            lines!(ax, x, y; color = colors[ia], linewidth=5, label = species[ia])
+	        end
+	    end
+	
+	    return ax
+	end
+	function plot1d_makie(result, celldata, vshow; df_compare=nothing)
+	    tsol = LiquidElectrolytes.voltages_solutions(result)
+	
+	    fig = Figure(size=(960, 540))
+	    ax  = Axis(fig[1, 1];
+	        xlabel = "Distance from electrode [m]",
+	        ylabel = L"\log_{10} c(a_i)",
+	        xscale = log10,
+	        limits = ((10e-12, L*1.2), (-11, 1)),
+	    )
+
+	    ax.spinewidth = 5.5
+	    ax.xtickwidth = 2.0
+	    ax.ytickwidth = 2.0
+	    ax.xticksize  = 8
+	    ax.yticksize  = 8
+	    ax.xlabelsize = 25
+	    ax.ylabelsize = 25
+	    ax.xticklabelsize = 25
+	    ax.yticklabelsize = 25
+		ax.xgridvisible = false
+		ax.ygridvisible = false
+		ax.xlabelpadding = 10
+		ax.ylabelpadding = 10
+		#ax.xlabelfont = :bold
+	
+	    addplot_ax!(ax, tsol(vshow), vshow; clear=true)
+
+		text!(ax, 1e-10, -0.5, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
+		text!(ax, 4e-11, -6.6, text=L"\mathrm{H}^+", color=colors[ihplus], fontsize=24, font = "sans-bold")
+		text!(ax, 1.5e-9, -5.2, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
+		text!(ax, 7e-10, -3, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(ax, 4e-11, -2.4, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
+		text!(ax, 4e-11, -9, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
+		text!(ax, 4e-11, -4.2, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")	
+
+
+		
+	    if df_compare !== nothing
+	        addplot_ax!(ax, df_compare, vshow; clear=false)
+	    end
+	
+	    #axislegend(ax, position=:rt)
+	    return fig
+	end
 end
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
@@ -2548,7 +2650,7 @@ function activity_coefficient!(
     if Nγ_mode == Stefan_γ!
         # Ringe et al. approach (volume fraction-based)
     	for ic in cspecies
-        	γ[ic] = 1.0 / (1 - sum(u[i] * v[i] for i in 1:nc))# / (mol/dm^3))
+        	γ[ic] = (1.0 / (1 - sum(u[i] * v[i] for i in 1:nc)))# / (mol/dm^3)))
     	end
 		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
     elseif Nγ_mode == DGML_γ!
@@ -2624,10 +2726,8 @@ begin
 		γ = get_tmp(γ_cache, u[ico2])
 		γ_co2 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
 		γ_co 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico]
-		#γ_co 	 = 1.0
-		local_pH_n = u[ihplus] * γ[ihplus] / (mol/dm^3)
 		σ 			= C_gap * (ϕ_we - u[iϕ] - ϕ_pzc)
-		local_pH 	= -log10(local_pH_n)
+		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
 
 	
 		#for (p, default_value) in odesys.defaults
@@ -2696,7 +2796,7 @@ is_Landstorfer = model != elydata_Gold
 # ╔═╡ 36e756a9-4d9b-40ef-9e37-d86f1194cc51
 function capscalc(sys, molarities)
     result = []
-	vrange = range(-1.0 - ϕ_pzc, 1.0 - ϕ_pzc, length = 202)
+	vrange = range(-1.0, 1.0, length = 202)
 	if is_Landstorfer
 		for imol in 1:length(molarities)
 		    if !isa(sys, AbstractElectrochemicalSystem)
@@ -2725,7 +2825,7 @@ function capscalc(sys, molarities)
 	        data = sys.vfvmsys.physics.data
 	        t = @elapsed r = dlcapsweep(
 	    	        sys,
-	                voltages = range(-1, 1, length = 201)
+	                voltages = vrange
 	        )
 			volts = vrange
 			caps = r.dlcaps
@@ -2764,7 +2864,7 @@ function capsplot(vis, result, title)
         caps = vec(result[1].dlcaps)
 
         scalarplot!(
-            vis, voltages, caps / (μF / cm^2);
+            vis, voltages, caps / (μF / cm^2) ;
             limits = (-1, 250), xlimits = (-1.1, 1.1),
             color = :green, clear = false, label = "$title",
             title = title, markershape = :none, xlabel = L"φ / (V vs φ_{pzc})", ylabel = L"dlcaps / (μF / cm²)"
@@ -2885,7 +2985,7 @@ function bulkbcondition(f, u, bnode, electrolyte; region = electrolyte.Γ_bulk)
         end
     end
 	"""
-    return nothing
+    #return nothing
 end
 
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
@@ -2906,7 +3006,7 @@ function pnp_bcondition(
  	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
  	#for ic in cspecies 
 		#if ic == ico2 || ic == ico
-       		#boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
+       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
 		#else
 		#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
 		#end
@@ -3044,7 +3144,7 @@ let
             xlabel = "Distance from electrode [m]",
             ylabel = "log c(aᵢ)",
             xscale = log10,                
-            limits = ((1e-12, 1e-3), (-14, 2)), 
+            limits = ((1e-12, 1e-3), (-14, 1)), 
             title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s | ϕ = $(round(pnpresult.voltages[t_index], digits=2)) V",
 			
         )
@@ -4075,7 +4175,7 @@ end
 
 
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
-function simulate_CO2R(grid, celldata; voltages = (-1.15:0.1:0.0) * V, kwargs...)
+function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 	kwargs 	 	= merge(solver_control, kwargs) 
     cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
 	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
@@ -4233,11 +4333,11 @@ let
 	    reveal(vis)
 end
 
-# ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
-conc_vs_voltage_axis(ivresult; useonly_pH = false)
-
 # ╔═╡ 2c239f3a-6335-4dde-bdcc-7bf41bc49890
 conc_vs_voltage_axis_compare(ivresult; useonly_pH = false)
+
+# ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
+conc_vs_voltage_axis(ivresult; useonly_pH = false)
 
 # ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
 function ivsweep_over_L(model;
@@ -4279,23 +4379,36 @@ end
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
 plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 
-# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
-function pb_bcondition(f, u, bnode, data)
-    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+# ╔═╡ 2d5264ce-3ef0-4871-9d84-028806b58d40
+function pnp_bcondition_dl(f, u, bnode, data::ElectrolyteData)
+    (; iϕ, Γ_we, ϕ_we) = data
 
-	if user_input_model.BC_Select == "Dirichlet"
-	    ## Dirichlet ϕ=ϕ_we at Γ_we
-	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-	    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
-	elseif user_input_model.BC_Select == "Robin"
-		## Robin ϕ=dϕ₀/dx 
-	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-	else
-		## neumann ϕ=dϕ₀/dx 
-	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
 	
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	
+	if model == elydata_Gold
+		we_breactions(f, u, bnode, data)
 	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
+
+# ╔═╡ 4b57f8e9-eb78-429f-b3ed-e3904ef00aa0
+function pb_bcondition_dl(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+	
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+
 
     return bulkbcondition(f, u, bnode, data)
 end
@@ -4304,12 +4417,12 @@ end
 begin
 	if double_layer_curve
 		#pb
-		sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition)
+		sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition_dl)
 		result_pb = capscalc(sys_pb, molarities)
 
 		#pnp
 		reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
-		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction=reaction)
+		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition_dl, celldata = deepcopy(model), reaction_arg)
 
 		result_pnp = capscalc(sys_pnp, molarities)
 	else 
@@ -4419,6 +4532,27 @@ begin
 	end
 end
 
+# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
+function pb_bcondition(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+
+	if user_input_model.BC_Select == "Dirichlet"
+	    ## Dirichlet ϕ=ϕ_we at Γ_we
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+	    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+	elseif user_input_model.BC_Select == "Robin"
+		## Robin ϕ=dϕ₀/dx 
+	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+	else
+		## neumann ϕ=dϕ₀/dx 
+	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	
+	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
 # ╔═╡ 46d92e15-38ca-4857-8db4-60c1519523f6
 steady_state_jac
 
@@ -4439,6 +4573,15 @@ $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 
 # ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
 plot1d(ivresult, celldata, vshow)
+
+# ╔═╡ 38e147f2-7175-4975-a799-0a2e12c24368
+begin
+	#df_cmp = CSV.read("catmap_CO2R_data/Dist-conc.csv", DataFrame)
+	plot1d(ivresult, celldata, vshow)
+end
+
+# ╔═╡ f88ecd40-1b80-4cca-a312-b23f7cfb0ad6
+plot1d_makie(ivresult, celldata, vshow)
 
 # ╔═╡ 06ae600d-3f73-49e6-858c-539079c117ab
 floataside(
@@ -4518,7 +4661,10 @@ floataside(
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
 # ╠═c9afd17b-7c8c-408f-b063-371a5eda9cc4
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
+# ╠═2d5264ce-3ef0-4871-9d84-028806b58d40
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
+# ╠═4b57f8e9-eb78-429f-b3ed-e3904ef00aa0
+# ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
 # ╠═d76d8413-c019-4728-b182-7f7cb78dede4
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
@@ -4531,7 +4677,6 @@ floataside(
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═f2043f2c-f3c8-4b0f-944c-7b55624dac08
 # ╠═0e61a0f7-1611-4eb3-8fda-3f807a4ffca2
-# ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
 # ╠═b21c8394-f847-477e-ac8f-713398b81166
 # ╠═44258eea-f114-4dfe-aa61-1e2cac31baa4
@@ -4571,7 +4716,7 @@ floataside(
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═d38c2b43-4d8b-4be7-8d77-5a30da384541
-# ╠═1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
+# ╟─1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
 # ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 # ╟─79018ef0-6ab1-4420-9a52-8f8e2812fd40
 # ╟─f9dade9f-8431-48a6-a2ee-2c88f178e76e
@@ -4657,8 +4802,6 @@ floataside(
 # ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
-# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
-# ╠═dcc86f13-4fef-4755-ba01-b50b09810790
 # ╠═960ee06e-b15f-4890-912c-851691e5c1a7
 # ╠═2c239f3a-6335-4dde-bdcc-7bf41bc49890
 # ╠═a7537912-16d8-4312-a1a7-513695ad86de
@@ -4667,7 +4810,10 @@ floataside(
 # ╟─a81dd9a4-7938-4a72-b3d2-1780e8ecd536
 # ╠═2ce5aa45-4aa5-4c2a-a608-f581266e55f0
 # ╟─d5ab1a28-3a60-49d9-bb3e-ca589b1c79fd
-# ╟─c10697b7-6e67-4a5b-937e-09d97ca5b7f8
+# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═c10697b7-6e67-4a5b-937e-09d97ca5b7f8
+# ╠═f88ecd40-1b80-4cca-a312-b23f7cfb0ad6
+# ╠═754ab149-7a65-4227-ba8b-d7d48e0092b8
 # ╟─686ac3dc-c191-4575-ba0c-d4c2551474b5
 # ╠═d1ab199f-1a40-4377-bca3-7f72f3cde3a9
 # ╠═32eb1122-5013-4a8e-be54-18a30c151515
