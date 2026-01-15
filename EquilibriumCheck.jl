@@ -375,6 +375,20 @@ elydata_NaF = ElectrolyteData(
 		v0 = 18.048 * ufac"cm^3" / ufac"mol",		
 )
 
+# ╔═╡ 12235c3c-18f2-4fc7-95ef-800f71783036
+elydata_toy = ElectrolyteData(
+		nc = 7,
+ 		z = [1, 1, -1, -2, 0, -1, 0],
+		na = 3,	
+		κ = [3.0, 4.0, 4, 7, 0, 3, 0],
+		v = [0.000332042, 0.00000042, 0.000632042, 0.0052042, 0.000332042, 0.000332042, 0.000332042],
+		#c_bulk = [0.5, 0.5, 0.05, 0],
+		ε = 26.0,
+		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
+		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
+		v0 = 18.048 * ufac"cm^3" / ufac"mol",		
+)
+
 # ╔═╡ 53f12821-7d8d-4971-87fd-ad4689ec62a5
 md"""
 ### γ(activity coefficients) function
@@ -470,7 +484,7 @@ md"""
 """
 
 # ╔═╡ 952a26ce-2610-48cc-9158-eda816da3a1c
-molarities = [0.005, 0.01, 0.05, 0.1, 0.5] 
+molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
 
 # ╔═╡ d76d8413-c019-4728-b182-7f7cb78dede4
 md"""
@@ -2064,16 +2078,16 @@ floataside(
         PlutoUI.combine() do Child
 			md"""
 			###### __Model Selection__  
-			- Model: $(Child("model_choice", Select(["Gold_Model", "Landstorfer_NaClO₄ model", "Landstorfer_NaF model"])))
+			- Model: $(Child("model_choice", Select(["Gold_Model", "Landstorfer_NaClO₄ model", "Landstorfer_NaF model", "Toy model"])))
 			---
 			###### __Boundary layer thickness__   
-			- ``δ``: $(Child("L", NumberField(1:80000; default = 1000))) μm  			
+			- ``δ``: $(Child("L", NumberField(1:80000; default = 80))) μm  			
 			---
 			
 			###### __Activity Coefficient__  
 			- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
 			- NoteBook.Mode: $(Child("Nmode", Select(["DMGL_γ", "Stefan_γ", "Potassium_γ"])))
-			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Neumann"])))
+			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Neumann", "Dirichlet"])))
 			"""
 	    end;
 	    label = "Submit"
@@ -2787,6 +2801,7 @@ begin
 	model = model_key == "Gold_Model" ? elydata_Gold :
 	        model_key == "Landstorfer_NaClO₄ model" ? elydata_NaClO₄ :
 	        model_key == "Landstorfer_NaF model" ? elydata_NaF :
+			model_key == "Toy model" ? elydata_toy :
 	        error("Unknown model choice: $model_key")
 end
 
@@ -2988,6 +3003,159 @@ function bulkbcondition(f, u, bnode, electrolyte; region = electrolyte.Γ_bulk)
     #return nothing
 end
 
+# ╔═╡ 2d5264ce-3ef0-4871-9d84-028806b58d40
+function pnp_bcondition_dl(f, u, bnode, data::ElectrolyteData)
+    (; iϕ, Γ_we, ϕ_we) = data
+
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+	
+	if model == elydata_Gold
+		we_breactions(f, u, bnode, data)
+	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
+
+# ╔═╡ 4b57f8e9-eb78-429f-b3ed-e3904ef00aa0
+function pb_bcondition_dl(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+	
+    ## Dirichlet ϕ=ϕ_we at Γ_we
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+	## Robin ϕ=dϕ₀/dx
+	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
+
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
+# ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
+begin
+	if double_layer_curve
+		#pb
+		sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition_dl)
+		result_pb = capscalc(sys_pb, molarities)
+
+		#pnp
+		reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
+		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition_dl, celldata = deepcopy(model), reaction_arg)
+
+		result_pnp = capscalc(sys_pnp, molarities)
+	else 
+		result_pb = nothing
+		result_pnp = nothing
+	end
+end
+
+# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
+    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
+    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
+
+    reveal(vis)
+end
+
+# ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
+let
+	if is_Landstorfer
+		f = Figure(size = (900, 900))
+	    result = result_pb
+	    l = 1 / length(result)
+		ϕ0_pzc = 0.972
+		
+		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", limits = ((-1.2, 1.2),(0, 120)))
+	
+		if model_key == "Landstorfer_NaClO₄ model"
+			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
+		else	
+			Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
+			High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
+		end
+		
+	    k = []  
+	    legend_labels = [model_key*"\t 5mM", model_key*"\t 100mM"]  
+		
+		for i in 1:length(result)
+		    c = RGB(i * l, 0.0, 1 - i * l)
+		    v = result_pb[i].voltage_range
+		    cdl = result_pb[i].dlcaps / (μF / cm^2)
+		    
+		    minlength = min(length(v), length(cdl))
+		    push!(k, lines!(ax, v[1:minlength], cdl[1:minlength], color=c, label="Result $i"))
+		
+		    m = molarities[i]
+		    push!(legend_labels, "LiquidElectrolyte $m M")
+		end
+	    
+		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
+	    f
+		 
+	else
+		results = [
+		    ("Poisson-Boltzmann", result_pb),
+		    ("Poisson-Nernst-Planck", result_pnp)
+		]
+		plots = []
+		
+		for (name, result) in results
+		    try
+		        if !isempty(result)
+		            push!(plots, (name, result))
+		        end
+		    catch
+		        continue
+		    end
+		end
+		
+	    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, title="Compare PB & PNP")
+	    capsplot_v(vis, plots)
+	    reveal(vis)
+	end
+	
+end
+
+# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
+begin
+	try
+		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+		Low_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_Low_κ.voltages,
+		    Landstorfer_Low_κ.dlcaps,
+		    color = :black,
+		    linestyle = :dot,
+		    label = "κ = 0",
+			xlimits = (-0.5, 0.5),
+	        xlabel = "φ / (V vs φ_pzc)",
+	        ylabel = "dlcaps / (μF / cm²)",
+		    clear = true,  
+		)
+		High_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_High_κ.voltages,
+		    Landstorfer_High_κ.dlcaps,
+		    color = :blue,
+		    linestyle = :dot,
+		    label = "κ = 40",
+		    clear = false,
+		)
+		
+		capsplot_κ(vis_κ, sys_pb)
+		reveal(vis_κ)
+	catch
+	end
+end
+
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
 	f,
@@ -2999,9 +3167,18 @@ function pnp_bcondition(
 	(; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
 
 	bulkbcondition(f, u, bnode, data; region = Γ_bulk)
-	
-	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
-	
+
+	if user_input_model.BC_Select == "Dirichlet"
+		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+	    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
+	    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
+
+	elseif user_input_model.BC_Select == "Robin"
+		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+
+
+	else
+		#continue
 	#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
  	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
  	#for ic in cspecies 
@@ -3011,7 +3188,9 @@ function pnp_bcondition(
 		#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
 		#end
    #end
-	
+	end
+		
+		
 	if bnode.region == Γ_we && model == elydata_Gold
 		we_breactions(f, u, bnode, data)
 	end
@@ -4379,159 +4558,6 @@ end
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
 plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 
-# ╔═╡ 2d5264ce-3ef0-4871-9d84-028806b58d40
-function pnp_bcondition_dl(f, u, bnode, data::ElectrolyteData)
-    (; iϕ, Γ_we, ϕ_we) = data
-
-    ## Dirichlet ϕ=ϕ_we at Γ_we
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-	
-	## Robin ϕ=dϕ₀/dx
-	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
-	
-	if model == elydata_Gold
-		we_breactions(f, u, bnode, data)
-	end
-
-    return bulkbcondition(f, u, bnode, data)
-end
-
-
-# ╔═╡ 4b57f8e9-eb78-429f-b3ed-e3904ef00aa0
-function pb_bcondition_dl(f, u, bnode, data)
-    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
-	
-    ## Dirichlet ϕ=ϕ_we at Γ_we
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_bulk, value = data.ϕ_bulk)
-    boundary_dirichlet!(f, u, bnode, species = ip, region = Γ_bulk, value = data.p_bulk)
-
-	## Robin ϕ=dϕ₀/dx
-	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap, C_gap * (ϕ_we - ϕ_pzc))
-
-
-    return bulkbcondition(f, u, bnode, data)
-end
-
-# ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
-begin
-	if double_layer_curve
-		#pb
-		sys_pb = PBSystem(grid; celldata = deepcopy(model), bcondition = pb_bcondition_dl)
-		result_pb = capscalc(sys_pb, molarities)
-
-		#pnp
-		reaction_arg = model == elydata_Gold ? (; reaction=reaction) : NamedTuple()
-		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition_dl, celldata = deepcopy(model), reaction_arg)
-
-		result_pnp = capscalc(sys_pnp, molarities)
-	else 
-		result_pb = nothing
-		result_pnp = nothing
-	end
-end
-
-# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann")
-    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck")
-
-    reveal(vis)
-end
-
-# ╔═╡ 50ccc291-3625-4639-afd1-5209899d904e
-let
-	if is_Landstorfer
-		f = Figure(size = (300, 300))
-	    result = result_pb
-	    l = 1 / length(result)
-		ϕ0_pzc = 0.972
-		
-		ax = Axis(f[1, 1], xlabel="φ / (V vs φ_pzc)", ylabel="dlcaps / (μF / cm²)", title="CSV Plot", limit = (0, 50))
-	
-		if model_key == "Landstorfer_NaClO₄ model"
-			Low_c0 = lines!(ax, Landstorfer_NaClO₄_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-			High_c0 = lines!(ax, Landstorfer_NaClO₄_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaClO₄_100mM.dlcaps, color = :red, linestyle = :dash)
-		else	
-			Low_c0 = lines!(ax, Landstorfer_NaF_5mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_5mM.dlcaps, color = :darkblue, linestyle = :dash)
-			High_c0 = lines!(ax, Landstorfer_NaF_100mM.voltages .+ ϕ0_pzc, Landstorfer_NaF_100mM.dlcaps, color = :red, linestyle = :dash)
-		end
-		
-	    k = []  
-	    legend_labels = [model_key*"\t 5mM", model_key*"\t 100mM"]  
-		
-		for i in 1:length(result)
-		    c = RGB(i * l, 0.0, 1 - i * l)
-		    v = result_pb[i].voltage_range
-		    cdl = result_pb[i].dlcaps / (μF / cm^2)
-		    
-		    minlength = min(length(v), length(cdl))
-		    push!(k, lines!(ax, v[1:minlength], cdl[1:minlength], color=c, label="Result $i"))
-		
-		    m = molarities[i]
-		    push!(legend_labels, "LiquidElectrolyte $m M")
-		end
-	    
-		Legend(f[1, 1], [Low_c0, High_c0, k...], legend_labels, halign = :left, valign =:top, tellheight = false, tellwidth = false, framevisible = false)  
-	    
-		 
-	else
-		results = [
-		    ("Poisson-Boltzmann", result_pb),
-		    ("Poisson-Nernst-Planck", result_pnp)
-		]
-		plots = []
-		
-		for (name, result) in results
-		    try
-		        if !isempty(result)
-		            push!(plots, (name, result))
-		        end
-		    catch
-		        continue
-		    end
-		end
-		
-	    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, title="Compare PB & PNP")
-	    capsplot_v(vis, plots)
-	    reveal(vis)
-	end
-	
-end
-
-# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
-begin
-	try
-		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-		Low_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_Low_κ.voltages,
-		    Landstorfer_Low_κ.dlcaps,
-		    color = :black,
-		    linestyle = :dot,
-		    label = "κ = 0",
-			xlimits = (-0.5, 0.5),
-	        xlabel = "φ / (V vs φ_pzc)",
-	        ylabel = "dlcaps / (μF / cm²)",
-		    clear = true,  
-		)
-		High_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_High_κ.voltages,
-		    Landstorfer_High_κ.dlcaps,
-		    color = :blue,
-		    linestyle = :dot,
-		    label = "κ = 40",
-		    clear = false,
-		)
-		
-		capsplot_κ(vis_κ, sys_pb)
-		reveal(vis_κ)
-	catch
-	end
-end
-
 # ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
 function pb_bcondition(f, u, bnode, data)
     (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
@@ -4646,6 +4672,7 @@ floataside(
 # ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
 # ╠═f18dc873-1c9d-46d3-9596-92d28705e894
+# ╠═12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
 # ╟─e1e0ca0f-7f88-40f0-850e-590b25da0331
 # ╠═0db74a70-af86-492c-affb-9de62ffe4455
