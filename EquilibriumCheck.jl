@@ -1376,6 +1376,108 @@ begin
 	end
 end
 
+# ╔═╡ d377af90-9b7d-4fd9-8bc8-d93e58617542
+function iv_curve_axis(ivresult;
+    cutoff = -0.4,
+    showlegend = true,
+    #title = "IV Curve",
+    iohminus = iohminus,
+    data_dir = "./catmap_CO2R_data",
+)
+
+    # ---- data from simulation ----
+    v_all = ivresult.voltages
+    mask  = v_all .< cutoff
+    volts = v_all[mask]
+
+    # currents(ivresult, iohminus) 
+    I_sim = abs.(currents(ivresult, iohminus))[mask] .* (cm^2/mA)
+    #I_sim = max.(I_sim, eps(Float64))
+
+    # ---- load csvs ----
+    table  = readdlm(joinpath(data_dir, "IV-Ringe-digitized.csv"), ',', Float64, '\n')
+    df_v   = table[:, 1]
+    df_I   = abs.(table[:, 2])
+    df_I   = max.(df_I, eps(Float64))
+
+    table2 = readdlm(joinpath(data_dir, "Ringe-theorical.csv"), ',', Float64, '\n')
+    df2_v  = table2[:, 1]
+    df2_I  = abs.(table2[:, 2])
+    df2_I  = max.(df2_I, eps(Float64))
+
+    table3 = readdlm(joinpath(data_dir, "Ringe-experimental.csv"), ',', Float64, '\n')
+    df3_v  = table3[:, 1]
+    df3_I  = abs.(table3[:, 2])
+    df3_I  = max.(df3_I, eps(Float64))
+
+    # ---- FIGURE STYLE (match conc_vs_voltage_axis) ----
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ \mathrm{(V)}}",
+        ylabel = L"\mathbf{I}\;(\mathrm{mA/cm^2})",
+        yscale = log10,
+        limits = ((-1.25, -0.50), (1e-11, 1e2)),
+    )
+
+	xt = [-1.2, -1.0, -0.8, -0.6]
+    ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+
+    yt_vals = 10.0 .^ (0:-3:-9)
+    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax.yticks = (yt_vals, yt_lbls)
+
+    ax.spinewidth = 5.5
+    ax.xtickwidth = 2.0
+    ax.ytickwidth = 2.0
+    ax.xticksize  = 8
+    ax.yticksize  = 8
+    ax.xlabelsize = 25
+    ax.ylabelsize = 25
+    ax.xticklabelsize = 25
+    ax.yticklabelsize = 25
+
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    ax.xlabelpadding = 10
+    ax.ylabelpadding = 10
+    ax.xlabelfont = :bold
+
+    # ---- PLOTS ----
+    # simulation line
+    lines!(ax, volts, I_sim; color=:green, linewidth=5, label="e⁻, we")
+
+
+	"""	
+    # digitized (cross)
+    scatter!(ax, df_v, df_I;
+        marker = :xcross,
+        markersize = 12,
+        color = :red,
+        label = "Ringe et. al"
+    )
+	"""
+
+    # theoretical (circle)
+    scatter!(ax, df2_v, df2_I;
+        marker = :circle,
+        markersize = 8,
+        color = :blue,
+        label = "Ringe et. al : Theoretical"
+    )
+
+    # experimental (triangle up)
+    scatter!(ax, df3_v, df3_I;
+        marker = :utriangle,
+        markersize = 12,
+        color = :magenta,
+        label = "Ringe et. al : Experimental"
+    )
+
+    showlegend && axislegend(ax, position=:rt)
+
+    return fig
+end
+
 # ╔═╡ 686ac3dc-c191-4575-ba0c-d4c2551474b5
 md"""
 ### Regression Test
@@ -2511,13 +2613,13 @@ function conc_vs_voltage_axis(result; useonly_pH=false, showlegend=false)
 
  #Species text 	
 	# CO	
-	text!(ax, -1.15, 0.3, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
-	text!(ax, -0.90, 0.00000018, text=L"\mathrm{H^+}", color=colors[ihplus], fontsize=24, font = "sans-bold")
-	text!(ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
-	text!(ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
-	text!(ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
-	text!(ax, -0.90, 8e-10, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
-	text!(ax, -1.15, 0.00024, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")
+	#text!(ax, -1.15, 0.3, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
+	#text!(ax, -0.90, 0.000005, text=L"\mathrm{H^+}", color=colors[ihplus], fontsize=24, font = "sans-bold")
+	#text!(ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
+	#text!(ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
+	#text!(ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
+	#text!(ax, -0.90, 7e-9, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
+	#text!(ax, -1.15, 0.00024, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")
 
 	
     # --- PLOT ---
@@ -2602,13 +2704,13 @@ begin
 	
 	    addplot_ax!(ax, tsol(vshow), vshow; clear=true)
 
-		text!(ax, 1e-10, -0.5, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
-		text!(ax, 4e-11, -6.6, text=L"\mathrm{H}^+", color=colors[ihplus], fontsize=24, font = "sans-bold")
-		text!(ax, 1.5e-9, -5.2, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
-		text!(ax, 7e-10, -3, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
-		text!(ax, 4e-11, -2.4, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
-		text!(ax, 4e-11, -9, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
-		text!(ax, 4e-11, -4.2, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")	
+		#text!(ax, 1e-10, -0.5, text=L"\mathrm{K^+}", color=colors[ikplus], fontsize=24, font = "sans-bold")
+		#text!(ax, 4e-11, -6.6, text=L"\mathrm{H}^+", color=colors[ihplus], fontsize=24, font = "sans-bold")
+		#text!(ax, 1.5e-9, -5.2, text=L"\mathrm{CO_3^{2-}}", color=colors[ico3], fontsize=24, font = "sans-bold")	
+		#text!(ax, 7e-10, -3, text=L"\mathrm{HCO_3^-}", color=colors[ihco3], fontsize=24, font = "sans-bold") 
+		#text!(ax, 4e-11, -2.4, text=L"\mathrm{CO_2}", color=colors[ico2], fontsize=24, font = "sans-bold")
+		#text!(ax, 4e-11, -9, text=L"\mathrm{OH^-}", color=colors[iohminus], fontsize=24, font = "sans-bold")
+		#text!(ax, 4e-11, -4.2, text=L"\mathrm{CO}", color=colors[ico], fontsize=24, font = "sans-bold")	
 
 
 		
@@ -4518,6 +4620,9 @@ conc_vs_voltage_axis_compare(ivresult; useonly_pH = false)
 # ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
 conc_vs_voltage_axis(ivresult; useonly_pH = false)
 
+# ╔═╡ 22244e24-5b56-4933-8a09-44b601f116c3
+iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true)
+
 # ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
 function ivsweep_over_L(model;
  	L_values = round.(Int, range(80, 1500, length=6)),
@@ -4825,7 +4930,7 @@ floataside(
 # ╠═180c12b0-d410-4a5f-97bb-226e6624a39b
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
-# ╟─afb700c7-ef29-4c13-b9ea-1d40ea9534dd
+# ╠═afb700c7-ef29-4c13-b9ea-1d40ea9534dd
 # ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
@@ -4841,6 +4946,8 @@ floataside(
 # ╠═c10697b7-6e67-4a5b-937e-09d97ca5b7f8
 # ╠═f88ecd40-1b80-4cca-a312-b23f7cfb0ad6
 # ╠═754ab149-7a65-4227-ba8b-d7d48e0092b8
+# ╠═22244e24-5b56-4933-8a09-44b601f116c3
+# ╠═d377af90-9b7d-4fd9-8bc8-d93e58617542
 # ╟─686ac3dc-c191-4575-ba0c-d4c2551474b5
 # ╠═d1ab199f-1a40-4377-bca3-7f72f3cde3a9
 # ╠═32eb1122-5013-4a8e-be54-18a30c151515
