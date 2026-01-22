@@ -3,6 +3,7 @@ scaler = 'ThermodynamicScaler'
 rxn_expressions = [
     #'CO2_g + *_t <-> CO2*_t',
     #'CO2*_t + H2O_g + ele_g <-> COOH*_t + OH_g',
+
     #'COOH*_t + H2O_g + ele_g <-> COOH-H2O-ele_t <-> CO*_t + H2O_g + OH_g; beta=0.59',
     #'CO*_t <-> CO_g + *_t',
     #'H2_g <-> H2_g',
@@ -49,6 +50,7 @@ voltage_diff_drop = 0.5
 
 gas_thermo_mode = 'ideal_gas' 
 adsorbate_thermo_mode = 'harmonic_adsorbate'
+beta_mode = 'none'
 electrochemical_thermo_mode = 'hbond_surface_charge_density' #hbond_surface_charge_density' #homogeneous_field' #simple_electrochemical'
 #electrochemical_thermo_mode = 'simple_electrochemical'
 #specify field in V/Ang
