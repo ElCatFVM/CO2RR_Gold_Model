@@ -19,7 +19,7 @@ end
 # ╔═╡ 91ac9e35-71eb-4570-bef7-f63c67ce3881
 begin
     using Pkg
-    Pkg.activate(@__DIR__)
+    Pkg.activate(joinpath(@__DIR__, ".."))
 	using Revise
     using LiquidElectrolytes
 	using CatmapInterface
@@ -274,7 +274,7 @@ $*CO_{(ad)} \rightleftharpoons CO_{(aq)} + *$
 
 # ╔═╡ 6b5cf93c-0df3-4a18-8786-502361736838
 begin
-	catmap_params 		= CatmapInterface.parse_catmap_input("catmap_CO2R_data/catmap_CO2R_template.mkm")
+	catmap_params 		= CatmapInterface.parse_catmap_input("../data/catmap_CO2R_data/catmap_CO2R_template.mkm")
 	rn 					= create_reaction_network(catmap_params; symbolic_formation_energies = false)
 	odesys 				= convert(ODESystem, rn; combinatoric_ratelaws=false)
 	odesys 				= CatmapInterface.liquidize(odesys, catmap_params)
@@ -306,13 +306,6 @@ where the gap capacitance between the working electrode and the reaction plane (
 
 __Question is the pH-dependence only in the reaction rate constants (i.e. activity of OH⁻ must be set to 0)?__
 """
-
-# ╔═╡ 646337bb-1dbd-4d6d-a68c-4e8362c8861b
-begin
-	energy = CSV.read("catmap_CO2R_data/catmap_CO2R_energies.txt", DataFrame; delim='\t', header=true)
-	g_energy = energy[energy.surface_name .== "None", :]
-	t_energy = energy[energy.surface_name .== "Au", :]
-end
 
 # ╔═╡ d0093605-0e35-4888-a93c-8456c698e6f0
 md"""
@@ -516,14 +509,14 @@ typeof(odesys)
 begin
 	
 	#computed capacitance plot(Fig 13 & Fig 14)
-	Landstorfer_NaF_5mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.005M.csv", DataFrame);
-	Landstorfer_NaF_100mM = CSV.read("Landstorfer_data/Landstorfer_NaF_0.1M.csv", DataFrame);
-	Landstorfer_NaClO₄_100mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
-	Landstorfer_NaClO₄_5mM = CSV.read("Landstorfer_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+	Landstorfer_NaF_5mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaF_0.005M.csv", DataFrame);
+	Landstorfer_NaF_100mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaF_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_100mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
+	Landstorfer_NaClO₄_5mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
 	
 	#Solvation number plot(Fig 7)
-	Landstorfer_Low_κ = CSV.read("Landstorfer_data/Landstorfer_kappa0.csv", DataFrame);
-	Landstorfer_High_κ = CSV.read("Landstorfer_data/Landstorfer_kappa40.csv", DataFrame);
+	Landstorfer_Low_κ = CSV.read("../data/E.Acta_Cap_data/Landstorfer_kappa0.csv", DataFrame);
+	Landstorfer_High_κ = CSV.read("../data/E.Acta_Cap_data/Landstorfer_kappa40.csv", DataFrame);
 end;
 
 # ╔═╡ 44258eea-f114-4dfe-aa61-1e2cac31baa4
@@ -809,7 +802,7 @@ let
 	    ax = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
 	
 	    # Experimental Data Plotting based on M.T.M Koper
-	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+	    raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
 	    pres = vec(Matrix(raw[1:1, :]))
 	    sub = Matrix(raw[4:end, :])
 	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
@@ -939,7 +932,7 @@ let
        # limits = ((-1.25, 0.8), (-0.5, 0.07))
     )
 
-	csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
+	csv_path = "../data/Langmuir_CV_data/Figure_5.csv"  
 	unit_scale = cm^2/mA 
 
     raw = CSV.read(csv_path, DataFrame; header = false)
@@ -3008,7 +3001,7 @@ let
     
     colors = (:pink, :skyblue, :lightgreen) 
     
-    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_1.csv", DataFrame; header=false)
+    raw_df = CSV.read("../data/Langmuir_CV_data/Figure_1.csv", DataFrame; header=false)
 
     facet_row = collect(raw_df[1, :])
     datatype_row = collect(raw_df[2, :])
@@ -3041,7 +3034,7 @@ let
     
     colors = (:pink, :skyblue, :lightgreen) 
     
-    raw_df = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_1.csv", DataFrame; header=false)
+    raw_df = CSV.read("../data/Langmuir_CV_data/Figure_1.csv", DataFrame; header=false)
 
     facet_row = collect(raw_df[1, :])
     datatype_row = collect(raw_df[2, :])
@@ -3330,7 +3323,7 @@ let
 		scatter!(ax, pnpresult.voltages, total_current, markersize = 12,
 	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
 	    # Experimental Data Plotting based on M.T.M Koper
-	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+	    raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
 	    pres = vec(Matrix(raw[1:1, :]))
 	    sub = Matrix(raw[4:end, :])
 	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
@@ -3659,7 +3652,7 @@ let
 	
 	
 	    # Experimental Data Plotting based on M.T.M Koper
-	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+	    raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
 	    pres = vec(Matrix(raw[1:1, :]))
 	    sub = Matrix(raw[4:end, :])
 	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
@@ -3715,7 +3708,7 @@ let
 	       # limits = ((-1.25, 0.8), (-0.5, 0.07))
 	    )
 	
-		csv_path = "Langmuir 2021, 37, 5707−5716/Figure_5.csv"  
+		csv_path = "../data/Langmuir_CV_data/Figure_5.csv"  
 		unit_scale = cm^2/mA 
 	
 	    #Experimental (Koper, Langmuir 2021, Fig.3)
@@ -4286,8 +4279,8 @@ cell, ivresult = simulate_CO2R(grid, model)
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
 let
 	try
-		table = readdlm("./catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-		raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_3.csv", DataFrame; header=false)
+		table = readdlm("../data/catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+		raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
 	
 		x_exp_all = table[:, 1]
 		y_exp_all = table[:, 2]
@@ -4691,7 +4684,6 @@ floataside(
 # ╠═6b5cf93c-0df3-4a18-8786-502361736838
 # ╟─d2c0642d-dfa5-4a76-bd36-ac4a735a3299
 # ╟─06d45088-ab8b-4e5d-931d-b58701bf8464
-# ╠═646337bb-1dbd-4d6d-a68c-4e8362c8861b
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
 # ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
