@@ -18,18 +18,16 @@ function pressure_varied_sweep(
 end
 
 
+
 function sweep_over_L(
-    model;
+    elydata;
     L_values,
     bcond,
-    voltages,
-    nperiods,
-    sweepfun,                
-    eneutral = true,
-    tunnel   = false,
-    bikerman = true,
+    sweepfun,
+    eneutral::Bool = true,
     reaction = nothing,
-    store_solutions = true,
+    store_solutions::Bool = true,
+    sweep_kwargs...
 )
     results = Dict{Float64, Any}()
 
@@ -47,15 +45,15 @@ function sweep_over_L(
         pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction_kw...)
 
         results[L] = sweepfun(
-            pnpcell;
-            voltages = voltages,
-            nperiods = nperiods,
-            store_solutions = store_solutions,
+            elydata;
+            sweep_kwargs...
         )
     end
 
     return results
 end
+
+
 
 
 
@@ -66,7 +64,7 @@ function scanrate_varied_sweep(
     eneutral = false,
     tunnel   = false,
     bikerman = true,
-    sweepfun = sweep2,
+    sweepfun,
     sweep_kwargs...
 )
     sweep_vec = Vector{Any}(undef, length(scanrates))
@@ -80,7 +78,7 @@ function scanrate_varied_sweep(
             scanup   = user_input_cv.scanup
         )
         saws[i] = saw
-        sweep_vec[i] = sweepfun(elydata, saw; eneutral=eneutral, tunnel=tunnel, bikerman=bikerman, sweep_kwargs...)
+        sweep_vec[i] = sweepfun(elydata; eneutral=eneutral, tunnel=tunnel, bikerman=bikerman, sweep_kwargs...)
     end
 
     return (scanrates=scanrates, saws=saws, sweeps=sweep_vec)
@@ -88,26 +86,25 @@ end
 
 
 function run_pH_sweep(
-    elydata_base;
+    elydata_base, sweepfun;
     pH_values = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0],
     hplus_index::Int = 2,
     ohminus_index::Int = 6,
-    eneutral::Bool = true,
-    tunnel::Bool = false,
+    sweep_kwargs...
 )
-    results = Any[]
+    recs = Vector{Any}(undef, length(pH_values))
 
-    for pH in pH_values
+    for (k, pH) in pairs(pH_values)
         ely = deepcopy(elydata_base)
         ely.c_bulk[hplus_index]  = 10.0^(-pH)
         ely.c_bulk[ohminus_index] = 10.0^(-14 + pH)
 
-        rec = sweep(ely; eneutral=eneutral, tunnel=tunnel)
-        push!(results, rec)
+        recs[k] = sweepfun(ely; sweep_kwargs...)
     end
 
-    return (pH_values = pH_values, results = results)
+    return collect(zip(pH_values, recs))
 end
+
 
 
  # module?

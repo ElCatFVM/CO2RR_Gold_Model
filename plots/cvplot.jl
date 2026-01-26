@@ -420,45 +420,37 @@ function plot_pressure_varied_sweep(P_recs;
     return fig
 end
 
-function plot_pH_sweep_iv(pH_sweep; species, title="IV vs pH")
-    vis = GridVisualizer(;
-        Plotter = CairoMakie,
-        size   = (800, 520),
-        title  = title,
-        xlabel = L"\phi_{we}\;(\mathrm{V\;vs\;SHE})",
-        ylabel = L"I\;(\mathrm{mA/cm^2})",
-        legend = :rt,
-    )
+function plot_pH_varied_sweep(pH_recs;
+                              species=iohminus,
+                              fig_size=(1600, 900),
+                              scale=cm^2/mA)
 
-    pH_values = pH_sweep.pH_values
-    recs      = pH_sweep.results
-    n         = length(recs)
+    fig = Figure(size = fig_size)
+    ax = Axis(fig[1, 1],
+              xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+              ylabel = L"I (mA/cm^2)")
 
-    cols = Makie.resample_cmap(:winter, n)
+    n = length(pH_recs)
+    cols = [RGB(1 - t, 0, t) for t in LinRange(0, 1, n)]
 
-    for (k, (pH, rec)) in enumerate(zip(pH_values, recs))
+    plots  = Any[]
+    labels = String[]
+
+    for j in 1:n
+        pH, rec = pH_recs[j]
+        label = "pH = $(pH)"
+        push!(labels, label)
+
         ivres = hasproperty(rec, :ivresult) ? getproperty(rec, :ivresult) : rec
 
-        volts = vec(ivres.voltages)
-        Iall  = vec(currents(ivres, species)) .* (cm^2/mA)
-
-        m = min(length(volts), length(Iall))
-        volts = volts[1:m]
-        Iall  = Iall[1:m]
-
-        scalarplot!(
-            vis,
-            volts,
-            Iall;
-            clear = (k == 1),
-            color = cols[k],
-            label = "pH = $(pH)",
-            markershape = :none,
-        )
+        I = currents(ivres, species) .* scale
+        push!(plots, lines!(ax, ivres.voltages, I; color = cols[j]))
     end
 
-    return reveal(vis)
+    Legend(fig[1, 2], plots, labels, "Theoretical"; framevisible=true)
+    return fig
 end
+
 
 
 
@@ -529,5 +521,47 @@ function plot_iv_with_experiment(pnpresult, ico;
         end
     end
 
+    return fig
+end
+
+function plot_scanrate_sweeps(
+    sweep_vec, scanrates;
+    species=iohminus,
+    fig_size=(1600, 900),
+    scale=cm^2/mA,
+    legend_title="Scan Rates (V/s)",
+    highlight_index = nothing,
+    highlight_color = RGB(1, 0.2, 0.2),
+    highlight_lw = 4,
+    default_lw = 1,
+)
+    fig = Figure(size = fig_size)
+    ax  = Axis(fig[1, 1], ylabel = L"I (mA/cm²)", xlabel = L"φ (V vs SHE)")
+
+    n = length(sweep_vec)
+    cols = [RGB(0.2 + 0.6*(i/n),
+                0.3 + 0.5*(1 - i/n),
+                0.8 - 0.7*(i/n)) for i in 1:n]
+
+    plot_objs = Any[]
+    labels    = String[]
+
+    for (j, rec) in enumerate(sweep_vec)
+        push!(labels, "$(scanrates[j])\t\t ")
+
+        color_j = cols[j]
+        lw_j    = default_lw
+
+        if highlight_index !== nothing && j == highlight_index
+            color_j = highlight_color
+            lw_j    = highlight_lw
+        end
+
+        I = currents(rec, species) .* scale
+        line = lines!(ax, rec.voltages, I; linewidth=lw_j, color=color_j)
+        push!(plot_objs, line)
+    end
+
+    Legend(fig[1, 2], plot_objs, labels, legend_title; framevisible=true)
     return fig
 end

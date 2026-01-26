@@ -22,12 +22,8 @@ function sweep_over_L(
     model;
     L_values,
     bcond,
-    voltages,
-    nperiods,
     sweepfun,                
     eneutral = true,
-    tunnel   = false,
-    bikerman = true,
     reaction = nothing,
     store_solutions = true,
 )
@@ -48,8 +44,8 @@ function sweep_over_L(
 
         results[L] = sweepfun(
             pnpcell;
-            voltages = voltages,
-            nperiods = nperiods,
+           # voltages = voltages,
+           # nperiods = nperiods,
             store_solutions = store_solutions,
         )
     end

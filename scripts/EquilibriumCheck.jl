@@ -50,23 +50,20 @@ begin
     using UUIDs: uuid1
 end
 
-# ╔═╡ 68fe205c-9dd0-441b-9f12-3ddc12ec0a0d
-begin
-	include(joinpath(@__DIR__, "..", "src", "cv.jl"))
-	include(joinpath(@__DIR__, "..", "plots", "cvplot.jl"))
-end;
-
 # ╔═╡ 504409e6-ad8e-4873-aee0-1ca5fe8c0bf2
 include(joinpath(@__DIR__, "..", "plots", "koper_figure_plots.jl"));
+
+# ╔═╡ 43d6cbda-a994-4d53-8779-f374c3e173cf
+include(joinpath(@__DIR__, "..", "plots", "cvplot.jl"))
 
 # ╔═╡ 588e9b21-404f-4092-bf83-7a6d6d39282a
 include(joinpath(@__DIR__, "..", "plots", "capsplot.jl"));
 
-# ╔═╡ a94bc4e1-506f-4e40-bfe8-1ce7e6093974
-pkgdir(CatmapInterface)
+# ╔═╡ 393b4198-a4a7-40fd-95c4-d1aea60c103b
+include(joinpath(@__DIR__, "..", "src", "cv.jl"))
 
-# ╔═╡ 22f2574c-abbe-4a06-89e9-14635fb30932
-pkgdir(LiquidElectrolytes)
+# ╔═╡ be3458a6-81da-4db1-9309-78219308ec77
+include(joinpath(@__DIR__, "..", "src", "dlcap.jl"))
 
 # ╔═╡ bd8134d8-5a69-486e-8429-7cf810b3ccbe
 Pkg.status()
@@ -177,9 +174,6 @@ begin
 		"CO2_t" => ico2_t,
 	)
 end;
-
-# ╔═╡ a1b895c2-d3d1-4afd-bd85-da575effef1c
-@which boundary_neumann!
 
 # ╔═╡ 00947475-c96e-4ecc-a1ef-5be5e3e3c864
 begin
@@ -341,9 +335,6 @@ The free energies $ΔG_f$ of the surface species are corrected according to the 
 $ΔG_f(σ) = a_σ~σ + b_σ~σ^2$
 """
 
-# ╔═╡ 42efe97d-bf43-42b3-8ff0-e3d98a7597f1
-ex_grid = ExtendableGrids.simplexgrid(ExtendableGrids.geomspace(0, 4000* μm, 1.0e-6 	* μm, 1.0	* μm))
-
 # ╔═╡ 6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 md"""
 ### Electrolyte Data
@@ -455,6 +446,11 @@ function Potassium_γ!(γ, c, p, electrolyte)
     return γ
 end
 
+# ╔═╡ 53b4dc3e-95f0-4eee-ba1c-68c222638acd
+md"""
+### Boundary Condition Function
+"""
+
 # ╔═╡ 2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 md"""
 ## Double Layer Capacitance
@@ -464,9 +460,6 @@ md"""
 md""" 
 ### System Setup
 """
-
-# ╔═╡ 952a26ce-2610-48cc-9158-eda816da3a1c
-molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
 
 # ╔═╡ 4656ee04-ae86-442f-b37c-c5563170f992
 md"""
@@ -542,46 +535,15 @@ md"""
 Run scan rate varied CV calculation $(@bind scan_rate_varied_checkbox PlutoUI.CheckBox())
 """
 
-# ╔═╡ d38c2b43-4d8b-4be7-8d77-5a30da384541
-# ╠═╡ disabled = true
-#=╠═╡
-function sweep2(pnpdata, sawtooth; eneutral = true, tunnel = false, bikerman = true)
-    celldata = deepcopy(pnpdata)
-    celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata, reaction_arg)
-    return result = cvsweep(
-        pnpcell;
-        voltages = sawtooth,
-        nperiods,
-        store_solutions = true,
-    )
+# ╔═╡ e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
+md"""
+#### Pressure CV function
+"""
 
-end
-  ╠═╡ =#
-
-# ╔═╡ 1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
-#=╠═╡
-begin
-	if scan_rate_varied_checkbox
-	    scanrates = [0.002, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0, 10.0] 
-	
-	    sweep_vec = Vector{Any}(undef, length(scanrates))
-	
-	    for (i, sr) in pairs(scanrates)
-	        sawtooth = SawTooth(
-	            scanrate = sr,
-	            vmin     = user_input_cv.vmin,
-	            vmax     = user_input_cv.vmax,
-	            scanup   = user_input_cv.scanup
-	        )
-	        sweep_vec[i] = sweep2(elydata_Gold, sawtooth; eneutral = false, tunnel = 
-								  false)
-	    end
-	end
-end
-
-  ╠═╡ =#
+# ╔═╡ 56814250-16b2-4578-820d-2096998c84f4
+md"""
+Run pressure varied cyclic voltammetry $(@bind pressure_varied_checkbox PlutoUI.CheckBox())
+"""
 
 # ╔═╡ eb920b6e-86a6-4dd6-8e66-6b7e27d81257
 md"""
@@ -592,78 +554,6 @@ md"""
 md"""
 #### Facet plots
 """
-
-# ╔═╡ de2baeae-eaf6-4565-9ed1-f2eb8c666839
-md"""
-#### Pressure plots
-"""
-
-# ╔═╡ 56814250-16b2-4578-820d-2096998c84f4
-md"""
-Run pressure varied cyclic voltammetry $(@bind pressure_varied_checkbox PlutoUI.CheckBox())
-"""
-
-# ╔═╡ 8fc7877e-c4e4-40d1-a720-7806f7dbde0a
-#=╠═╡
-let
-	try
-	    fig = Figure(size = (1600, 900))
-	       ax = Axis(fig[1, 1],
-	        xlabel = L"φ (V vs SHE)",
-	        ylabel = L"I (mA/cm²)",
-	        yscale = log10,
-	        yminorticksvisible = true,  
-	        yminorticks = IntervalsBetween(5),
-			#limits = ((-1.3, -0.7),(1e-4, 1e2))
-	    )
-	
-	
-	    # Experimental Data Plotting based on M.T.M Koper
-	    raw = CSV.read("Langmuir 2021, 37, 5707−5716/Figure_5.csv", DataFrame; header=false)
-	    pres = vec(Matrix(raw[1:1, :]))
-	    sub = Matrix(raw[4:end, :])
-	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-	    num_df = DataFrame(num, :auto)
-	    npairs = size(num_df, 2) ÷ 2
-	    pink, pblue = RGB(0.0, 0.7, 0.8), RGB(0.2, 0.5, 0.0)
-	    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
-	                 pink.g + t*(pblue.g-pink.g),
-	                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
-	
-	    plot_objs1 = []
-	    labels1 = String[]
-	    for j in 1:npairs
-	        xcol, ycol = 2j - 1, 2j
-	        label = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-	        push!(labels1, label)
-	        line = lines!(ax, num_df[!, xcol], (abs.(num_df[!, ycol])); color = cols1[j])
-	        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
-	        push!(plot_objs1, line)
-	    end
-	    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
-	
-	    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
-	    plot_objs2 = []
-	    labels2 = String[]
-	    for (j, rec) in enumerate(F5_vec)
-	        label2 = j == 1 ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
-	        push!(labels2, label2)
-	        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* cm^2/mA)); color = cols1[j])
-			#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
-	        push!(plot_objs2, line)
-	    end
-	    Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-  ╠═╡ =#
 
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
 #=╠═╡
@@ -759,6 +649,11 @@ end
 # ╔═╡ 1753c20f-9b53-4120-a8c8-e2b086f46f44
 md"""
 #### RDE_CV plots
+"""
+
+# ╔═╡ bb9ba12f-e98b-48de-b55a-d76b276ae952
+md"""
+Run boundary layer thickness varied cyclic voltammetry $(@bind BL_thickness_varied_checkbox PlutoUI.CheckBox())
 """
 
 # ╔═╡ b1e64332-95a4-46a5-a45d-457c26e3fc67
@@ -869,6 +764,9 @@ let
 	    end
 	end
 end
+
+# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+
 
 # ╔═╡ fe1e2a72-4772-4482-88da-f9e5f90e928a
 md"""
@@ -1525,6 +1423,11 @@ end
 
 # ╔═╡ 9d7d4d68-c9cc-4a42-a99d-ae25a1ab554c
 html"""<hr>"""
+
+# ╔═╡ d912cbca-ef9b-4319-8699-3fc7da8e73d2
+md"""
+### *User_input*
+"""
 
 # ╔═╡ e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
 begin
@@ -2824,15 +2727,85 @@ begin
 	end
 end
 
+# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
+function pb_bcondition(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+
+	if user_input_model.BC_Select == "Dirichlet"
+	    ## Dirichlet ϕ=ϕ_we at Γ_we
+	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
+	elseif user_input_model.BC_Select == "Robin"
+		## Robin ϕ=dϕ₀/dx 
+	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+	else
+		## neumann ϕ=dϕ₀/dx 
+	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	
+	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
 # ╔═╡ 924f8f5d-2cb0-4381-a522-509ff4c002b6
 begin
 	model_key = user_input_model[:model_choice]
-
 	model = model_key == "Gold_Model" ? elydata_Gold :
 	        model_key == "Landstorfer_NaClO₄ model" ? elydata_NaClO₄ :
 	        model_key == "Landstorfer_NaF model" ? elydata_NaF :
 			model_key == "Toy model" ? elydata_toy :
 	        error("Unknown model choice: $model_key")
+	molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
+end;
+
+# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
+function pnp_bcondition(
+	f,
+	u, #::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
+	bnode,
+	data
+)# where
+	#{Tval, Tv, Tc, Tp, Ti}
+	
+	(; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
+	
+	if user_input_model.BC_Select == "Dirichlet"
+		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+
+	elseif user_input_model.BC_Select == "Robin"
+		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+
+
+	else
+		#continue
+	#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
+ 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+ 	#for ic in cspecies 
+		#if ic == ico2 || ic == ico
+       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
+		#else
+		#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
+		#end
+   #end
+	end
+		
+		
+	if bnode.region == Γ_we && model == elydata_Gold
+		we_breactions(f, u, bnode, data)
+	end
+
+
+	
+	return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
+
+end;
+
+# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
+function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
+	kwargs 	 	= merge(solver_control, kwargs) 
+    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
+
+	cell, ivresult
 end;
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
@@ -2883,53 +2856,51 @@ function capscalc(sys; molarities =molarities)
 end
 
 
-# ╔═╡ 19ec21f5-4f20-4043-a5ee-200804cc87a1
-results_pH = run_pH_sweep(model; pH_values = [3, 6, 6.8, 10])
-
-# ╔═╡ f6f9443f-b72d-415f-9a0a-e21c5780fbf6
-plot_pH_sweep_iv(results_pH; species = ico)
-
-# ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
-function pnp_bcondition(
-	f,
-	u, #::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
-	bnode,
-	data
-)# where
-	#{Tval, Tv, Tc, Tp, Ti}
-	
-	(; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
-	
-	if user_input_model.BC_Select == "Dirichlet"
-		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
-
-	elseif user_input_model.BC_Select == "Robin"
-		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
-
-
-	else
-		#continue
-	#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
- 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
- 	#for ic in cspecies 
-		#if ic == ico2 || ic == ico
-       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
-		#else
-		#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
-		#end
-   #end
+# ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
+begin
+	if double_layer_curve
+		#pb
+		sys_pb = PBSystem(grid; bcondition = pb_bcondition,  celldata = deepcopy(model))
+		result_pb = capscalc(sys_pb)
+	else 
+		result_pb = nothing
 	end
+end
+
+# ╔═╡ 6ae58f3e-11d0-457d-a9eb-b08abe67f632
+length(result_pb[1].dlcaps)
+
+# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
+begin
+	try
+		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
+		Low_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_Low_κ.voltages,
+		    Landstorfer_Low_κ.dlcaps,
+		    color = :black,
+		    linestyle = :dot,
+		    label = "κ = 0",
+			xlimits = (-0.5, 0.5),
+	        xlabel = "φ / (V vs φ_pzc)",
+	        ylabel = "dlcaps / (μF / cm²)",
+		    clear = true,  
+		)
+		High_κ = scalarplot!(
+		    vis_κ,
+		    Landstorfer_High_κ.voltages,
+		    Landstorfer_High_κ.dlcaps,
+		    color = :blue,
+		    linestyle = :dot,
+		    label = "κ = 40",
+		    clear = false,
+		)
 		
-		
-	if bnode.region == Γ_we && model == elydata_Gold
-		we_breactions(f, u, bnode, data)
+		capsplot_κ(vis_κ, sys_pb)
+		reveal(vis_κ)
+	catch
 	end
-
-
-	
-	return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
-
-end;
+end
 
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
 begin
@@ -2944,12 +2915,24 @@ begin
 	end
 end
 
+# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
+let
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
+    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps))
+    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps))
+
+    reveal(vis)
+end
+
+# ╔═╡ 2640ee7f-109d-4dcc-b8af-3f854da1a323
+plot_caps_comparison(; model_key, result_pb, result_pnp)
+
 # ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
 function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     celldata = deepcopy(pnpdata)
     celldata.eneutral = eneutral
-	#reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = celldata)
+	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
+    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata)
     return result = cvsweep(
         pnpcell;
         voltages = sawtooth,
@@ -2959,31 +2942,63 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
 
 end
 
+# ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
+if pH_varied_checkbox
+	results_pH = run_pH_sweep(elydata_Gold, sweep; pH_values = [3, 10])
+	plot_pH_varied_sweep(results_pH; species = ico)
+end
+
+# ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
+if scan_rate_varied_checkbox
+	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, user_input_cv; scanrates = [0.01, 0.5, 5], sweepfun = sweep)
+	plot_scanrate_sweeps(scresult, sc)
+end
+
+# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
+if pressure_varied_checkbox
+	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.3], ispec = 5)
+	plot_pressure_varied_sweep(P_recs)
+end
+
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 if CV
 	pnpresult = sweep(model; eneutral = false, tunnel = false)
 end
 
 # ╔═╡ 7da046bf-d3b1-43a0-bdba-89b4da2f6be3
-plot_time_voltage_and_dt(pnpresult, sawtooth)
+if CV
+	plot_time_voltage_and_dt(pnpresult, sawtooth)
+end
 
 # ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
-plot_cv_current(pnpresult, elydata_Gold; species = ico)
+if CV
+	plot_cv_current(pnpresult, elydata_Gold; species = ico)
+end
 
 # ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
-plot_conc_time_electrode(pnpresult, bulk)
+if CV
+	plot_conc_time_electrode(pnpresult, bulk)
+end
 
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
-plot_conc_profile_logx(pnpresult, bulk, X, 13)
+if CV
+	plot_conc_profile_logx(pnpresult, bulk, X, 13)
+end
 
 # ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
-cv_conc_gif(pnpresult, bulk, X; file="concentrations_cv.gif", framerate=8, step=3)
+if CV
+	cv_conc_gif(pnpresult, bulk, X; file="concentrations_cv.gif", framerate=8, step=3)
+end
 
 # ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
-plot_cv_model_vs_koper_facets(pnpresult)
+if CV
+	plot_cv_model_vs_koper_facets(pnpresult)
+end
 
 # ╔═╡ 74c43d72-3a23-4a24-a4ae-8b18b245610a
-plot_iv_with_experiment(pnpresult, ico)
+if CV
+	plot_iv_with_experiment(pnpresult, ico)
+end
 
 # ╔═╡ 69e6f136-e31c-4d71-a9a7-ea9ca6530669
 let
@@ -3115,127 +3130,48 @@ let
 	end
 end
 
-# ╔═╡ a42b1afb-86f2-4a11-8328-c726b614aaba
-begin
-	if pH_varied_checkbox
-		pH_var = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0]	
-	    pH_vec = Any[]  
-	    for p in pH_var
-	        ely_pressure = deepcopy(elydata_Gold)   
-	        ely_pressure.c_bulk[2] = 10.0.^(-p)
-			ely_pressure.c_bulk[6] = 10.0.^(-14+p)
-		#	ely_pressure.c_bulk[5] = base_CO2 .* p
-	
-	        pnp_rec = sweep(ely_pressure; eneutral=true, tunnel=false)
-	
-	        push!(pH_vec, pnp_rec)              
-	    end
-	end
-end
-
-# ╔═╡ df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
-let
-	try
-	    fig = Figure(size = (1600, 900))
-	    ax  = Axis(fig[1, 1],
-	        xlabel = L"\phi \, (\mathrm{V \; vs \; SHE})",
-	        ylabel = L"I \; (\mathrm{mA/cm^2})",
-	       # limits = ((-1.25, 0.8), (-0.5, 0.07))
-	    )
-	
-		csv_path = "../data/Langmuir_CV_data/Figure_5.csv"  
-		unit_scale = cm^2/mA 
-	
-	    #Experimental (Koper, Langmuir 2021, Fig.3)
-	    raw = CSV.read(csv_path, DataFrame; header = false)
-	    pres_labels = vec(Matrix(raw[1:1, :])) 
-	    sub  = Matrix(raw[4:end, :])
-	    num  = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-	    num_df = DataFrame(num, :auto)
-	
-	    npairs = size(num_df, 2) ÷ 2
-	
-	    exp_colors = [RGB(0.9 - (0.05 * i/npairs), 0.8 * (1 - i/npairs), 0.7 + 0.3 * i/npairs) for i in 1:npairs]
-	
-	
-	    exp_plots = Plot[] 
-	    exp_labels = String[]
-	
-	    for j in 1:npairs
-	        xcol, ycol = 2j - 1, 2j
-			label = "$(pres_labels[min(2j, length(pres_labels))]) pH"
-	        push!(exp_labels, label)
-	
-			#---normal scale---
-	        #h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
-			#---log scale---
-			h = lines!(ax, num_df[!, xcol], num_df[!, ycol]; color = exp_colors[j])
-	        push!(exp_plots, h)
-	    end
-	
-	    #Theoretical (LiquidElectrolytes.jl 결과)
-	    theo_colors = [RGB(0.6 - (0.2 * i/npairs), 0.5 * (1 - i/npairs), 0.3 + 0.6 * i/npairs) for i in 1:npairs]
-	
-	    theo_plots = Plot[]
-	    theo_labels = String[]
-	
-	    for j in 1:npairs
-	        rec = pH_vec[j]
-	   		label2 = "$(pres_labels[min(2j, length(pres_labels))]) pH"
-	        push!(theo_labels, label2)
-	
-	        j_tot = currents(rec, iohminus) .* unit_scale
-			#---normal scale---
-	        #h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
-			#---log scale---
-			h = lines!(ax, rec.voltages, j_tot; color = theo_colors[j], linestyle = :dash)
-	        push!(theo_plots, h)
-	    end
-	
-	    Legend(fig[1, 2], exp_plots,  exp_labels,  "Experimental"; framevisible = true)
-	    Legend(fig[1, 3], theo_plots, theo_labels, "Theoretical";  framevisible = true)
-	
-	    fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
-# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
-if pressure_varied_checkbox
-	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.3], ispec = 5)
-	plot_pressure_varied_sweep(P_recs)
-end
-
-# ╔═╡ 3960e081-090e-443f-b82c-06b703686e9f
-pressure_varied_sweep(elydata_Gold, sweepfun = sweep; Pvec = [0.1, 1], ispec = ico)
-
-# ╔═╡ e210999a-7ea5-47f7-aedb-f84fe77bd653
-sweep_over_L(
-    elydata_Gold;
-    bcond    = pnp_bcondition,
-    voltages = sawtooth,
-    nperiods = nperiods,
-    L_values = round.(range(100, 200, length=3)),
-    sweepfun = cvsweep
-)
-
-# ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
-function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
-	kwargs 	 	= merge(solver_control, kwargs) 
-    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
-	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
-
-	cell, ivresult
-end;
-
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
 cell, ivresult = simulate_CO2R(grid, model)
+
+# ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
+function ivsweep_over_L(model;
+ 	L_values = round.(Int, range(80, 1500, length=6)),
+    eneutral = true,
+	kwargs...)
+    results = Dict{Int, Any}()
+    kwargs 	 	= merge(solver_control, kwargs) 
+
+	cell, ivresult
+    for L in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+        #celldata.eneutral = eneutral
+        #celldata.tunnel   = tunnel
+        #celldata.bikerman = bikerman
+
+        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
+    #cell   = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+
+        pnpcell = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata=celldata)
+
+        results[L] = ivsweep(pnpcell; voltages, store_solutions=true, kwargs...)
+
+    end
+
+    return results
+end
+
+# ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
+if Ldependancy
+	ivL = ivsweep_over_L(elydata_Gold)
+end
+
+# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
+plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 
 # ╔═╡ 659091d3-60b2-4158-80e2-cd28a492e870
 (~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
@@ -3318,123 +3254,6 @@ conc_vs_voltage_axis(ivresult; useonly_pH = false)
 # ╔═╡ 22244e24-5b56-4933-8a09-44b601f116c3
 iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true)
 
-# ╔═╡ 5caca8ea-82af-4999-93bb-a72252c456c7
-function ivsweep_over_L(model;
- 	L_values = round.(Int, range(80, 1500, length=6)),
-    eneutral = true,
-	kwargs...)
-    results = Dict{Int, Any}()
-    kwargs 	 	= merge(solver_control, kwargs) 
-
-	cell, ivresult
-    for L in L_values
-        hmin = 1.0e-6 * μm
-        hmax = 1.0    * μm
-        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
-        grid = ExtendableGrids.simplexgrid(X)
-
-        celldata = deepcopy(model)
-        #celldata.eneutral = eneutral
-        #celldata.tunnel   = tunnel
-        #celldata.bikerman = bikerman
-
-        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
-    #cell   = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
-
-        pnpcell = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata=celldata)
-
-        results[L] = ivsweep(pnpcell; voltages, store_solutions=true, kwargs...)
-
-    end
-
-    return results
-end
-
-# ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
-if Ldependancy
-	ivL = ivsweep_over_L(elydata_Gold)
-end
-
-# ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
-plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
-
-# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
-function pb_bcondition(f, u, bnode, data)
-    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
-
-	if user_input_model.BC_Select == "Dirichlet"
-	    ## Dirichlet ϕ=ϕ_we at Γ_we
-	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
-	elseif user_input_model.BC_Select == "Robin"
-		## Robin ϕ=dϕ₀/dx 
-	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-	else
-		## neumann ϕ=dϕ₀/dx 
-	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
-	
-	end
-
-    return bulkbcondition(f, u, bnode, data)
-end
-
-# ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
-begin
-	if double_layer_curve
-		#pb
-		sys_pb = PBSystem(grid; bcondition = pb_bcondition,  celldata = deepcopy(model))
-		result_pb = capscalc(sys_pb)
-	else 
-		result_pb = nothing
-	end
-end
-
-# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-let
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps))
-    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps))
-
-    reveal(vis)
-end
-
-# ╔═╡ 6ae58f3e-11d0-457d-a9eb-b08abe67f632
-length(result_pb[1].dlcaps)
-
-# ╔═╡ 2640ee7f-109d-4dcc-b8af-3f854da1a323
-plot_caps_comparison(; model_key, result_pb, result_pnp)
-
-# ╔═╡ f0aecbbc-3c8c-4984-8704-fd79f986beb2
-begin
-	try
-		vis_κ = GridVisualizer(Plotter = CairoMakie, legend = :lt, size = (650, 650))
-		Low_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_Low_κ.voltages,
-		    Landstorfer_Low_κ.dlcaps,
-		    color = :black,
-		    linestyle = :dot,
-		    label = "κ = 0",
-			xlimits = (-0.5, 0.5),
-	        xlabel = "φ / (V vs φ_pzc)",
-	        ylabel = "dlcaps / (μF / cm²)",
-		    clear = true,  
-		)
-		High_κ = scalarplot!(
-		    vis_κ,
-		    Landstorfer_High_κ.voltages,
-		    Landstorfer_High_κ.dlcaps,
-		    color = :blue,
-		    linestyle = :dot,
-		    label = "κ = 40",
-		    clear = false,
-		)
-		
-		capsplot_κ(vis_κ, sys_pb)
-		reveal(vis_κ)
-	catch
-	end
-end
-
 # ╔═╡ 46d92e15-38ca-4857-8db4-60c1519523f6
 steady_state_jac
 
@@ -3491,18 +3310,17 @@ floataside(
 
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
-# ╠═68fe205c-9dd0-441b-9f12-3ddc12ec0a0d
 # ╠═504409e6-ad8e-4873-aee0-1ca5fe8c0bf2
+# ╠═43d6cbda-a994-4d53-8779-f374c3e173cf
 # ╠═588e9b21-404f-4092-bf83-7a6d6d39282a
-# ╠═a94bc4e1-506f-4e40-bfe8-1ce7e6093974
-# ╠═22f2574c-abbe-4a06-89e9-14635fb30932
+# ╠═393b4198-a4a7-40fd-95c4-d1aea60c103b
+# ╠═be3458a6-81da-4db1-9309-78219308ec77
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
-# ╠═a1b895c2-d3d1-4afd-bd85-da575effef1c
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
@@ -3510,7 +3328,7 @@ floataside(
 # ╟─de2c826d-6c05-47cf-b5f5-44a00ea9889c
 # ╟─d8f00649-e2ed-4bdd-853f-05268f0d5353
 # ╟─47b36c81-b57e-4dd0-a22f-999e4fd3ac9f
-# ╠═1e877f17-0219-45f1-b640-3a25ae085dbd
+# ╟─1e877f17-0219-45f1-b640-3a25ae085dbd
 # ╠═8a1047fa-e483-40d9-8904-7576f30acfb4
 # ╟─8912f990-6b02-467a-bd11-92f94818b1c7
 # ╟─a8157cc1-1761-4b11-a37c-9e12a9ca695e
@@ -3523,12 +3341,11 @@ floataside(
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
-# ╠═42efe97d-bf43-42b3-8ff0-e3d98a7597f1
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
-# ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
+# ╟─e510bce3-d33f-47bb-98d6-121eee8f2252
 # ╟─848b7aeb-968f-4116-8038-b61276f02b6c
 # ╟─f18dc873-1c9d-46d3-9596-92d28705e894
-# ╠═12235c3c-18f2-4fc7-95ef-800f71783036
+# ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
 # ╟─9d814b85-a5b6-42e5-abf4-15500bbdb717
 # ╟─e1e0ca0f-7f88-40f0-850e-590b25da0331
@@ -3537,14 +3354,14 @@ floataside(
 # ╠═5d179c52-43d7-4bcb-a2df-93c5806876fa
 # ╟─161a810d-c05e-42ad-97ab-131059d6784a
 # ╟─5f17b4f7-54d6-4ad0-9886-252854840a80
-# ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
-# ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
-# ╠═952a26ce-2610-48cc-9158-eda816da3a1c
-# ╟─924f8f5d-2cb0-4381-a522-509ff4c002b6
+# ╟─53b4dc3e-95f0-4eee-ba1c-68c222638acd
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
+# ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
+# ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
+# ╟─924f8f5d-2cb0-4381-a522-509ff4c002b6
 # ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
-# ╟─084e2127-ea77-4894-8990-380c2e8802c7
+# ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
@@ -3569,38 +3386,35 @@ floataside(
 # ╠═a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╠═2420382d-227a-4063-9450-1f1726df018e
+# ╠═3d661549-a8d2-40b0-add8-b186193f90fe
+# ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
-# ╠═11892724-1851-46f2-802d-4da45127b0af
-# ╠═a42b1afb-86f2-4a11-8328-c726b614aaba
-# ╠═19ec21f5-4f20-4043-a5ee-200804cc87a1
-# ╠═f6f9443f-b72d-415f-9a0a-e21c5780fbf6
+# ╟─11892724-1851-46f2-802d-4da45127b0af
+# ╠═8cd25c0c-e260-4401-af12-a1def38bb7c2
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
-# ╠═d38c2b43-4d8b-4be7-8d77-5a30da384541
-# ╠═1f085f56-e0ee-4cb5-a37e-eb82ef3d7589
-# ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
-# ╟─7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
-# ╠═3d661549-a8d2-40b0-add8-b186193f90fe
-# ╟─de2baeae-eaf6-4565-9ed1-f2eb8c666839
-# ╠═56814250-16b2-4578-820d-2096998c84f4
+# ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
+# ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
+# ╟─56814250-16b2-4578-820d-2096998c84f4
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
-# ╠═8fc7877e-c4e4-40d1-a720-7806f7dbde0a
-# ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
-# ╠═58ac8edc-2432-4054-88d8-52dafe0a2a61
+# ╟─eb920b6e-86a6-4dd6-8e66-6b7e27d81257
+# ╠═7dd05779-3ffc-471c-9ae9-4bb00b45b7e8
+# ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═f918dc11-80e4-4223-8f02-3d5f0a10f8e5
 # ╟─69e6f136-e31c-4d71-a9a7-ea9ca6530669
 # ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
+# ╠═bb9ba12f-e98b-48de-b55a-d76b276ae952
 # ╟─e1ef1e83-c472-4267-8450-38c65f48d3dc
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
-# ╟─48029647-f162-459b-8824-fbf652d127f7
+# ╠═48029647-f162-459b-8824-fbf652d127f7
 # ╟─4116166d-5f82-4d9b-80fb-c8035b9b6ade
-# ╟─df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
+# ╠═df5b1bfb-ce96-4d32-abdb-a6fcecb195a1
 # ╟─e5956bb0-a33a-488d-906e-fb5a7e2473a9
 # ╟─fe1e2a72-4772-4482-88da-f9e5f90e928a
 # ╟─d94ec33c-3d9d-4d70-b0e1-e3d861a62821
 # ╟─333492ec-9016-44c5-9059-e3cb42c05a89
-# ╠═9e2b6a47-a113-4107-acdf-3901e0578898
+# ╟─9e2b6a47-a113-4107-acdf-3901e0578898
 # ╟─be26b92a-14e2-45bc-bb6f-a2664e2e3cd9
 # ╟─61be3485-960b-42f8-82e6-71e213a5c9a1
 # ╟─def960de-f74a-4ca8-9d95-8af4e0240b60
@@ -3609,12 +3423,10 @@ floataside(
 # ╠═89520d6a-7a44-41f6-92ba-3d9416ac2047
 # ╠═666c55e5-f7f5-4f83-b3a3-ea6632ca5a86
 # ╟─d3493ce8-85d1-4132-b3e0-4ec35ac9d36d
-# ╠═f90190cc-555d-47e1-a2cb-99e5d78d4ff5
-# ╠═59f05654-a8de-4e17-b2ad-60a7ac64e122
+# ╟─f90190cc-555d-47e1-a2cb-99e5d78d4ff5
+# ╟─59f05654-a8de-4e17-b2ad-60a7ac64e122
 # ╠═dadf76f0-cbea-4c34-a142-41e120679674
 # ╠═91242a8c-c09b-402c-a0ea-40b8e3e26ae7
-# ╠═3960e081-090e-443f-b82c-06b703686e9f
-# ╠═e210999a-7ea5-47f7-aedb-f84fe77bd653
 # ╟─bb00b5bb-326e-47f9-a4f4-e7b4f29dd1f2
 # ╟─8c367e8f-df43-4f21-bef0-55060f36f44e
 # ╟─b14d67ca-5f24-4d8a-9334-6e072e2b39eb
@@ -3662,6 +3474,7 @@ floataside(
 # ╠═d0985ca6-fef5-4b67-9ad6-f51d84b595b4
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c
 # ╟─9d7d4d68-c9cc-4a42-a99d-ae25a1ab554c
+# ╟─d912cbca-ef9b-4319-8699-3fc7da8e73d2
 # ╠═e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
 # ╠═6a9fad5b-4964-4e12-b131-8cb2628d1ab3
 # ╠═d75725cd-0ef6-421f-be56-f559312e73b6

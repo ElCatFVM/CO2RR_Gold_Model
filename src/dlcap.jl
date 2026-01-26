@@ -1,7 +1,7 @@
 
 
 
-function capscalc(sys; molarities =molarities)
+function capscalc(sys; molarities = molarities)
     result = []
 	vrange = range(-1, 1, length = 201)
 	if is_Landstorfer
