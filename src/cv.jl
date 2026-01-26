@@ -5,8 +5,8 @@ function pressure_varied_sweep(
     Pvec,
     ispec::Integer,
     base_value = elydata_base.c_bulk[ispec],
-    scale = identity,   
-    sweep_kwargs...     # Keyword arguments to `sweep`
+    scale = identity,
+    sweep_kwargs...
 )
     recs = Vector{Any}(undef, length(Pvec))
     for (k, p) in pairs(Pvec)
@@ -14,8 +14,9 @@ function pressure_varied_sweep(
         ely.c_bulk[ispec] = base_value .* scale(p)
         recs[k] = sweepfun(ely; sweep_kwargs...)
     end
-    return recs
+    return collect(zip(Pvec, recs))
 end
+
 
 function sweep_over_L(
     model;
@@ -86,7 +87,27 @@ function scanrate_varied_sweep(
 end
 
 
+function run_pH_sweep(
+    elydata_base;
+    pH_values = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0],
+    hplus_index::Int = 2,
+    ohminus_index::Int = 6,
+    eneutral::Bool = true,
+    tunnel::Bool = false,
+)
+    results = Any[]
 
+    for pH in pH_values
+        ely = deepcopy(elydata_base)
+        ely.c_bulk[hplus_index]  = 10.0^(-pH)
+        ely.c_bulk[ohminus_index] = 10.0^(-14 + pH)
+
+        rec = sweep(ely; eneutral=eneutral, tunnel=tunnel)
+        push!(results, rec)
+    end
+
+    return (pH_values = pH_values, results = results)
+end
 
 
  # module?
