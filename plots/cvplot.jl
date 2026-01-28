@@ -295,16 +295,17 @@ end
 Create a GIF of log10(concentration) profiles vs distance (log10 x-scale) over a CV.
 Returns the absolute filepath as a string.
 """
-function cv_conc_gif(pnpresult, bulk, X;
-                     file="concentrations_cv.gif",
-                     framerate=10,
-                     step=5,
-                     scale=(mol/dm^3),
-                     x_offset=1e-14,
-                     x_limits=(1e-12, 1e-3),
-                     y_limits=(-14, 2),
-                     legend=true)
-
+function cv_conc_gif(
+    pnpresult, bulk, X;
+    file="concentrations_cv.gif",
+    framerate=10,
+    step=5,
+    scale=(mol/dm^3),
+    x_offset=1e-14,
+    x_limits=(1e-12, 1e-3),
+    y_limits=(-14, 2),
+    legend=true,
+)
     tsol = pnpresult.tsol ./ scale
     nvar, nx, nt = size(tsol)
 
@@ -329,23 +330,25 @@ function cv_conc_gif(pnpresult, bulk, X;
     for i in 1:nspecies
         lines!(ax, xx, ys[i]; color=colors[i], label=string(names[i]))
     end
-    if legend
-        axislegend(ax)
-    end
+    legend && axislegend(ax)
 
     record(fig, file, t_indices; framerate=framerate) do ti
-        ax.title = "t = $(round(pnpresult.tsol.t[ti], digits=4)) s | ϕ = $(round(pnpresult.voltages[ti], digits=2)) V"
+        tval = pnpresult.tsol.t[ti]
+        ϕval = (hasproperty(pnpresult, :voltages) && ti <= length(pnpresult.voltages)) ? pnpresult.voltages[ti] : NaN
+        ax.title = "t = $(round(tval, digits=4)) s | ϕ = $(round(ϕval, digits=2)) V"
+
         for i in 1:nspecies
             conc = tsol[i, 1:nplot, ti]
             ys[i][] = map(c -> (c > 0 ? log10(c) : NaN), conc)
         end
     end
 
-    return LocalResourceabspath(file)
+    return abspath(file)
 end
 
 
-function plot_cv_model_vs_koper_facets(pnpresult; model_species=iohminus,
+
+function plot_cv_model_vs_koper_facets(pnpresult; species=iohminus,
                                        koper_csv_relpath="data/Langmuir_CV_data/Figure_1.csv",
                                        fig_size=(1050, 650),
                                        koper_v_shift=-0.4)
@@ -356,7 +359,7 @@ function plot_cv_model_vs_koper_facets(pnpresult; model_species=iohminus,
               xlabel = L"\phi (V \; \mathrm{vs}\; SHE)")
 
     # --- Gold model ---
-    I_model = currents(pnpresult, model_species) .* (cm^2/mA)
+    I_model = currents(pnpresult, species) .* (cm^2/mA)
     gold_line = lines!(ax, pnpresult.voltages, I_model;
                        color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
 
@@ -565,3 +568,195 @@ function plot_scanrate_sweeps(
     Legend(fig[1, 2], plot_objs, labels, legend_title; framevisible=true)
     return fig
 end
+
+"""
+let
+	try
+	    fig = Figure(size = (1600, 900))
+	       ax = Axis(fig[1, 1],
+	        xlabel = L"φ (V vs SHE)",
+	        ylabel = L"I (mA/cm²)",
+	        yscale = log10,
+	        yminorticksvisible = true,  
+	        yminorticks = IntervalsBetween(5),
+			#limits = ((-1.3, -0.7),(1e-4, 1e2))
+	    )
+	
+	
+	    # Experimental Data Plotting based on M.T.M Koper
+	    raw = CSV.read("../data/Langmuir_CV_data/Figure_5.csv", DataFrame; header=false)
+	    pres = vec(Matrix(raw[1:1, :]))
+	    sub = Matrix(raw[4:end, :])
+	    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+	    num_df = DataFrame(num, :auto)
+	    npairs = size(num_df, 2) ÷ 2
+	    pink, pblue = RGB(0.0, 0.7, 0.8), RGB(0.2, 0.5, 0.0)
+	    cols1 = [RGB(pink.r + t*(pblue.r-pink.r),
+	                 pink.g + t*(pblue.g-pink.g),
+	                 pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+	
+	    plot_objs1 = []
+	    labels1 = String[]
+	    for j in 1:npairs
+	        xcol, ycol = 2j - 1, 2j
+	        label = j == 1 ? "\t\t sat" : "\t pCO2(atm)"
+	        push!(labels1, label)
+	        line = lines!(ax, num_df[!, xcol], (abs.(num_df[!, ycol])); color = cols1[j])
+	        #line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j])
+	        push!(plot_objs1, line)
+	    end
+	    Legend(fig[1, 2], plot_objs1, labels1, "Experimental"; framevisible = true)
+	
+	    # Theoretical Data Plotting based on `LiquidElectrolytes.jl`
+	    plot_objs2 = []
+	    labels2 = String[]
+	    for (j, rec) in enumerate(F5_vec)
+	        label2 = j == 1 ? "\t\t sat" : "t pCO2(atm)"
+	        push!(labels2, label2)
+	        line = lines!(ax, rec.voltages, (abs.(currents(rec, iohminus) .* cm^2/mA)); color = cols1[j])
+			#line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* cm^2/mA)); color = cols2[j])
+	        push!(plot_objs2, line)
+	    end
+	    Legend(fig[1, 3], plot_objs2, labels2, "Theoretical"; framevisible = true)
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+"""
+
+
+function plot_conc_profile_with_delta(
+    pnpresult, bulk, X;
+    ispec::Int = 5,
+    frac::Float64 = 0.99,
+    t_indices = [1, 10, 50, 100, 140],
+    t_index::Int = 140,
+    fig_size = (800, 420),
+)
+    tsol = pnpresult.tsol ./ (mol / dm^3)
+    nvar, nx, nt = size(tsol)
+
+    species = getproperty.(bulk, :name)
+    colors  = getproperty.(bulk, :color)
+
+    nspecies = min(nvar, length(species), length(colors))
+    @assert 1 ≤ ispec ≤ nspecies
+
+    nplot = min(nx, length(X))
+    xx = X[1:nplot] ./ μm
+
+    t_indices = unique(clamp.(vcat(t_indices, nt), 1, nt))
+    t_index   = clamp(t_index, 1, nt)
+
+    c_bulk = tsol[ispec, nplot, 1]
+    if !(c_bulk > 0)
+        error("c_bulk is not positive (c_bulk=$(c_bulk)). Choose a different ispec or far-field index.")
+    end
+
+    function x_at_frac(tsol, ispec, ti, xx, c_bulk, frac)
+        c = vec(tsol[ispec, 1:length(xx), ti])
+        target = frac * c_bulk
+        idx = findfirst(ci -> (ci ≥ target), c)
+        return isnothing(idx) ? NaN : xx[idx]
+    end
+
+    δs = Float64[]
+    ts = Float64[]
+    for ti in t_indices
+        δ = x_at_frac(tsol, ispec, ti, xx, c_bulk, frac)
+        push!(δs, δ)
+        push!(ts, pnpresult.tsol.t[ti])
+    end
+
+    fig = Figure(size = fig_size)
+    ax  = Axis(
+        fig[1, 1],
+        xlabel = "x / μm",
+        ylabel = L"\log_{10} c_i\; (mol/dm^3)",
+        title  = "t = $(round(pnpresult.tsol.t[t_index], digits=4)) s  |  δ$(Int(round(frac*100))) for $(species[ispec])",
+    )
+
+    conc  = vec(tsol[ispec, 1:nplot, t_index])
+    yvals = map(c -> (c > 0 ? log10(c) : NaN), conc)
+
+    lines!(ax, xx, yvals; color = colors[ispec], linewidth = 2, label = species[ispec])
+
+    δ_here = x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
+    if isfinite(δ_here)
+        vlines!(ax, [δ_here]; linestyle = :dash, linewidth = 2)
+        ytop = maximum(filter(isfinite, yvals))
+        text!(ax, δ_here, ytop;
+              text = "  δ$(Int(round(frac*100)))≈$(round(δ_here, digits=4)) μm",
+              align = (:left, :top))
+    end
+
+    axislegend(ax; position = :rb)
+
+    return (fig = fig, delta = δ_here, ts = ts, deltas = δs)
+end
+
+"""
+let
+	try
+	    ic = model.cspecies
+	    fig = Figure(size = (1050, 650))
+	    ax = Axis(fig[1, 1], 
+	  			  #limits = ((-1.25, 0.8),(-0.02, 0.1
+										 
+										 #)),
+	              ylabel = L"I (mA/cm²)",
+	              xlabel = L"φ (V vs SHE)"
+	    )
+	    colors = [RGB(i/3, 0, 1-(i/3)) for i in 1:3]
+	
+	    total_current = currents(pnpresult, iohminus) .* (cm^2/mA)
+	    gold_line = lines!(ax, pnpresult.voltages, total_current,
+	                       color = RGBf.(range(0, 1, length(pnpresult.voltages)), 0.0, 0.0))
+	    labels1 = ["CO2RR Gold Model"]
+	
+	    raw_df = CSV.read("../data/Langmuir_CV_data/Figure_5.csv", DataFrame; header=false)
+	    pH_row = collect(raw_df[1, :])
+	    electrolyte_row = collect(raw_df[2, :])
+	
+	    numeric_data = [
+	        parse.(Float64, coalesce.(collect(raw_df[i, :]), "NaN"))
+	        for i in 4:nrow(raw_df)
+	    ]
+	    num_df = DataFrame(hcat(numeric_data...)', names(raw_df))
+	
+	    conc_lines = [
+	        lines!(ax, num_df[!, 1], num_df[!, 2], color = colors[1]),
+	        lines!(ax, num_df[!, 3], num_df[!, 4], color = colors[2]),
+	        lines!(ax, num_df[!, 5], num_df[!, 6], color = colors[3])
+	    ]
+	    labels2 = [
+	        electrolyte_row[1]*"\t"*pH_row[2]*"pH",
+	        electrolyte_row[3]*"\t\t"*pH_row[4]*"pH",
+	        electrolyte_row[5]*"\t\t"*pH_row[6]*"pH"
+	    ]
+	
+	    Legend(fig[1, 2],
+	        [[gold_line], conc_lines], 
+	        [labels1, labels2],         
+	        ["Model", "Koper\nElectrolyte"];   
+	    )
+	
+	    fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+"""
+
+

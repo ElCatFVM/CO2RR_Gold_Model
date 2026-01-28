@@ -45,10 +45,7 @@ begin
 end;
 
 # ╔═╡ aecc5e8f-1e78-4965-8f9f-4b52d850f490
-begin
-	using AuCO2RR
-	using AuCO2RR: AuCO2RR_plots
-end
+using MyProject: AuCO2RR_plots
 
 # ╔═╡ 3ac837b8-559b-41c2-8f83-1331839dcf7e
 begin
@@ -56,14 +53,14 @@ begin
     using UUIDs: uuid1
 end
 
+# ╔═╡ 393b4198-a4a7-40fd-95c4-d1aea60c103b
+include(joinpath(@__DIR__, "..", "src", "cv.jl"))
+
+# ╔═╡ be3458a6-81da-4db1-9309-78219308ec77
+include(joinpath(@__DIR__, "..", "src", "dlcap.jl"))
+
 # ╔═╡ bd8134d8-5a69-486e-8429-7cf810b3ccbe
 Pkg.status()
-
-# ╔═╡ 2176bc34-fc74-4532-912e-e73441b37245
-isdefined(AuCO2RR, :AuCO2RR_plots)
-
-# ╔═╡ dc90b463-7574-46e1-a7fe-d60074403747
-names(AuCO2RR_plots; all=true)
 
 # ╔═╡ beae1479-1c0f-4a55-86e1-ad2b50174c83
 md"""
@@ -468,6 +465,11 @@ md"""
 ### Result Plots
 """
 
+# ╔═╡ 783e2058-c720-4f31-8e51-7c313813924c
+md"""
+##### κ(Solvation Number) Plots
+"""
+
 # ╔═╡ 9598e2c6-521e-4f8d-82d8-a836809736f3
 md"""
 ##### CSVdata
@@ -536,6 +538,83 @@ md"""
 md"""
 Run pressure varied cyclic voltammetry $(@bind pressure_varied_checkbox PlutoUI.CheckBox())
 """
+
+# ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
+#=╠═╡
+let
+	try
+		table = readdlm("../data/catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
+		raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
+	
+		x_exp_all = table[:, 1]
+		y_exp_all = table[:, 2]
+		
+		mask_exp = (y_exp_all .> 0) .& isfinite.(y_exp_all) .& isfinite.(x_exp_all)
+		x_exp = x_exp_all[mask_exp]
+		y_exp = y_exp_all[mask_exp]
+		
+		volts_mask = ivresult.voltages .< -0.4
+		x_iv  = ivresult.voltages[volts_mask]
+		y_iv0 = abs.(currents(ivresult, iohminus))[volts_mask] .* cm^2/mA
+		mask_iv = (y_iv0 .> 0) .& isfinite.(y_iv0) .& isfinite.(x_iv)
+		x_iv = x_iv[mask_iv]; y_iv = y_iv0[mask_iv]
+		
+		fig = Figure(size = (900, 550))
+		ax  = Axis(fig[1, 1];
+				   xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
+				   ylabel = L"I \; (\mathrm{mA/cm^2})",
+				   #yscale = log10,
+				   #yminorticksvisible = true,
+				   #yminorticks = IntervalsBetween(10),
+				   #limits = ((-1.3, -0.4),(1e-12, 1e-7))
+				  )
+		
+		#scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
+		
+		#lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
+	
+		
+		u = 7
+		cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
+					0.3 + 0.5*(1-i/length(sweep_vec)), 
+					0.8 - 0.7*(i/length(sweep_vec)))
+				for i in 1:length(sweep_vec)]
+	    plot_objs = []
+	    labels = String[]
+	    for (j, rec) in enumerate(sweep_vec)
+	        label = "$(scanrates[j])\t\t "
+	        push!(labels, label)
+	        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* 
+				cm^2/mA));linewidth = 1, color = cols[j], label = "$(scanrates[j])\t\t V/s")
+	        push!(plot_objs, line)
+	    end
+		pres = vec(Matrix(raw[1:1, :])) 
+		sub = Matrix(raw[4:end, :]) 
+		num = map(x -> x === missing ? NaN : parse(Float64, x), sub) 
+		num_df = DataFrame(num, :auto)
+		npairs = size(num_df, 2) ÷ 2
+		
+		js    = u:npairs
+		xcols = 2 .* js .- 1
+		ycols = 2 .* js
+		
+		xs = [@view num_df[!, i] for i in xcols]
+		ys = [@view num_df[!, i] for i in ycols]
+		
+		lines!.(Ref(ax), xs, [(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
+	
+		Legend(fig[1, 2], ax, "Legend"; framevisible=true)
+		fig
+	catch e
+	   if e isa UndefVarError
+			# normal case → skip
+	   else
+	        println("⚠️ Error occurred: ", e)
+	        println(stacktrace(catch_backtrace()))
+	    end
+	end
+end
+  ╠═╡ =#
 
 # ╔═╡ fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 md"""
@@ -667,6 +746,7 @@ md"""
 """
 
 # ╔═╡ d94ec33c-3d9d-4d70-b0e1-e3d861a62821
+#=╠═╡
 let
 	try
 	    fig = Figure(size = (1600, 900))
@@ -708,8 +788,10 @@ let
 	    end
 	end
 end
+  ╠═╡ =#
 
 # ╔═╡ 333492ec-9016-44c5-9059-e3cb42c05a89
+#=╠═╡
 let
 	try
 	    fig = Figure(size = (1600, 900))
@@ -754,8 +836,10 @@ let
 	    end
 	end
 end
+  ╠═╡ =#
 
 # ╔═╡ 9e2b6a47-a113-4107-acdf-3901e0578898
+#=╠═╡
 let
     try
         target_voltage = -1.2
@@ -818,6 +902,7 @@ let
     end
 end
 
+  ╠═╡ =#
 
 # ╔═╡ be26b92a-14e2-45bc-bb6f-a2664e2e3cd9
 md"""
@@ -1999,13 +2084,11 @@ end;
 # ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═╡ show_logs = false
 if Ldependancy
-	ivL = AuCO2RR_plots.ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
+	ivL = ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
 end
 
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
-if Ldependancy
-	AuCO2RR_plots.plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
-end
+plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
 is_Landstorfer = model != elydata_Gold
@@ -2066,6 +2149,9 @@ begin
 	end
 end
 
+# ╔═╡ 6ae58f3e-11d0-457d-a9eb-b08abe67f632
+length(result_pb[1].dlcaps)
+
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
 begin
 	if double_layer_curve
@@ -2082,14 +2168,14 @@ end
 # ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
 let
     vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    AuCO2RR_plots.capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps))
-    AuCO2RR_plots.capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps))
+    capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps))
+    capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps))
 
     reveal(vis)
 end
 
 # ╔═╡ 2640ee7f-109d-4dcc-b8af-3f854da1a323
-AuCO2RR_plots.plot_caps_comparison(; model_key, result_pb, result_pnp)
+plot_caps_comparison(; model_key, result_pb, result_pnp)
 
 # ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
 function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
@@ -2109,19 +2195,19 @@ end
 # ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
 if pH_varied_checkbox
 	results_pH = run_pH_sweep(elydata_Gold, sweep; pH_values = [3, 10])
-	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
+	plot_pH_varied_sweep(results_pH; species = ico)
 end
 
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
 	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, user_input_cv; scanrates = [0.01, 0.5, 5], sweepfun = sweep)
-	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc)
+	plot_scanrate_sweeps(scresult, sc)
 end
 
 # ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
 if pressure_varied_checkbox
 	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.3], ispec = 5)
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs)
+	plot_pressure_varied_sweep(P_recs)
 end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
@@ -2131,146 +2217,67 @@ end
 
 # ╔═╡ 7da046bf-d3b1-43a0-bdba-89b4da2f6be3
 if CV
-	AuCO2RR_plots.plot_time_voltage_and_dt(pnpresult, sawtooth)
+	plot_time_voltage_and_dt(pnpresult, sawtooth)
 end
 
 # ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
 if CV
-	AuCO2RR_plots.plot_cv_current(pnpresult, elydata_Gold; species = ico)
+	plot_cv_current(pnpresult, elydata_Gold; species = ico)
 end
 
 # ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 if CV
-	AuCO2RR_plots.plot_conc_time_electrode(pnpresult, bulk)
+	plot_conc_time_electrode(pnpresult, bulk)
 end
 
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 if CV
-	AuCO2RR_plots.plot_conc_profile_logx(pnpresult, bulk, X, 13)
+	plot_conc_profile_logx(pnpresult, bulk, X, 13)
 end
 
 # ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
 if CV
-	path = AuCO2RR_plots.cv_conc_gif(pnpresult, bulk, X)
-	LocalResource(path)
+	cv_conc_gif(pnpresult, bulk, X; file="concentrations_cv.gif", framerate=8, step=3)
 end
 
 # ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
 if CV
-	AuCO2RR_plots.plot_cv_model_vs_koper_facets(pnpresult; species = iohminus)
+	plot_cv_model_vs_koper_facets(pnpresult)
 end
 
 # ╔═╡ 74c43d72-3a23-4a24-a4ae-8b18b245610a
 if CV
-	AuCO2RR_plots.plot_iv_with_experiment(pnpresult, ico)
+	plot_iv_with_experiment(pnpresult, ico)
 end
 
 # ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
-AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+plot_conc_profile_with_delta(pnpresult, bulk, X)
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
 # ╠═╡ show_logs = false
 cell, ivresult = simulate_CO2R(grid, model)
 
-# ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
-let
-	try
-		table = readdlm("../data/catmap_CO2R_data/IV-Ringe-digitized.csv", ',', Float64, '\n')
-		raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
-	
-		x_exp_all = table[:, 1]
-		y_exp_all = table[:, 2]
-		
-		mask_exp = (y_exp_all .> 0) .& isfinite.(y_exp_all) .& isfinite.(x_exp_all)
-		x_exp = x_exp_all[mask_exp]
-		y_exp = y_exp_all[mask_exp]
-		
-		volts_mask = ivresult.voltages .< -0.4
-		x_iv  = ivresult.voltages[volts_mask]
-		y_iv0 = abs.(currents(ivresult, iohminus))[volts_mask] .* cm^2/mA
-		mask_iv = (y_iv0 .> 0) .& isfinite.(y_iv0) .& isfinite.(x_iv)
-		x_iv = x_iv[mask_iv]; y_iv = y_iv0[mask_iv]
-		
-		fig = Figure(size = (900, 550))
-		ax  = Axis(fig[1, 1];
-				   xlabel = L"\phi_{we} \, (\mathrm{V \; vs \; SHE})",
-				   ylabel = L"I \; (\mathrm{mA/cm^2})",
-				   #yscale = log10,
-				   #yminorticksvisible = true,
-				   #yminorticks = IntervalsBetween(10),
-				   #limits = ((-1.3, -0.4),(1e-12, 1e-7))
-				  )
-		
-		#scatter!(ax, x_exp, y_exp; markersize=8, marker=:cross, color=:red, label="Ringe et al.")
-		
-		#lines!(ax, x_iv, y_iv; color=:green, label="e⁻, we")
-	
-		
-		u = 7
-		cols = [RGB(0.2 + 0.6*(i/length(sweep_vec)), 
-					0.3 + 0.5*(1-i/length(sweep_vec)), 
-					0.8 - 0.7*(i/length(sweep_vec)))
-				for i in 1:length(sweep_vec)]
-	    plot_objs = []
-	    labels = String[]
-	    for (j, rec) in enumerate(sweep_vec)
-	        label = "$(scanrates[j])\t\t "
-	        push!(labels, label)
-	        line = lines!(ax, rec.voltages, ((currents(rec, iohminus) .* 
-				cm^2/mA));linewidth = 1, color = cols[j], label = "$(scanrates[j])\t\t V/s")
-	        push!(plot_objs, line)
-	    end
-		pres = vec(Matrix(raw[1:1, :])) 
-		sub = Matrix(raw[4:end, :]) 
-		num = map(x -> x === missing ? NaN : parse(Float64, x), sub) 
-		num_df = DataFrame(num, :auto)
-		npairs = size(num_df, 2) ÷ 2
-		
-		js    = u:npairs
-		xcols = 2 .* js .- 1
-		ycols = 2 .* js
-		
-		xs = [@view num_df[!, i] for i in xcols]
-		ys = [@view num_df[!, i] for i in ycols]
-		
-		lines!.(Ref(ax), xs, [(y) for y in ys], color = RGB(0.0, 0.0, 0.7), linestyle = :dot, linewidth = 1, label = "CV Experimental")
-	
-		Legend(fig[1, 2], ax, "Legend"; framevisible=true)
-		fig
-	catch e
-	   if e isa UndefVarError
-			# normal case → skip
-	   else
-	        println("⚠️ Error occurred: ", e)
-	        println(stacktrace(catch_backtrace()))
-	    end
-	end
-end
-
 # ╔═╡ 5ccb6a73-41cc-4107-a6ee-37d906313841
 (~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
 
-# ╔═╡ af333d3b-1e3a-4227-8cce-479907c11448
-begin
-	gifpath = AuCO2RR_plots.plot1d_movie(ivresult; bulk, grid, L, framerate = 5)
-	LocalResource(gifpath)
-end
+# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
+plot1d(ivresult, celldata, bulk)
 
 # ╔═╡ 9498845e-fa44-4d01-a7bc-33d01ec11f79
-AuCO2RR_plots.plot_iv_with_ringe_refs(ivresult, species = iohminus)
+plot_iv_with_ringe_refs(ivresult)
 
 # ╔═╡ 22244e24-5b56-4933-8a09-44b601f116c3
-AuCO2RR_plots.iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true, species = iohminus)
+iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true)
 
 # ╔═╡ c6f10b66-6d06-4f2e-a7cc-780096d75785
 begin 
-	conc_f, conc_a = AuCO2RR_plots.conc_vs_voltage_axis_compare(ivresult; bulk, grid, compare = comp)
+	conc_f, conc_a = conc_vs_voltage_axis_compare(ivresult; bulk, grid, compare = comp)
 	conc_f
 end
 
 # ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
 begin
-    conc_out = AuCO2RR_plots.conc_vs_voltage_axis(
+    conc_out = conc_vs_voltage_axis(
         ivresult;
         bulk = bulk,
         grid = grid,
@@ -2315,12 +2322,12 @@ Potential at the working electrode
 $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 """
 
-# ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-AuCO2RR_plots.plot1d(ivresult, vshow; bulk, grid, L)
+# ╔═╡ 5dd1a1e6-7db1-479e-a684-accec53ce06a
+plot1d(ivresult, celldata, vshow, bulk)
 
 # ╔═╡ ab302d08-1a6f-4553-85af-043c565b107f
 begin
-	cond_out = AuCO2RR_plots.plot1d_makie(ivresult, vshow; bulk=bulk, grid=grid, L=L)
+	cond_out = plot1d_makie(ivresult, vshow; bulk=bulk, grid=grid, L=L)
 	cond_fig, cond_ax, cond_colors = cond_out.fig, cond_out.ax, cond_out.colors
 	
 	#text!(cond_ax, 4e-11, -2.4, text=L"\mathrm{CO_2}", color=cond_colors[ico2], fontsize=24, font="sans-bold")
@@ -2354,9 +2361,9 @@ floataside(
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═aecc5e8f-1e78-4965-8f9f-4b52d850f490
+# ╠═393b4198-a4a7-40fd-95c4-d1aea60c103b
+# ╠═be3458a6-81da-4db1-9309-78219308ec77
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
-# ╠═2176bc34-fc74-4532-912e-e73441b37245
-# ╠═dc90b463-7574-46e1-a7fe-d60074403747
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
@@ -2408,7 +2415,9 @@ floataside(
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
 # ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
+# ╠═6ae58f3e-11d0-457d-a9eb-b08abe67f632
 # ╠═2640ee7f-109d-4dcc-b8af-3f854da1a323
+# ╟─783e2058-c720-4f31-8e51-7c313813924c
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
@@ -2476,8 +2485,8 @@ floataside(
 # ╟─114d2324-5289-4e44-8d77-736a9bdec365
 # ╠═5ccb6a73-41cc-4107-a6ee-37d906313841
 # ╟─c4876d26-e841-4e28-8303-131d4635fc23
+# ╠═5dd1a1e6-7db1-479e-a684-accec53ce06a
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-# ╠═af333d3b-1e3a-4227-8cce-479907c11448
 # ╠═ab302d08-1a6f-4553-85af-043c565b107f
 # ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═9498845e-fa44-4d01-a7bc-33d01ec11f79
