@@ -759,4 +759,49 @@ let
 end
 """
 
+"""
+plot_cv_over_L(results; species=ico, cutoff=-0.4, title="IV vs L")
+
+Plot current vs voltage for each L in `results::Dict{Float64,Any}`.
+Works with values that are either IVSweepResult-like or NamedTuple/struct with `ivresult`.
+"""
+function plot_cv_over_L(results::Dict{Float64,Any};
+    species=ico, cutoff=-0.4, title="IV vs L"
+)
+    vis = GridVisualizer(;
+        size   = (800, 500),
+        title  = title,
+        xlabel = L"\phi_{we}\;(\mathrm{V\;vs\;SHE})",
+        ylabel = L"I\;(\mathrm{mA/cm^2})",
+        legend = :rt,
+        #yscale = :log,
+    )
+
+    items = sort(collect(results); by=first)
+    n = length(items)
+    cols = Makie.resample_cmap(:cool, n)
+
+    for (k, (L, rec)) in enumerate(items)
+        ivres = hasproperty(rec, :ivresult) ? getproperty(rec, :ivresult) : rec
+
+        volts = vec(ivres.voltages)
+        Iall  = (vec(currents(ivres, species))) .* (cm^2/mA)
+
+        m = min(length(volts), length(Iall))
+        volts = volts[1:m]
+        Iall  = Iall[1:m]
+
+        mask = volts .< cutoff
+
+        scalarplot!(vis,
+            volts[mask],
+            Iall[mask];
+            clear=false,
+            label="L = $(L) μm",
+            color=cols[k],
+        )
+    end
+
+    return reveal(vis)
+end
 

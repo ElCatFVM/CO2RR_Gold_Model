@@ -202,6 +202,11 @@ begin
 	end
 end;
 
+# ╔═╡ 5ba48ad0-2eb8-4fa3-980c-372a1c64a020
+md"""
+Compare the simulation results: $(@bind user_input_size PlutoUI.CheckBox(default=true))
+"""
+
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
 ### Reaction Description
@@ -537,6 +542,11 @@ md"""
 Run pressure varied cyclic voltammetry $(@bind pressure_varied_checkbox PlutoUI.CheckBox())
 """
 
+# ╔═╡ a2c7c4da-77cd-493f-8f98-0c86fecf271a
+md"""
+Run boundary layer thickness varied cyclic voltammetry $(@bind L_varied_checkbox PlutoUI.CheckBox())
+"""
+
 # ╔═╡ fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 md"""
 #### Position at 0.99 Cbulk at a Given Time
@@ -551,6 +561,9 @@ md"""
 md"""
 Run boundary layer thickness varied cyclic voltammetry $(@bind BL_thickness_varied_checkbox PlutoUI.CheckBox())
 """
+
+# ╔═╡ add42535-4311-4ac6-8f0e-b045426283e7
+
 
 # ╔═╡ b1e64332-95a4-46a5-a45d-457c26e3fc67
 const target_time = 20
@@ -1208,6 +1221,9 @@ begin
 	    const nperiods = user_input_cv.nperiods
 end
 
+# ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
+sawtooth
+
 # ╔═╡ e1ef1e83-c472-4267-8450-38c65f48d3dc
 let
     try
@@ -1299,79 +1315,105 @@ floataside(
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
-	at = user_input_ion[:at]
-	κt = user_input_ion[:κt]
-	ak = user_input_ion[:ak]
-	κk = user_input_ion[:κk]
-	const bulk = let 
-		bulk = [
-				BulkSpecies(;name = "HCO₃⁻", 
-							z = -1, 
-							D = 1.185e-9, 
-							c_bulk = 0.091, 
-							#v = v0*(κt+1),
-							a = at, #15.6,#at,
-							κ = κt, #4, #κt, 
-							color = :brown
-				),
-				BulkSpecies(;name = "CO₃²⁻",
-							z = -2, 
-							D = 0.923e-9, 
-							c_bulk = 2.68e-6,
-							#v = v0*(κt+1), 
-							a = at, #17.8,
-							κ = κt, #7, #κt, 
-							color = :violet
-				),
-				BulkSpecies(;name = "CO₂",
-							z = 0, 
-							D = 1.91e-9, 
-							# = 0.033
-							c_bulk = 0.033, 
-							#v =v0, 
-							a = at, #17,#at,
-							κ = κt, #0, #κt, 
-							color=:red
-				),
-				BulkSpecies(;name = "OH⁻",
-							z = -1, 
-							D = 5.273e-9, 
-							c_bulk = 10^(pH-14), 
-							#v = v0*(κt+1), 
-							a = at, #13.3,#at,
-							κ = κt, #3, #κt, 
-							color = :green
-				),
-				BulkSpecies(;name = "H⁺", 
-							z = 1, 
-							D = 9.310e-9, 
-							c_bulk = 10^(-pH), 
-							#v = v0*(κt+1), 
-							a = at, #10, #at,
-							κ = κt, #4, #κt, 
-							color = :gray
-				),
-				BulkSpecies(;name="CO",
-							z = 0,
-							D = 2.23e-9,
-							c_bulk = 0.0,
-							#v = v0, 
-							a = at, #140,
-							κ = κt, #0, # κt,  
-							color=:blue
-				)
-		]
-		push!(bulk, make_eneutral(bulk;name="K⁺", 
-									   z = 1, 
-									   D = 1.957e-9,
-									   a = ak, # 13.3, #ak,
-									   #v = v0*(κt+1), 
-									   κ = κk, #4, 
-									   color = :orange
-								  )
-		)
-		sort(bulk, by=x->species_dict[x.name])
-	end
+    at = user_input_ion[:at]
+    κt = user_input_ion[:κt]
+    ak = user_input_ion[:ak]
+    κk = user_input_ion[:κk]
+
+    use_md_hydrated = user_input_size   # Bool toggle you will use
+
+    # a: hydrated radii in water (Å), κ: MD hydration number (1st shell)
+    if use_md_hydrated
+        # --- hydrated radii [nm] (aqueous effective radii) ---
+        a_HCO3 = 3.33   #  (Å)
+        a_CO3  = 3.94   #  (Å)
+        a_CO2  = 1.70   #  (Å) (often treated as vdW/effective in water)
+        a_OH   = 3.00   #  (Å)
+        a_H    = 2.80   #  (Å) (H3O+ effective hydrated)
+        a_CO   = 1.40   #  (Å)
+        a_K    = 3.31   #  (Å)
+
+        # --- MD hydration numbers (1st shell) ---
+        κ_HCO3 = 5.4     #  (MD)
+        κ_CO3  = 8.5     #  (MD)
+        κ_CO2  = 0.0     # neutral, typically treat as ~0 (no structured hydration number in this model)
+        κ_OH   = 3.5     #  (MD)
+        κ_H    = 4.0     #  (MD)
+        κ_CO   = 0.0     # neutral
+        κ_K    = 6.0     #  (MD)
+    else
+        # Legacy / user-input model
+        a_HCO3 = at;  κ_HCO3 = κt
+        a_CO3  = at;  κ_CO3  = κt
+        a_CO2  = at;  κ_CO2  = κt
+        a_OH   = at;  κ_OH   = κt
+        a_H    = at;  κ_H    = κt
+        a_CO   = at;  κ_CO   = κt
+        a_K    = ak;  κ_K    = κk
+    end
+
+    const bulk = let
+        bulk = [
+            BulkSpecies(;name = "HCO₃⁻",
+                        z = -1,
+                        D = 1.185e-9,
+                        c_bulk = 0.091,
+                        a = a_HCO3,
+                        κ = κ_HCO3,
+                        color = :brown
+            ),
+            BulkSpecies(;name = "CO₃²⁻",
+                        z = -2,
+                        D = 0.923e-9,
+                        c_bulk = 2.68e-6,
+                        a = a_CO3,
+                        κ = κ_CO3,
+                        color = :violet
+            ),
+            BulkSpecies(;name = "CO₂",
+                        z = 0,
+                        D = 1.91e-9,
+                        c_bulk = 0.033,
+                        a = a_CO2,
+                        κ = κ_CO2,
+                        color = :red
+            ),
+            BulkSpecies(;name = "OH⁻",
+                        z = -1,
+                        D = 5.273e-9,
+                        c_bulk = 10^(pH-14),
+                        a = a_OH,
+                        κ = κ_OH,
+                        color = :green
+            ),
+            BulkSpecies(;name = "H⁺",
+                        z = 1,
+                        D = 9.310e-9,
+                        c_bulk = 10^(-pH),
+                        a = a_H,
+                        κ = κ_H,
+                        color = :gray
+            ),
+            BulkSpecies(;name="CO",
+                        z = 0,
+                        D = 2.23e-9,
+                        c_bulk = 0.0,
+                        a = a_CO,
+                        κ = κ_CO,
+                        color = :blue
+            )
+        ]
+
+        push!(bulk, make_eneutral(bulk; name="K⁺",
+                                       z = 1,
+                                       D = 1.957e-9,
+                                       a = a_K,
+                                       κ = κ_K,
+                                       color = :orange
+                                  )
+        )
+        sort(bulk, by=x->species_dict[x.name])
+    end
 end;
 
 # ╔═╡ 06f52599-7006-4a5c-ba86-0b668b6952c9
@@ -1922,6 +1964,7 @@ function pb_bcondition(f, u, bnode, data)
 	if user_input_model.BC_Select == "Dirichlet"
 	    ## Dirichlet ϕ=ϕ_we at Γ_we
 	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
+		#boundary_dirichlet!(f, u, bnode; species = ip, region = Γ_we, value = p_we)
 	elseif user_input_model.BC_Select == "Robin"
 		## Robin ϕ=dϕ₀/dx 
 	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
@@ -1986,6 +2029,30 @@ function pnp_bcondition(
 	return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
 
 end;
+
+# ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
+if scan_rate_varied_checkbox
+	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.01, 0.5, 5], nperiods = user_input_cv.nperiods)
+	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc; species = iohminus)
+end
+
+# ╔═╡ e4d06a70-2309-48fe-a39a-89d52b3d124c
+scresult
+
+# ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
+if L_varied_checkbox
+	resL = sweep_over_L_cv(
+		elydata_Gold,
+		[80, 100] .* μm,
+		pnp_bcondition,
+		sawtooth,
+		reaction;
+		nperiods = user_input_cv.nperiods
+	)
+end
+
+# ╔═╡ 9b599280-470e-48a4-bfcd-9f3c3f2e994c
+AuCO2RR_plots.plot_cv_over_L(resL, species = iohminus)
 
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
@@ -2091,12 +2158,18 @@ end
 # ╔═╡ 2640ee7f-109d-4dcc-b8af-3f854da1a323
 AuCO2RR_plots.plot_caps_comparison(; model_key, result_pb, result_pnp)
 
+# ╔═╡ 02d12ba4-4ab3-48f6-b084-edb06cb413b1
+begin
+	celldata = deepcopy(model)
+	pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
+end
+
 # ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
 function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
     celldata = deepcopy(pnpdata)
-    celldata.eneutral = eneutral
+    #celldata.eneutral = eneutral
 	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = pnpdata)
+    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
     return result = cvsweep(
         pnpcell;
         voltages = sawtooth,
@@ -2106,22 +2179,10 @@ function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
 
 end
 
-# ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
-if pH_varied_checkbox
-	results_pH = run_pH_sweep(elydata_Gold, sweep; pH_values = [3, 10])
-	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
-end
-
-# ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
-if scan_rate_varied_checkbox
-	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, user_input_cv; scanrates = [0.01, 0.5, 5], sweepfun = sweep)
-	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc)
-end
-
 # ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
 if pressure_varied_checkbox
 	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.3], ispec = 5)
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs)
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
 end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
@@ -2167,6 +2228,15 @@ end
 
 # ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
 AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+
+# ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
+if pH_varied_checkbox
+	results_pH = run_pH_sweep(model, sawtooth, grid, pnp_bcondition, reaction; pH_values = [3, 10])
+	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
+end
+
+# ╔═╡ a6145826-b9d2-4e0d-88ad-fa706b0b190a
+results_pH
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
 # ╠═╡ show_logs = false
@@ -2252,7 +2322,7 @@ end
 
 # ╔═╡ af333d3b-1e3a-4227-8cce-479907c11448
 begin
-	gifpath = AuCO2RR_plots.plot1d_movie(ivresult; bulk, grid, L, framerate = 5)
+	gifpath = AuCO2RR_plots.plot1d_movie(ivresult; bulk, grid, L, step = 3, framerate = 5)
 	LocalResource(gifpath)
 end
 
@@ -2363,6 +2433,7 @@ floataside(
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
+# ╠═5ba48ad0-2eb8-4fa3-980c-372a1c64a020
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
@@ -2411,8 +2482,10 @@ floataside(
 # ╠═2640ee7f-109d-4dcc-b8af-3f854da1a323
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
+# ╠═ed92cece-3f89-45f5-ac17-cbc9a9abb906
 # ╟─5c808c71-6094-49d7-8215-e88262f34e1f
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
+# ╠═02d12ba4-4ab3-48f6-b084-edb06cb413b1
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
@@ -2428,21 +2501,27 @@ floataside(
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
 # ╟─11892724-1851-46f2-802d-4da45127b0af
 # ╠═8cd25c0c-e260-4401-af12-a1def38bb7c2
+# ╠═a6145826-b9d2-4e0d-88ad-fa706b0b190a
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
+# ╠═e4d06a70-2309-48fe-a39a-89d52b3d124c
 # ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
-# ╟─56814250-16b2-4578-820d-2096998c84f4
+# ╠═56814250-16b2-4578-820d-2096998c84f4
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
+# ╠═a2c7c4da-77cd-493f-8f98-0c86fecf271a
+# ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
+# ╠═9b599280-470e-48a4-bfcd-9f3c3f2e994c
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═b25f2246-0182-4d50-a606-0d81776d414f
 # ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
 # ╟─bb9ba12f-e98b-48de-b55a-d76b276ae952
-# ╟─e1ef1e83-c472-4267-8450-38c65f48d3dc
+# ╠═add42535-4311-4ac6-8f0e-b045426283e7
+# ╠═e1ef1e83-c472-4267-8450-38c65f48d3dc
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
 # ╠═48029647-f162-459b-8824-fbf652d127f7
-# ╟─4116166d-5f82-4d9b-80fb-c8035b9b6ade
+# ╠═4116166d-5f82-4d9b-80fb-c8035b9b6ade
 # ╟─fe1e2a72-4772-4482-88da-f9e5f90e928a
 # ╟─d94ec33c-3d9d-4d70-b0e1-e3d861a62821
 # ╟─333492ec-9016-44c5-9059-e3cb42c05a89
@@ -2485,7 +2564,7 @@ floataside(
 # ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
-# ╟─e4d93d39-c391-47ce-a248-6f0205761cca
+# ╠═e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
 # ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
