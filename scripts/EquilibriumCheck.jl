@@ -89,6 +89,8 @@ begin
 	const F = N_A * e
 
 	const voltages = (-1.15:0.1:-0.0) * V
+	const vmin = -1.0
+	const vmax = 1.1
 	
 	# geometrical constants
 	const Γ_we 		= 1
@@ -187,25 +189,25 @@ begin
 	end
 	function BulkSpecies(;name, z, c_bulk=nothing, a, D, κ=nothing, color)
 		D *= m^2/s
-		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3
-		a *= Å #8.2 * Å#8.2 * Å            # (v0/N_A)^(1/3)
+		c_bulk = isnothing(c_bulk) ? nothing : c_bulk * mol/dm^3 #* 0.0001
+		         # (v0/N_A)^(1/3)
 		v = N_A * (a * Å)^3 #v0 * (κ + 1)
+		a *= Å #8.2 * Å#8.2 * Å   
 		M = M0 * v
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 	function make_eneutral(bulk_species::Vector{BulkSpecies}
-						  ;name, z, D, κ=0.0, a=8.2, v = v0 * (κ * abs(z) + 1)
-, M=M0*v, color)
+						  ;name, z, D, κ=0.0, a=8.2, v = N_A * (a * Å)^3,
+						   #v0 * (κ * abs(z) + 1)
+						   M=M0*v, color)
 		a *= Å
 		c_bulk = -mapreduce(x -> x.c_bulk * x.z, +, bulk_species)/z
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 end;
 
-# ╔═╡ 5ba48ad0-2eb8-4fa3-980c-372a1c64a020
-md"""
-Compare the simulation results: $(@bind user_input_size PlutoUI.CheckBox(default=true))
-"""
+# ╔═╡ c72ac7c7-ff6d-4aca-b6c5-61746bd146a8
+use_physical_size
 
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
@@ -462,6 +464,9 @@ md"""
 md""" 
 ### System Setup
 """
+
+# ╔═╡ 66da15be-e4e3-4592-8354-a05ef092ac86
+
 
 # ╔═╡ 4656ee04-ae86-442f-b37c-c5563170f992
 md"""
@@ -1298,15 +1303,14 @@ end
 floataside(
     @bind user_input_ion confirm(
         PlutoUI.combine() do Child
-            md"""
-            ###### __Parameter Set__			
-            - __Other ions__  
-              ``κ``: $(Child("κt", NumberField(0.0:0.1:20.0; default = 0.0)))  
-              ``a``: $(Child("at", NumberField(0.0:0.1:20.0; default = 0.0)))
-            - __Cation__  
-              ``κ``: $(Child("κk", NumberField(0.0:0.1:20.0; default = 0.0)))  
-              ``a``: $(Child("ak", NumberField(0.0:0.1:20.0; default = 8.2)))
-            """
+			md"""
+			###### __Parameter Set__
+			
+			- **Use Physical ion size & solvation number**
+			  ``κ``, ``a`` : $(Child("use_physical_size", PlutoUI.CheckBox(default=false)))
+			  - **ON**  : Apply physical ion size and solvation number.
+			  - **OFF** : Use the previous model setting (only potassium has a size).
+			"""
         end;
         label = "Submit"
     );
@@ -1315,12 +1319,7 @@ floataside(
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
-    at = user_input_ion[:at]
-    κt = user_input_ion[:κt]
-    ak = user_input_ion[:ak]
-    κk = user_input_ion[:κk]
-
-    use_md_hydrated = user_input_size   # Bool toggle you will use
+    use_md_hydrated = user_input_ion.use_physical_size   # Bool toggle you will use
 
     # a: hydrated radii in water (Å), κ: MD hydration number (1st shell)
     if use_md_hydrated
@@ -1340,16 +1339,16 @@ begin
         κ_OH   = 3.5     #  (MD)
         κ_H    = 4.0     #  (MD)
         κ_CO   = 0.0     # neutral
-        κ_K    = 6.0     #  (MD)
+        κ_K    = 6.0     #   (MD)
     else
-        # Legacy / user-input model
-        a_HCO3 = at;  κ_HCO3 = κt
-        a_CO3  = at;  κ_CO3  = κt
-        a_CO2  = at;  κ_CO2  = κt
-        a_OH   = at;  κ_OH   = κt
-        a_H    = at;  κ_H    = κt
-        a_CO   = at;  κ_CO   = κt
-        a_K    = ak;  κ_K    = κk
+        # defalult, Stefan's Model
+        a_HCO3 = 0.0;  κ_HCO3 = 0
+        a_CO3  = 0.0;  κ_CO3  = 0
+        a_CO2  = 0.0;  κ_CO2  = 0
+        a_OH   = 0.0;  κ_OH   = 0
+        a_H    = 0.0;  κ_H    = 0
+        a_CO   = 0.0;  κ_CO   = 0
+        a_K    = 8.2;  κ_K    = 0
     end
 
     const bulk = let
@@ -1766,7 +1765,7 @@ floataside(
 	    end;
 	    label = "Submit"
 	);
-	top = 505
+	top = 600
 )
 
 # ╔═╡ 2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
@@ -2036,9 +2035,6 @@ if scan_rate_varied_checkbox
 	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc; species = iohminus)
 end
 
-# ╔═╡ e4d06a70-2309-48fe-a39a-89d52b3d124c
-scresult
-
 # ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
 if L_varied_checkbox
 	resL = sweep_over_L_cv(
@@ -2077,80 +2073,31 @@ end
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
 is_Landstorfer = model != elydata_Gold
 
-# ╔═╡ 36e756a9-4d9b-40ef-9e37-d86f1194cc51
-function capscalc(sys; molarities =molarities)
-    result = []
-	vrange = range(-1, 1, length = 201)
-	if is_Landstorfer
-		for imol in 1:length(molarities)
-		    if !isa(sys, AbstractElectrochemicalSystem)
-		     	data = sys.physics.data
-		        set_molarity!(data, molarities[imol])
-		      	t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 		101)
-		    else
-		        data = sys.vfvmsys.physics.data
-		        data.c_bulk .= molarities[imol] * ufac"mol/dm^3"
-		    	t = @elapsed r = dlcapsweep(
-		                sys,
-		     	        voltages = range(-1, 1, length = 201)
-		        )
-		        volts = vrange
-		        caps = r.dlcaps
-		    end
-		    cdl0 = dlcap0(data)
-		    @info "elapsed=$(t)"
-		    push!(result, (voltage_range = volts, dlcaps = caps, cdl0 = cdl0, molarity = 	molarities[imol]))
-		end
-	else
-	   	if !isa(sys, AbstractElectrochemicalSystem)
-	   		data = sys.physics.data
-	        t = @elapsed volts, caps = dlcapsweep_equi(sys, vmax = 1V, nsteps = 101)
-		else
-	        data = sys.vfvmsys.physics.data
-	        t = @elapsed r = dlcapsweep(
-	    	        sys,
-	                voltages = vrange
-	        )
-			volts = r.voltages
-			caps = r.dlcaps
-	    end
-	    cdl0 = dlcap0(data)
-	    @info "elapsed=$(t)"
-	    push!(result, (voltage_range = volts, dlcaps = caps, cdl0 = cdl0))
-	end
-    return result
-end
-
-
 # ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
-begin
-	if double_layer_curve
-		#pb
-		sys_pb = PBSystem(grid; bcondition = pb_bcondition,  celldata = deepcopy(model))
-		result_pb = capscalc(sys_pb)
-	else 
-		result_pb = nothing
-	end
+if double_layer_curve
+	#pb
+	sys_pb = PBSystem(grid; bcondition = pb_bcondition,  celldata = deepcopy(model))
+	result_pb = capscalc(sys_pb, is_Landstorfer; vrange = range(vmin, vmax, length = 201))
+else 
+	result_pb = nothing
 end
 
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
-begin
-	if double_layer_curve
-		#pnp
-		reaction_arg = model == elydata_Gold ? (reaction) : NamedTuple()
-		sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction_arg)
+if double_layer_curve
+	#pnp
+	reaction_arg = model == elydata_Gold ? (reaction) : NamedTuple()
+	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction_arg)
 
-		result_pnp = capscalc(sys_pnp)
-	else
-		result_pnp = nothing
-	end
+	result_pnp = capscalc(sys_pnp, is_Landstorfer; vrange = range(vmin, vmax, length = 201))
+else
+	result_pnp = nothing
 end
 
 # ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
-let
+if double_layer_curve
     vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    AuCO2RR_plots.capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps))
-    AuCO2RR_plots.capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps))
+    AuCO2RR_plots.capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps), xlimits_NL = (vmin*1.1, vmax*1.1))
+    AuCO2RR_plots.capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps), xlimits_NL = (vmin*1.1, vmax*1.1))
 
     reveal(vis)
 end
@@ -2181,9 +2128,13 @@ end
 
 # ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
 if pressure_varied_checkbox
-	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.3], ispec = 5)
+	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = 5)
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
 end
+
+# ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.2, 0.9), (0, 1)))
+
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 if CV
@@ -2234,9 +2185,6 @@ if pH_varied_checkbox
 	results_pH = run_pH_sweep(model, sawtooth, grid, pnp_bcondition, reaction; pH_values = [3, 10])
 	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
 end
-
-# ╔═╡ a6145826-b9d2-4e0d-88ad-fa706b0b190a
-results_pH
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
 # ╠═╡ show_logs = false
@@ -2375,7 +2323,7 @@ floataside(
     md"""
     __Input Voltage Index:__ $(@bind vindex PlutoUI.Slider(1:5:length(ivresult.voltages), default=default_index))
     """,
-    top = 855
+    top = 960
 )
 
 
@@ -2402,7 +2350,7 @@ floataside(
     md"""
     __Input Time Index:__ $(@bind it PlutoUI.Slider(1:length(pnpresult.tsol.t)-1, show_value=false))
     """,
-    top = 965
+    top = 1060
 )
 
 # ╔═╡ 7454f68a-64dc-4676-b2b2-ed8fcb35d81e
@@ -2410,7 +2358,7 @@ floataside(
 	md"""
 	**Time:** $(round(pnpresult.tsol.t[it+1], digits=3)) s
 	""",
-	top = 865
+	top = 1010
 )
 
 # ╔═╡ 39683e98-dcbb-458b-817f-856fc6498730
@@ -2418,7 +2366,7 @@ floataside(
     md"""
     **Input Voltage Index:** $(@bind vindex2 PlutoUI.Slider(1:5:length(target_time), default=40))
     """,
-    top = 910
+    top = 1110
 )
 
 # ╔═╡ Cell order:
@@ -2433,7 +2381,7 @@ floataside(
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
-# ╠═5ba48ad0-2eb8-4fa3-980c-372a1c64a020
+# ╠═c72ac7c7-ff6d-4aca-b6c5-61746bd146a8
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
@@ -2471,8 +2419,8 @@ floataside(
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
-# ╟─924f8f5d-2cb0-4381-a522-509ff4c002b6
-# ╠═36e756a9-4d9b-40ef-9e37-d86f1194cc51
+# ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
+# ╠═66da15be-e4e3-4592-8354-a05ef092ac86
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
@@ -2501,14 +2449,13 @@ floataside(
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
 # ╟─11892724-1851-46f2-802d-4da45127b0af
 # ╠═8cd25c0c-e260-4401-af12-a1def38bb7c2
-# ╠═a6145826-b9d2-4e0d-88ad-fa706b0b190a
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
-# ╠═e4d06a70-2309-48fe-a39a-89d52b3d124c
 # ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
 # ╠═56814250-16b2-4578-820d-2096998c84f4
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
+# ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╠═a2c7c4da-77cd-493f-8f98-0c86fecf271a
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
@@ -2572,12 +2519,12 @@ floataside(
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c
 # ╟─9d7d4d68-c9cc-4a42-a99d-ae25a1ab554c
 # ╟─d912cbca-ef9b-4319-8699-3fc7da8e73d2
-# ╟─e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
-# ╟─6a9fad5b-4964-4e12-b131-8cb2628d1ab3
-# ╟─d75725cd-0ef6-421f-be56-f559312e73b6
-# ╟─ab0e28f4-4310-4dcc-817e-81b9e45fd501
-# ╟─7454f68a-64dc-4676-b2b2-ed8fcb35d81e
-# ╟─315dd351-9d68-48f1-aa7a-8f43f3dec6ac
-# ╟─06ae600d-3f73-49e6-858c-539079c117ab
-# ╟─39683e98-dcbb-458b-817f-856fc6498730
+# ╠═e5fc814f-a8e1-41ef-b81a-c3b0839a2f87
+# ╠═6a9fad5b-4964-4e12-b131-8cb2628d1ab3
+# ╠═d75725cd-0ef6-421f-be56-f559312e73b6
+# ╠═ab0e28f4-4310-4dcc-817e-81b9e45fd501
+# ╠═7454f68a-64dc-4676-b2b2-ed8fcb35d81e
+# ╠═315dd351-9d68-48f1-aa7a-8f43f3dec6ac
+# ╠═06ae600d-3f73-49e6-858c-539079c117ab
+# ╠═39683e98-dcbb-458b-817f-856fc6498730
 # ╟─3ac837b8-559b-41c2-8f83-1331839dcf7e

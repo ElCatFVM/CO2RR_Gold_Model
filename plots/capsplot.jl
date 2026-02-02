@@ -264,8 +264,9 @@ function capsplot(vis, ::Nothing, title)
         label = "(no data)",
         title = title,
         xlabel = L"φ / (V vs φ_{pzc})",
-        ylabel = L"dlcaps / (μF / cm²)"
-        # xlimits = (-1.1, 1.1), ylimits = (-1, 250)
+        ylabel = L"dlcaps / (μF / cm²)",
+        xlimits = (-1.1, 1.1),
+        ylimits = (-1, 250)
     )
     return vis
 end
@@ -274,10 +275,10 @@ function capsplot(
     vis, result, title;
     is_Landstorfer::Bool = false,
     nshow::Int,
-    xlimits_L=(-1.2, 1.2),
-    ylimits_L=(0, 120),
-    xlimits_NL=(-1.1, 1.1),
-    ylimits_NL=(0, 250),
+    xlimits_L=(-1.6, 1.6),
+    ylimits_L=(0, 50),
+    xlimits_NL=(-1.6, 1.6),
+    ylimits_NL=(0, 50),
     show_cdl0::Bool=true,
 )
     if is_Landstorfer
@@ -287,11 +288,11 @@ function capsplot(
         for imol in 1:nres
             c = RGB(imol * hmol, 0, 1 - imol * hmol)
 
-            v = result[imol].voltage_range
+            v   = result[imol].voltage_range
             cap = vec(result[imol].dlcaps)
 
             n = min(nshow, length(v), length(cap))
-            v = v[1:n]
+            v   = v[1:n]
             cap = cap[1:n] / (μF / cm^2)
 
             scalarplot!(
@@ -317,34 +318,47 @@ function capsplot(
                 )
             end
         end
+
     else
-        v = result[1].voltage_range
-        cap = vec(result[1].dlcaps)
-        n = min(length(v), length(cap))
-        v = v[1:n]
-        cap = cap[1:n] / (μF / cm^2)
+        # Non-Landstorfer: allow multiple curves (e.g., concentration scaling via `comb`)
+        nres = length(result)
+        hmol = 1 / max(nres, 1)
 
-        scalarplot!(
-            vis, v, cap;
-            clear=true,
-            color=:green,
-            label="$title",
-            title=title,
-            markershape=:none,
-            xlabel=L"φ / (V vs φ_{pzc})",
-            ylabel=L"dlcaps / (μF / cm²)",
-            xlimits=xlimits_NL,
-            limits=(ylimits_NL[1], ylimits_NL[2]),
-        )
+        for i in 1:nres
+            c = RGB(i * hmol, 0, 1 - i * hmol)
 
-        if show_cdl0
+            v   = result[i].voltage_range
+            cap = vec(result[i].dlcaps)
+
+            n = min(nshow, length(v), length(cap))
+            v   = v[1:n]
+            cap = cap[1:n] / (μF / cm^2)
+
+            # Prefer comb label if present, else fallback to index
+            lbl = hasproperty(result[i], :comb) ? "×$(result[i].comb)" : "run $i"
+
             scalarplot!(
-                vis, [0.0], [result[1].cdl0] / (μF / cm^2);
-                clear=false,
-                markershape=:circle,
-                markersize=8,
-                label=""
+                vis, v, cap;
+                clear=(i == 1),
+                color=c,
+                label=lbl,
+                title=title,
+                markershape=:none,
+                xlabel=L"φ / (V vs φ_{pzc})",
+                ylabel=L"dlcaps / (μF / cm²)",
+                xlimits=xlimits_NL,
+                limits=(ylimits_NL[1], ylimits_NL[2]),
             )
+
+            if show_cdl0
+                scalarplot!(
+                    vis, [0.0], [result[i].cdl0] / (μF / cm^2);
+                    clear=false,
+                    markershape=:circle,
+                    markersize=8,
+                    label=""
+                )
+            end
         end
     end
 

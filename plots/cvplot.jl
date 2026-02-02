@@ -397,13 +397,23 @@ end
 function plot_pressure_varied_sweep(P_recs;
                                    species=iohminus,
                                    fig_size=(1600, 900),
-                                   scale=cm^2/mA)
+                                   scale=cm^2/mA,
+                                   limits=nothing
+)
 
     fig = Figure(size = fig_size)
-    ax = Axis(fig[1, 1],
-              xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
-              ylabel = L"I (mA/cm^2)")
-
+    if limits !== nothing
+        ax = Axis(fig[1, 1],
+                  xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+                  ylabel = L"I (mA/cm^2)",
+                  limits = limits,
+                  )
+    else
+        ax = Axis(fig[1, 1],
+                xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+                ylabel = L"I (mA/cm^2)",
+                )
+    end
     n = length(P_recs)
     cols = [RGB(1 - t, 0, t) for t in LinRange(0, 1, n)]
 
@@ -412,7 +422,7 @@ function plot_pressure_varied_sweep(P_recs;
 
     for j in 1:n
         p, rec = P_recs[j]
-        label = (j == 1) ? "$(p)\t\t sat" : "$(p)\t pCO2(atm)"
+        label = "$(p)\t pCO2(atm)"
         push!(labels, label)
 
         I = currents(rec, species) .* scale
