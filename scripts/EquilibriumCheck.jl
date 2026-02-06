@@ -468,14 +468,14 @@ md"""
 # ╔═╡ 66da15be-e4e3-4592-8354-a05ef092ac86
 
 
-# ╔═╡ 4656ee04-ae86-442f-b37c-c5563170f992
-md"""
-Run double layer curve $(@bind double_layer_curve PlutoUI.CheckBox())
-"""
-
 # ╔═╡ d76d8413-c019-4728-b182-7f7cb78dede4
 md"""
 ### Result Plots
+"""
+
+# ╔═╡ 4656ee04-ae86-442f-b37c-c5563170f992
+md"""
+##### **Run double layer curve:** $(@bind double_layer_curve PlutoUI.CheckBox())
 """
 
 # ╔═╡ 9598e2c6-521e-4f8d-82d8-a836809736f3
@@ -514,7 +514,7 @@ md"""
 
 # ╔═╡ b95160b5-18f7-49d9-80be-9159abd2dcd1
 md"""
-Run general cyclic voltammetry curve $(@bind CV PlutoUI.CheckBox())
+##### **Run general cyclic voltammetry curve:** $(@bind CV PlutoUI.CheckBox())
 """
 
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
@@ -1063,9 +1063,14 @@ solver_control = (; max_round 	= 4,
               		reltol 		= 1.0e-8,
               		tol_mono 	= 1.0e-10)
 
+# ╔═╡ 57db41d1-57c0-4eee-ba35-6f9b7e1e8263
+md"""
+##### **Run general polarization curve** $(@bind IV PlutoUI.CheckBox())
+"""
+
 # ╔═╡ b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
 md"""
-Boundary Layer thickness varied polarization curve: $(@bind Ldependancy PlutoUI.CheckBox(default=false))
+##### **Boundary Layer thickness varied polarization curve:** $(@bind Ldependancy PlutoUI.CheckBox(default=false))
 """
 
 # ╔═╡ 7a02463d-cfd9-4648-af53-f1e65d46733f
@@ -1317,12 +1322,59 @@ floataside(
     top = 350
 )
 
+# ╔═╡ ab0e28f4-4310-4dcc-817e-81b9e45fd501
+floataside(
+    @bind user_input_model confirm(
+        PlutoUI.combine() do Child
+			md"""
+			###### __Model Selection__  
+			- Model: $(Child("model_choice", Select(["Gold_Model", "Landstorfer_NaClO₄ model", "Landstorfer_NaF model", "Toy model"])))
+			---
+			###### __Boundary layer thickness__   
+			- ``δ``: $(Child("L", NumberField(1:80000; default = 80))) μm  			
+			---
+			
+			###### __Activity Coefficient__  
+			- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
+			- NoteBook.Mode: $(Child("Nmode", Select(["DMGL_γ", "Stefan_γ", "Potassium_γ"])))
+			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Neumann", "Dirichlet"])))
+			"""
+	    end;
+	    label = "Submit"
+	);
+	top = 600
+)
+
+# ╔═╡ 2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
+begin
+    Vmax = 2 * V
+
+    L = user_input_model.L * μm
+
+    hmin = 1.0e-6 	* μm
+
+    hmax = 1.0	* μm 
+
+    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
+
+    grid = ExtendableGrids.simplexgrid(X)
+end;
+
+# ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
+begin
+	Lγ_key = user_input_model.Lmode 
+	Lγ_mode = Lγ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
+
+	Nγ_key = user_input_model.Nmode
+	Nγ_mode = Nγ_key == "Stefan_γ" ? Stefan_γ! : Nγ_key == "DMGL_γ" ? DGML_γ! : Potassium_γ! 
+end;
+
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 begin
     use_md_hydrated = user_input_ion.use_physical_size   # Bool toggle you will use
 
     # a: hydrated radii in water (Å), κ: MD hydration number (1st shell)
-    if use_md_hydrated
+    if use_md_hydrated == true && Lγ_key == "DMGL_γ"
         # --- hydrated radii [nm] (aqueous effective radii) ---
         a_HCO3 = 3.33   #  (Å)
         a_CO3  = 3.94   #  (Å)
@@ -1340,8 +1392,17 @@ begin
         κ_H    = 4.0     #  (MD)
         κ_CO   = 0.0     # neutral
         κ_K    = 6.0     #   (MD)
-    else
-        # defalult, Stefan's Model
+	elseif use_md_hydrated == true && Lγ_key == "Stefan_γ"
+        # Stefan's Model / Consider all effective size
+        a_HCO3 = 8.5;  κ_HCO3 = 0
+        a_CO3  = 9.9;  κ_CO3  = 0
+        a_CO2  = 3.4;  κ_CO2  = 0
+        a_OH   = 7.6;  κ_OH   = 0
+        a_H    = 7.3;  κ_H    = 0
+        a_CO   = 2.8;  κ_CO   = 0
+        a_K    = 8.2;  κ_K    = 0
+	else
+		# Stefan's Model / Only Potaissium has a size
         a_HCO3 = 0.0;  κ_HCO3 = 0
         a_CO3  = 0.0;  κ_CO3  = 0
         a_CO2  = 0.0;  κ_CO2  = 0
@@ -1349,7 +1410,7 @@ begin
         a_H    = 0.0;  κ_H    = 0
         a_CO   = 0.0;  κ_CO   = 0
         a_K    = 8.2;  κ_K    = 0
-    end
+	end
 
     const bulk = let
         bulk = [
@@ -1745,53 +1806,6 @@ function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
 end
 
 
-# ╔═╡ ab0e28f4-4310-4dcc-817e-81b9e45fd501
-floataside(
-    @bind user_input_model confirm(
-        PlutoUI.combine() do Child
-			md"""
-			###### __Model Selection__  
-			- Model: $(Child("model_choice", Select(["Gold_Model", "Landstorfer_NaClO₄ model", "Landstorfer_NaF model", "Toy model"])))
-			---
-			###### __Boundary layer thickness__   
-			- ``δ``: $(Child("L", NumberField(1:80000; default = 80))) μm  			
-			---
-			
-			###### __Activity Coefficient__  
-			- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
-			- NoteBook.Mode: $(Child("Nmode", Select(["DMGL_γ", "Stefan_γ", "Potassium_γ"])))
-			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Neumann", "Dirichlet"])))
-			"""
-	    end;
-	    label = "Submit"
-	);
-	top = 600
-)
-
-# ╔═╡ 2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
-begin
-    Vmax = 2 * V
-
-    L = user_input_model.L * μm
-
-    hmin = 1.0e-6 	* μm
-
-    hmax = 1.0	* μm 
-
-    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
-
-    grid = ExtendableGrids.simplexgrid(X)
-end;
-
-# ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
-begin
-	Lγ_key = user_input_model.Lmode 
-	Lγ_mode = Lγ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
-
-	Nγ_key = user_input_model.Nmode
-	Nγ_mode = Nγ_key == "Stefan_γ" ? Stefan_γ! : Nγ_key == "DMGL_γ" ? DGML_γ! : Potassium_γ! 
-end;
-
 # ╔═╡ e510bce3-d33f-47bb-98d6-121eee8f2252
 elydata_Gold = ElectrolyteData(;
                                	nc = size(bulk)[1],
@@ -2047,9 +2061,6 @@ if L_varied_checkbox
 	)
 end
 
-# ╔═╡ 9b599280-470e-48a4-bfcd-9f3c3f2e994c
-AuCO2RR_plots.plot_cv_over_L(resL, species = iohminus)
-
 # ╔═╡ 84d1270b-8df5-4d5d-a153-da4ffdb1d283
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 	kwargs 	 	= merge(solver_control, kwargs) 
@@ -2086,7 +2097,7 @@ end
 if double_layer_curve
 	#pnp
 	reaction_arg = model == elydata_Gold ? (reaction) : NamedTuple()
-	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction_arg)
+	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction)
 
 	result_pnp = capscalc(sys_pnp, is_Landstorfer; vrange = range(vmin, vmax, length = 201))
 else
@@ -2096,14 +2107,11 @@ end
 # ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
 if double_layer_curve
     vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    AuCO2RR_plots.capsplot(vis[1, 1], result_pb, "Poisson-Boltzmann"; nshow = length(result_pb[1].dlcaps), xlimits_NL = (vmin*1.1, vmax*1.1))
-    AuCO2RR_plots.capsplot(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; nshow = length(result_pnp[1].dlcaps), xlimits_NL = (vmin*1.1, vmax*1.1))
+    AuCO2RR_plots.capsplot_fixed(vis[1, 1], result_pb, "Poisson-Boltzmann"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
+    AuCO2RR_plots.capsplot_fixed(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
 
     reveal(vis)
 end
-
-# ╔═╡ 2640ee7f-109d-4dcc-b8af-3f854da1a323
-AuCO2RR_plots.plot_caps_comparison(; model_key, result_pb, result_pnp)
 
 # ╔═╡ 02d12ba4-4ab3-48f6-b084-edb06cb413b1
 begin
@@ -2133,8 +2141,9 @@ if pressure_varied_checkbox
 end
 
 # ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.2, 0.9), (0, 1)))
-
+if pressure_varied_checkbox
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
+end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 if CV
@@ -2178,7 +2187,9 @@ if CV
 end
 
 # ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
-AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+if CV
+	AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+end
 
 # ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
 if pH_varied_checkbox
@@ -2187,8 +2198,9 @@ if pH_varied_checkbox
 end
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
-# ╠═╡ show_logs = false
-cell, ivresult = simulate_CO2R(grid, model)
+if IV 
+	cell, ivresult = simulate_CO2R(grid, model)
+end
 
 # ╔═╡ 58ac8edc-2432-4054-88d8-52dafe0a2a61
 let
@@ -2266,28 +2278,34 @@ let
 end
 
 # ╔═╡ 5ccb6a73-41cc-4107-a6ee-37d906313841
-(~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
+if IV
+	(~, default_index) = findmin(abs, ivresult.voltages .+ 0.9 * ufac"V");
+end
 
 # ╔═╡ af333d3b-1e3a-4227-8cce-479907c11448
-begin
+if IV
 	gifpath = AuCO2RR_plots.plot1d_movie(ivresult; bulk, grid, L, step = 3, framerate = 5)
 	LocalResource(gifpath)
 end
 
 # ╔═╡ 9498845e-fa44-4d01-a7bc-33d01ec11f79
-AuCO2RR_plots.plot_iv_with_ringe_refs(ivresult, species = iohminus)
+if IV
+	AuCO2RR_plots.plot_iv_with_ringe_refs(ivresult, species = iohminus)
+end
 
 # ╔═╡ 22244e24-5b56-4933-8a09-44b601f116c3
-AuCO2RR_plots.iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true, species = iohminus)
+if IV
+	AuCO2RR_plots.iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true, species = iohminus)
+end
 
 # ╔═╡ c6f10b66-6d06-4f2e-a7cc-780096d75785
-begin 
+if IV 
 	conc_f, conc_a = AuCO2RR_plots.conc_vs_voltage_axis_compare(ivresult; bulk, grid, compare = comp)
 	conc_f
 end
 
 # ╔═╡ f8255707-2233-4e28-b542-2f3d81b31c2e
-begin
+if IV
     conc_out = AuCO2RR_plots.conc_vs_voltage_axis(
         ivresult;
         bulk = bulk,
@@ -2334,10 +2352,12 @@ $(vshow = ivresult.voltages[vindex]; @sprintf("%+1.4f", vshow))
 """
 
 # ╔═╡ 15fadfc2-3cf8-4fda-9aed-a79c602b1d51
-AuCO2RR_plots.plot1d(ivresult, vshow; bulk, grid, L)
+if IV
+	AuCO2RR_plots.plot1d(ivresult, vshow; bulk, grid, L)
+end
 
 # ╔═╡ ab302d08-1a6f-4553-85af-043c565b107f
-begin
+if IV
 	cond_out = AuCO2RR_plots.plot1d_makie(ivresult, vshow; bulk=bulk, grid=grid, L=L)
 	cond_fig, cond_ax, cond_colors = cond_out.fig, cond_out.ax, cond_out.colors
 	
@@ -2402,7 +2422,7 @@ floataside(
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
-# ╟─e510bce3-d33f-47bb-98d6-121eee8f2252
+# ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
 # ╟─848b7aeb-968f-4116-8038-b61276f02b6c
 # ╟─f18dc873-1c9d-46d3-9596-92d28705e894
 # ╟─12235c3c-18f2-4fc7-95ef-800f71783036
@@ -2423,11 +2443,10 @@ floataside(
 # ╠═66da15be-e4e3-4592-8354-a05ef092ac86
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
-# ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
+# ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
 # ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
-# ╠═2640ee7f-109d-4dcc-b8af-3f854da1a323
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
 # ╠═ed92cece-3f89-45f5-ac17-cbc9a9abb906
@@ -2453,13 +2472,12 @@ floataside(
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
 # ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
-# ╠═56814250-16b2-4578-820d-2096998c84f4
+# ╟─56814250-16b2-4578-820d-2096998c84f4
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
 # ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
-# ╠═a2c7c4da-77cd-493f-8f98-0c86fecf271a
+# ╟─a2c7c4da-77cd-493f-8f98-0c86fecf271a
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
-# ╠═9b599280-470e-48a4-bfcd-9f3c3f2e994c
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═b25f2246-0182-4d50-a606-0d81776d414f
 # ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
@@ -2495,8 +2513,9 @@ floataside(
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 # ╠═84d1270b-8df5-4d5d-a153-da4ffdb1d283
+# ╟─57db41d1-57c0-4eee-ba35-6f9b7e1e8263
 # ╠═11b12556-5b61-42c2-a911-4ea98a0a1e85
-# ╠═b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
+# ╟─b976ab43-69f1-47a0-b2c6-c63e1c15cdb4
 # ╠═60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╟─7a02463d-cfd9-4648-af53-f1e65d46733f
 # ╟─114d2324-5289-4e44-8d77-736a9bdec365

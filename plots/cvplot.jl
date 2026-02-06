@@ -815,3 +815,94 @@ function plot_cv_over_L(results::Dict{Float64,Any};
     return reveal(vis)
 end
 
+function plot_pressure_varied_sweep(
+    P_recs;
+    species=iohminus,
+    fig_size=(1600, 900),
+    scale=cm^2/mA,
+    limits=nothing,
+    # --- add experimental background (Figure_3.csv) ---
+    fig3_csv::Union{Nothing,AbstractString}="../data/Langmuir_CV_data/Figure_3.csv",
+    exp_title::AbstractString="Experimental",
+    exp_alpha::Real=0.55,
+    exp_linewidth::Real=2,
+    sim_linewidth::Real=3,
+)
+    fig = Figure(size = fig_size)
+
+    ax = if limits !== nothing
+        Axis(fig[1, 1],
+             xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+             ylabel = L"I (mA/cm^2)",
+             limits = limits)
+    else
+        Axis(fig[1, 1],
+             xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+             ylabel = L"I (mA/cm^2)")
+    end
+
+    plots  = Any[]
+    labels = String[]
+
+    # ------------------------------------------------------------
+    # 1) Experimental background (Figure_3.csv)  [optional]
+    # ------------------------------------------------------------
+    if fig3_csv !== nothing
+        try
+            raw = CSV.read(fig3_csv, DataFrame; header=false)
+
+            pres = vec(Matrix(raw[1:1, :]))
+            sub  = Matrix(raw[4:end, :])
+
+            num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+            num_df = DataFrame(num, :auto)
+
+            npairs = size(num_df, 2) ÷ 2
+
+            pink  = RGB(1.0, 0.7, 0.8)
+            pblue = RGB(0.2, 0.5, 1.0)
+            cols_exp = [RGB(pink.r + t*(pblue.r-pink.r),
+                            pink.g + t*(pblue.g-pink.g),
+                            pink.b + t*(pblue.b-pink.b)) for t in range(0, 1, length=npairs)]
+
+            for j in 1:npairs
+                xcol, ycol = 2j - 1, 2j
+                lab = (j == 1) ? "$(pres[1])\t\t sat" : "$(pres[2j])\t pCO2(atm)"
+
+                x = num_df[!, xcol]
+                y = num_df[!, ycol]
+
+                # lighter background curves
+                line = lines!(ax, x, y; color = (cols_exp[j], exp_alpha), linewidth = exp_linewidth)
+                push!(plots, line)
+                push!(labels, "$exp_title | $lab")
+            end
+        catch e
+            # keep behavior: only skip for UndefVarError, otherwise rethrow
+            if e isa UndefVarError
+                # skip
+            else
+                rethrow(e)
+            end
+        end
+    end
+
+    # ------------------------------------------------------------
+    # 2) Simulation curves (existing logic)
+    # ------------------------------------------------------------
+    n = length(P_recs)
+    cols_sim = [RGB(1 - t, 0, t) for t in LinRange(0, 1, max(n, 1))]
+
+    for j in 1:n
+        p, rec = P_recs[j]
+        label = "$(p)\t pCO2(atm)"
+        I = currents(rec, species) .* scale
+
+        line = lines!(ax, rec.voltages, I; color = cols_sim[j], linewidth = sim_linewidth)
+        push!(plots, line)
+        push!(labels, "Theoretical | $label")
+    end
+
+    Legend(fig[1, 2], plots, labels, "Overlay"; framevisible=true)
+    return fig
+end

@@ -271,94 +271,60 @@ function capsplot(vis, ::Nothing, title)
     return vis
 end
 
-function capsplot(
+function capsplot_fixed(
     vis, result, title;
-    is_Landstorfer::Bool = false,
-    nshow::Int,
-    xlimits_L=(-1.6, 1.6),
-    ylimits_L=(0, 50),
-    xlimits_NL=(-1.6, 1.6),
-    ylimits_NL=(0, 50),
+    is_Landstorfer::Bool = false, # molarity 
+    nshow::Int = 201,
+    xlimits_L=(-1.0, 1.0),
+    ylimits_L=(0, 100),
     show_cdl0::Bool=true,
 )
-    if is_Landstorfer
-        nres = length(result)
-        hmol = 1 / max(nres, 1)
+    nres = length(result)
+    hmol = 1 / max(nres, 1)
 
-        for imol in 1:nres
-            c = RGB(imol * hmol, 0, 1 - imol * hmol)
+    for i in 1:nres
+        c = RGB(i * hmol, 0, 1 - i * hmol)
 
-            v   = result[imol].voltage_range
-            cap = vec(result[imol].dlcaps)
+        v   = result[i].voltage_range
+        cap = vec(result[i].dlcaps)
 
-            n = min(nshow, length(v), length(cap))
-            v   = v[1:n]
-            cap = cap[1:n] / (μF / cm^2)
+        n = min(nshow, length(v), length(cap))
+        v   = v[1:n]
+        cap = cap[1:n] / (μF / cm^2)
 
-            scalarplot!(
-                vis, v, cap;
-                color=c,
-                clear=(imol == 1),
-                label="$(result[imol].molarity)M",
-                markershape=:none,
-                title=title,
-                xlabel="φ / (V vs φ_pzc)",
-                ylabel="dlcaps / (μF / cm²)",
-                xlimits=xlimits_L,
-                limits=(ylimits_L[1], ylimits_L[2]),
-            )
-
-            if show_cdl0
-                scalarplot!(
-                    vis, [0.0], [result[imol].cdl0] / (μF / cm^2);
-                    clear=false,
-                    markershape=:circle,
-                    markersize=8,
-                    label=""
-                )
-            end
+        # --- Legend(라벨)---
+        lbl = if hasproperty(result[i], :molarity)
+            "$(result[i].molarity) M"
+        elseif hasproperty(result[i], :comb)
+            "×$(result[i].comb)"
+        else
+            "Run $i"
         end
+        # ----------------------------
 
-    else
-        # Non-Landstorfer: allow multiple curves (e.g., concentration scaling via `comb`)
-        nres = length(result)
-        hmol = 1 / max(nres, 1)
+        scalarplot!(
+            vis, v, cap;
+            clear=(i == 1),
+            color=c,
+            label=lbl, 
+            title=title,
+            markershape=:none,
+            xlabel=L"\phi / (V vs \phi_{pzc})",
+            ylabel=L"C_{dl} / (\mu F / cm^2)",
+            xlimits=xlimits_L,
+            limits=(ylimits_L[1], ylimits_L[2]),
+        )
 
-        for i in 1:nres
-            c = RGB(i * hmol, 0, 1 - i * hmol)
-
-            v   = result[i].voltage_range
-            cap = vec(result[i].dlcaps)
-
-            n = min(nshow, length(v), length(cap))
-            v   = v[1:n]
-            cap = cap[1:n] / (μF / cm^2)
-
-            # Prefer comb label if present, else fallback to index
-            lbl = hasproperty(result[i], :comb) ? "×$(result[i].comb)" : "run $i"
-
+        # PZC 
+        if show_cdl0
             scalarplot!(
-                vis, v, cap;
-                clear=(i == 1),
-                color=c,
-                label=lbl,
-                title=title,
-                markershape=:none,
-                xlabel=L"φ / (V vs φ_{pzc})",
-                ylabel=L"dlcaps / (μF / cm²)",
-                xlimits=xlimits_NL,
-                limits=(ylimits_NL[1], ylimits_NL[2]),
+                vis, [0.0], [result[i].cdl0] / (μF / cm^2);
+                clear=false,
+                color=c, 
+                markershape=:circle,
+                markersize=5,
+                label=""
             )
-
-            if show_cdl0
-                scalarplot!(
-                    vis, [0.0], [result[i].cdl0] / (μF / cm^2);
-                    clear=false,
-                    markershape=:circle,
-                    markersize=8,
-                    label=""
-                )
-            end
         end
     end
 
