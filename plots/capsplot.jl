@@ -330,3 +330,91 @@ function capsplot_fixed(
 
     return vis
 end
+
+
+"""
+overlay_csv!(vis, dfs; v=:Voltage, y=:Cdl, lab=nothing, ls=:dash, lw=2)
+
+Overlay one or more CSV DataFrames onto an existing `vis`.
+- `dfs` is a Vector of DataFrames (each from CSV.read).
+- Default columns are `:Voltage` and `:Cdl`. Change with `v=` and `y=`.
+- `lab` can be a Vector of labels (same length as dfs).
+"""
+function overlay_csv!(
+    vis,
+    dfs;
+    ϕ_pzc::Real,
+    v::Symbol = :Voltage,
+    y::Symbol = :Cdl,
+    lab = nothing,
+    ls = :dashdot,
+    lw = 2,
+)
+    n = length(dfs)
+    labels = lab === nothing ? ["CSV $i" for i in 1:n] : lab
+    length(labels) == n || error("lab length must match dfs length")
+
+    for i in 1:n
+        colors = [RGB(0.5, 0.3, i / n) for i in 1:n]
+        df = dfs[i]
+        scalarplot!(
+            vis,
+            Float64.(df[!, v]) .+ ϕ_pzc,
+            Float64.(df[!, y]);
+            color = colors[i],
+            label = labels[i],
+            linestyle = ls,
+            linewidth = lw,
+            markershape = :none,
+        )
+    end
+    return vis
+end
+
+
+
+"""
+capsplot_with_csv!(vis, result, title, dfs; ...)
+
+Draw simulation (capsplot_fixed) and overlay multiple CSV DataFrames on top.
+Returns `vis`.
+"""
+function capsplot_with_csv!(
+    vis,
+    result,
+    title,
+    ϕ_pzc,
+    dfs;
+    nshow::Int = 201,
+    xlimits = (-1.0, 1.0),
+    ylimits = (0, 100),
+    show_cdl0::Bool = true,
+    v::Symbol = :Voltage,
+    y::Symbol = :Cdl,
+    lab = nothing,
+    ls = :dash,
+    lw = 2,
+)
+    capsplot_fixed(
+        vis, result, title;
+        nshow = nshow,
+        xlimits_L = xlimits,
+        ylimits_L = ylimits,
+        show_cdl0 = show_cdl0,
+    )
+
+    overlay_csv!(
+        vis, dfs;
+        ϕ_pzc = ϕ_pzc,
+        v = v,
+        y = y,
+        lab = lab,
+        ls = ls,
+        lw = lw,
+    )
+
+    return vis
+end
+
+
+

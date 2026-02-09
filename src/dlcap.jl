@@ -1,4 +1,4 @@
-function capscalc(sys, Au_Check::Bool; molarities= molarities = [0.005, 0.05, 0.5], vrange = range(-1, 1, length = 201))
+function capscalc(sys, Au_Check::Bool; molarities= molarities = [0.005, 0.02, 0.1], vrange = range(-1, 1, length = 201))
     result = []
     
     # Index Sequence: [1:K+, 2:H+, 3:HCO3, 4:CO3, 5:CO2, 6:OH, 7:CO]
@@ -12,7 +12,7 @@ function capscalc(sys, Au_Check::Bool; molarities= molarities = [0.005, 0.05, 0.
         #0.5  => [0.5,  2.940e-8, 0.49842, 7.901e-4, 0.033, 3.402e-7, 0.0]
     )
 
-    molarities = [
+    molarities_gold = [
         0.01, 
         #0.03, 
         #0.05, 
@@ -43,7 +43,7 @@ function capscalc(sys, Au_Check::Bool; molarities= molarities = [0.005, 0.05, 0.
     else
       data = isa(sys, AbstractElectrochemicalSystem) ? sys.vfvmsys.physics.data : sys.physics.data
         
-        for c_total in molarities
+        for c_total in molarities_gold
             c_vals = conc_map[c_total]
             
 

@@ -347,9 +347,9 @@ md"""
 # ╔═╡ 848b7aeb-968f-4116-8038-b61276f02b6c
 elydata_NaClO₄ = ElectrolyteData(
  		z = [-1, 1],
-		κ = [8.0, 8.0],
+		κ = [8.0, 15.0],
 		#v = [25.0, 25.0],
-		c_bulk = [0.5, 0.5],
+		c_bulk = [1.0, 1.0],
 		ε = 26.0,
 		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
 )
@@ -491,6 +491,10 @@ begin
 	Landstorfer_NaF_100mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaF_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_100mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.1M.csv", DataFrame);
 	Landstorfer_NaClO₄_5mM = CSV.read("../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.005M.csv", DataFrame);
+	
+	Valetter_NaClO₄_100mM = CSV.read("../data/Valette_Cap_data/NaClO4_0.1M.csv", DataFrame);	
+	Valette_NaClO₄_20mM = CSV.read("../data/Valette_Cap_data/NaClO4_0.02M.csv", DataFrame);
+	Valetter_NaClO₄_5mM = CSV.read("../data/Valette_Cap_data/NaClO4_0.005M.csv", DataFrame);	
 	
 	#Solvation number plot(Fig 7)
 	Landstorfer_Low_κ = CSV.read("../data/E.Acta_Cap_data/Landstorfer_kappa0.csv", DataFrame);
@@ -2093,11 +2097,23 @@ else
 	result_pb = nothing
 end
 
+# ╔═╡ f4a4fb29-824d-4c00-8547-c9a20c6aed8f
+if double_layer_curve
+	pzc_ref = 0.972
+    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
+	AuCO2RR_plots.capsplot_with_csv!(
+    vis, result_pb, "PBcompare", pzc_ref,
+    [Valetter_NaClO₄_100mM, Valette_NaClO₄_20mM, Valetter_NaClO₄_5mM];
+    lab = ["0.005M_digit", "0.02M_digit", "0.1M_digit"],
+)
+    reveal(vis)
+end
+
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
 if double_layer_curve
 	#pnp
 	reaction_arg = model == elydata_Gold ? (reaction) : NamedTuple()
-	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction)
+	sys_pnp = PNPSystem(grid; bcondition = pnp_bcondition, celldata = deepcopy(model), reaction_arg)
 
 	result_pnp = capscalc(sys_pnp, is_Landstorfer; vrange = range(vmin, vmax, length = 201))
 else
@@ -2106,11 +2122,11 @@ end
 
 # ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
 if double_layer_curve
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    AuCO2RR_plots.capsplot_fixed(vis[1, 1], result_pb, "Poisson-Boltzmann"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
-    AuCO2RR_plots.capsplot_fixed(vis[1, 2], result_pnp, "Poisson-Nernst-Planck"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
+    vis_caps = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
+    AuCO2RR_plots.capsplot_fixed(vis_caps[1, 1], result_pb, "Poisson-Boltzmann"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
+    AuCO2RR_plots.capsplot_fixed(vis_caps[1, 2], result_pnp, "Poisson-Nernst-Planck"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
 
-    reveal(vis)
+    reveal(vis_caps)
 end
 
 # ╔═╡ 02d12ba4-4ab3-48f6-b084-edb06cb413b1
@@ -2423,7 +2439,7 @@ floataside(
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 # ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
-# ╟─848b7aeb-968f-4116-8038-b61276f02b6c
+# ╠═848b7aeb-968f-4116-8038-b61276f02b6c
 # ╟─f18dc873-1c9d-46d3-9596-92d28705e894
 # ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
@@ -2447,6 +2463,7 @@ floataside(
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
 # ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
+# ╠═f4a4fb29-824d-4c00-8547-c9a20c6aed8f
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
 # ╠═ed92cece-3f89-45f5-ac17-cbc9a9abb906
