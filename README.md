@@ -42,7 +42,7 @@ Open Julia in the repository root, then enter Pkg mode (]) and run:
 ### 3) Add CatmapInterface.jl (required)
 In the same Julia environment (still in Pkg mode):
 ```julia
-(AuCO2RR)> https://github.com/ElCatFVM/CatmapInterface.jl
+(AuCO2RR)> add https://github.com/ElCatFVM/CatmapInterface.jl
 ```
 ### 4) Run the main script
 running script using `Pluto script/Equilibriumcheck.jl`
