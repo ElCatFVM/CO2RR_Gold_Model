@@ -1870,7 +1870,7 @@ begin
 	
 	function reaction(
 		f, 
-		u::VoronoiFVM.NodeUnknowns{Tv, Tc, Tp, Ti}, 
+		u::VoronoiFVM.NodeUnknowns, 
 		node, 
 		data
 	) where {Tv, Tc, Tp, Ti}  
@@ -1911,7 +1911,7 @@ begin
 	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
 	
 	function we_breactions(f, 
-			u::VoronoiFVM.BNodeUnknowns{Tval, Tv, Tc, Tp, Ti}, 
+			u::VoronoiFVM.BNodeUnknowns, 
 			bnode, 
 			data
 		) where {Tval, Tv, Tc, Tp, Ti}
