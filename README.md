@@ -21,28 +21,28 @@ The main workflow is: use the package code in src/, then execute a runnable scri
 - All simulations (e.g., **double-layer capacitance (DLCap)**, **IV**, **CV**, and various parametric studies) are **triggered interactively**
 
 ### 1) Clone
-```
+```bash
 git clone https://github.com/ElCatFVM/Capacitance_Code
 cd Capacitance_Code
 ```
 ### 2) Instantiate Julia environment
 
 Open Julia in the repository root, then enter Pkg mode (]) and run:
-```
+```julia
 ] activate .
 ```
-```
+```julia
 (AuCO2RR)> instantiate
 ```
 
 (Optional but recommended)
-```
+```julia
 (AuCO2RR)> precompile
 ```
 ### 3) Add CatmapInterface.jl (required)
 In the same Julia environment (still in Pkg mode):
-```
-] add https://github.com/ElCatFVM/CatmapInterface.jl
+```julia
+(AuCO2RR)> https://github.com/ElCatFVM/CatmapInterface.jl
 ```
 ### 4) Run the main script
 running script using `Pluto script/Equilibriumcheck.jl`
