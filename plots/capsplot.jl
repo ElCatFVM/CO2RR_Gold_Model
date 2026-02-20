@@ -272,15 +272,37 @@ function capsplot(vis, ::Nothing, title)
 end
 
 function capsplot_fixed(
-    vis, result, title;
-    is_Landstorfer::Bool = false, # molarity 
+    result, title;
+    is_Landstorfer::Bool = false,
     nshow::Int = 201,
     xlimits_L=(-1.0, 1.0),
     ylimits_L=(0, 100),
     show_cdl0::Bool=true,
 )
+
+    fig = Figure(size = (600, 600))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~}\phi_{pzc})",
+        ylabel = L"C_{dl}~(\mu \mathrm{F\,cm^{-2}})",
+        title = title,
+        titlesize = 25,
+        xlabelsize = 25,
+        ylabelsize = 25,
+        xticklabelsize = 25,
+        yticklabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        limits = (xlimits_L, ylimits_L)
+    )
+
     nres = length(result)
     hmol = 1 / max(nres, 1)
+
+    plot_objs = Any[]
+    labels = String[]
 
     for i in 1:nres
         c = RGB(i * hmol, 0, 1 - i * hmol)
@@ -292,7 +314,6 @@ function capsplot_fixed(
         v   = v[1:n]
         cap = cap[1:n] / (μF / cm^2)
 
-        # --- Legend(라벨)---
         lbl = if hasproperty(result[i], :molarity)
             "$(result[i].molarity) M"
         elseif hasproperty(result[i], :comb)
@@ -300,36 +321,30 @@ function capsplot_fixed(
         else
             "Run $i"
         end
-        # ----------------------------
 
-        scalarplot!(
-            vis, v, cap;
-            clear=(i == 1),
-            color=c,
-            label=lbl, 
-            title=title,
-            markershape=:none,
-            xlabel=L"\phi / (V vs \phi_{pzc})",
-            ylabel=L"C_{dl} / (\mu F / cm^2)",
-            xlimits=xlimits_L,
-            limits=(ylimits_L[1], ylimits_L[2]),
-        )
+        line = lines!(ax, v, cap; color=c, linewidth=4)
+        push!(plot_objs, line)
+        push!(labels, lbl)
 
-        # PZC 
         if show_cdl0
-            scalarplot!(
-                vis, [0.0], [result[i].cdl0] / (μF / cm^2);
-                clear=false,
-                color=c, 
-                markershape=:circle,
-                markersize=5,
-                label=""
-            )
+            scatter!(ax, [0.0], [result[i].cdl0] / (μF / cm^2); color=c, markersize=10)
         end
     end
 
-    return vis
+    leg = Legend(fig[1, 1], plot_objs, labels;
+        framevisible = false,
+        halign = :right,
+        valign = :bottom,
+        labelsize = 20,
+        titlesize = 23,
+        tellwidth = false,
+        tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    return fig, ax
 end
+
 
 
 """
@@ -340,8 +355,8 @@ Overlay one or more CSV DataFrames onto an existing `vis`.
 - Default columns are `:Voltage` and `:Cdl`. Change with `v=` and `y=`.
 - `lab` can be a Vector of labels (same length as dfs).
 """
-function overlay_csv!(
-    vis,
+function overlay_csv_on_axis!(
+    ax,
     dfs;
     ϕ_pzc::Real,
     v::Symbol = :Voltage,
@@ -354,21 +369,19 @@ function overlay_csv!(
     labels = lab === nothing ? ["CSV $i" for i in 1:n] : lab
     length(labels) == n || error("lab length must match dfs length")
 
+    colors = [RGB(0.5, 0.3, i / max(n, 1)) for i in 1:n]
+
     for i in 1:n
-        colors = [RGB(0.5, 0.3, i / n) for i in 1:n]
         df = dfs[i]
-        scalarplot!(
-            vis,
-            Float64.(df[!, v]) .+ ϕ_pzc,
-            Float64.(df[!, y]);
-            color = colors[i],
-            label = labels[i],
-            linestyle = ls,
-            linewidth = lw,
-            markershape = :none,
-        )
+
+        # x축이 "V vs φ_pzc" 라면 보통 -가 맞습니다 (필요하면 +로 바꾸세요)
+        x = Float64.(df[!, v]) .+ ϕ_pzc
+        yv = Float64.(df[!, y])
+
+        lines!(ax, x, yv; color=colors[i], linestyle=ls, linewidth=lw, label=labels[i])
     end
-    return vis
+
+    return ax
 end
 
 
@@ -379,12 +392,9 @@ capsplot_with_csv!(vis, result, title, dfs; ...)
 Draw simulation (capsplot_fixed) and overlay multiple CSV DataFrames on top.
 Returns `vis`.
 """
-function capsplot_with_csv!(
-    vis,
-    result,
-    title,
-    ϕ_pzc,
-    dfs;
+function capsplot_with_csv(
+    result, title,
+    ϕ_pzc, dfs;
     nshow::Int = 201,
     xlimits = (-1.0, 1.0),
     ylimits = (0, 100),
@@ -392,29 +402,21 @@ function capsplot_with_csv!(
     v::Symbol = :Voltage,
     y::Symbol = :Cdl,
     lab = nothing,
-    ls = :dash,
+    ls = :dashdot,
     lw = 2,
 )
-    capsplot_fixed(
-        vis, result, title;
-        nshow = nshow,
-        xlimits_L = xlimits,
-        ylimits_L = ylimits,
-        show_cdl0 = show_cdl0,
+    fig, ax = capsplot_fixed(result, title;
+        nshow=nshow, xlimits_L=xlimits, ylimits_L=ylimits, show_cdl0=show_cdl0
     )
 
-    overlay_csv!(
-        vis, dfs;
-        ϕ_pzc = ϕ_pzc,
-        v = v,
-        y = y,
-        lab = lab,
-        ls = ls,
-        lw = lw,
-    )
+    overlay_csv_on_axis!(ax, dfs; ϕ_pzc=ϕ_pzc, v=v, y=y, lab=lab, ls=ls, lw=lw)
 
-    return vis
+    # CSV legend도 보고 싶으면 (기존 legend랑 겹치면 position만 조정)
+    axislegend(ax; position=:lt, framevisible=false)
+
+    return fig
 end
+
 
 
 

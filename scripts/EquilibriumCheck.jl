@@ -85,7 +85,7 @@ md"""
 
 # ╔═╡ 5a146a44-03dc-45f3-ae15-993d11c2edac
 begin
-	@phconstants N_A c_0 k_B e h
+	@phconstants N_A c_0 k_B e h ε_0	
 	const F = N_A * e
 
 	const voltages = (-1.15:0.1:-0.0) * V
@@ -205,9 +205,6 @@ begin
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 end;
-
-# ╔═╡ c72ac7c7-ff6d-4aca-b6c5-61746bd146a8
-use_physical_size
 
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
@@ -347,11 +344,9 @@ md"""
 # ╔═╡ 848b7aeb-968f-4116-8038-b61276f02b6c
 elydata_NaClO₄ = ElectrolyteData(
  		z = [-1, 1],
-		κ = [8.0, 15.0],
-		#v = [25.0, 25.0],
+		κ = [15.0, 25.0],
 		c_bulk = [1.0, 1.0],
 		ε = 26.0,
-		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
 )
 
 # ╔═╡ f18dc873-1c9d-46d3-9596-92d28705e894
@@ -585,13 +580,13 @@ let
         conc_vals = Float64[]
 
         for L in L_values
-            rec = RDE_result[L]              # NamedTuple(δ, result)
-            result_L = rec.result            # ✅ CVSweepResult
+            rec = RDE_result[L]             
+            result_L = rec.result           
 
             times = result_L.tsol.t
             idx   = argmin(abs.(times .- target_time))
 
-            c_ico2 = result_L.tsol.u[idx][ico2, 1] / (mol / dm^3)   # ✅ 안전하게 u로 접근
+            c_ico2 = result_L.tsol.u[idx][ico2, 1] / (mol / dm^3) 
             push!(conc_vals, c_ico2)
         end
 
@@ -1087,6 +1082,9 @@ md"""
 Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 """
 
+# ╔═╡ 425a5f53-ab8b-4596-bda7-586842e13878
+
+
 # ╔═╡ f8b5dc8f-1f41-4600-825e-2f9653f2d925
 md"""
 ### **Polarization Curve**
@@ -1405,11 +1403,19 @@ begin
         a_H    = 7.3;  κ_H    = 0
         a_CO   = 2.8;  κ_CO   = 0
         a_K    = 8.2;  κ_K    = 0
-	else
+	elseif use_md_hydrated == false && Lγ_key == "DMGL_γ"
 		# Stefan's Model / Only Potaissium has a size
-        a_HCO3 = 0.0;  κ_HCO3 = 0
+        a_HCO3 = 0.00;  κ_HCO3 = 0
+        a_CO3  = 0.00;  κ_CO3  = 0
+        a_CO2  = 1.70;  κ_CO2  = 0
+        a_OH   = 0.00;  κ_OH   = 0
+        a_H    = 0.00;  κ_H    = 0
+        a_CO   = 0.00;  κ_CO   = 0
+        a_K    = 3.31;  κ_K    = 6.0
+	else
+		a_HCO3 = 0.0;  κ_HCO3 = 0
         a_CO3  = 0.0;  κ_CO3  = 0
-        a_CO2  = 0.0;  κ_CO2  = 0
+        a_CO2  = 3.4;  κ_CO2  = 0
         a_OH   = 0.0;  κ_OH   = 0
         a_H    = 0.0;  κ_H    = 0
         a_CO   = 0.0;  κ_CO   = 0
@@ -1915,12 +1921,13 @@ begin
 			bnode, 
 			data
 		) where {Tval, Tv, Tc, Tp, Ti}
-		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we) = data
+		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, ε, cspecies) = data
 				
 		γ = get_tmp(γ_cache, u[ico2])
-		γ_co2 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
-		γ_co 	 = activity_coefficient!(γ, u, data, Nγ_mode)[ico]
-		σ 			= C_gap * (ϕ_we - ϕ_pzc- u[iϕ])
+		γ_co2 	 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
+		γ_co 	 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico]
+		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
+		σ = C_gap * (ϕ_we - ϕ_pzc - u[iϕ])#integrate(f, ρ, u; data)
 		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
 
 	
@@ -2097,18 +2104,6 @@ else
 	result_pb = nothing
 end
 
-# ╔═╡ f4a4fb29-824d-4c00-8547-c9a20c6aed8f
-if double_layer_curve
-	pzc_ref = 0.972
-    vis = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-	AuCO2RR_plots.capsplot_with_csv!(
-    vis, result_pb, "PBcompare", pzc_ref,
-    [Valetter_NaClO₄_100mM, Valette_NaClO₄_20mM, Valetter_NaClO₄_5mM];
-    lab = ["0.005M_digit", "0.02M_digit", "0.1M_digit"],
-)
-    reveal(vis)
-end
-
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
 if double_layer_curve
 	#pnp
@@ -2120,13 +2115,16 @@ else
 	result_pnp = nothing
 end
 
-# ╔═╡ 4f991d6d-3a3f-45d8-b2e0-662c5292251c
+# ╔═╡ e115560a-f79e-4a08-9bd2-5c11b0346827
 if double_layer_curve
-    vis_caps = GridVisualizer(Plotter = CairoMakie, legend = :lt, layout = (1, 2), size = 	(650, 350))
-    AuCO2RR_plots.capsplot_fixed(vis_caps[1, 1], result_pb, "Poisson-Boltzmann"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
-    AuCO2RR_plots.capsplot_fixed(vis_caps[1, 2], result_pnp, "Poisson-Nernst-Planck"; xlimits_L = (-1.0, 1.0), ylimits_L = (0, 300))
+	fig_pnp, ax_pnp = AuCO2RR_plots.capsplot_fixed(result_pnp, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 300))
+	fig_pnp
+end
 
-    reveal(vis_caps)
+# ╔═╡ dbd3471a-1b80-4ad5-aa2d-aa2f486af86d
+if double_layer_curve 
+	fig_pb, ax_pb = AuCO2RR_plots.capsplot_fixed(result_pb, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 300)) 
+	fig_pnp
 end
 
 # ╔═╡ 02d12ba4-4ab3-48f6-b084-edb06cb413b1
@@ -2335,21 +2333,60 @@ if IV
     conc_colors = conc_out.colors
     conc_species = conc_out.species
 
-    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
-		  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
-	text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
-		  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
-	text!(conc_ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
-		  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
-	text!(conc_ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", 
-		  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
-	text!(conc_ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", 
-		  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
-	text!(conc_ax, -0.90, 8e-10, text=L"\mathrm{OH^-}",
-		  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
-	text!(conc_ax, -1.15, 0.00024, text=L"\mathrm{CO}", 
-	 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+
+
+	if Lγ_key == "Stefan_γ"
+	    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.90, 8e-10, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.00024, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+	else
+  		text!(conc_ax, -1.2, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000004, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 2e-9, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 7e-6, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.21, 5e-4, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.9, 7e-9, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.003, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+
+	end
     conc_fig
+end
+
+# ╔═╡ 7627c74f-503d-465d-af66-d42bf57efd53
+if double_layer_curve
+    outdir = joinpath("..", "data", "output")
+    isdir(outdir) || mkpath(outdir)
+
+    base = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.Nmode)
+
+    for i in eachindex(result_pb)
+        df = DataFrame(
+            Voltage = result_pb[i].voltage_range,
+            Capacitance = result_pb[i].dlcaps
+        )
+        fname = string(base, "_", i, ".csv")
+        filepath = joinpath(outdir, fname)
+
+        CSV.write(filepath, df)
+    end
 end
 
 # ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
@@ -2417,7 +2454,6 @@ floataside(
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
-# ╠═c72ac7c7-ff6d-4aca-b6c5-61746bd146a8
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
@@ -2459,11 +2495,12 @@ floataside(
 # ╠═66da15be-e4e3-4592-8354-a05ef092ac86
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
+# ╠═7627c74f-503d-465d-af66-d42bf57efd53
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
-# ╠═4f991d6d-3a3f-45d8-b2e0-662c5292251c
-# ╠═f4a4fb29-824d-4c00-8547-c9a20c6aed8f
+# ╠═e115560a-f79e-4a08-9bd2-5c11b0346827
+# ╠═dbd3471a-1b80-4ad5-aa2d-aa2f486af86d
 # ╟─9598e2c6-521e-4f8d-82d8-a836809736f3
 # ╠═8bfdf2f5-c80a-4ce0-a8e1-b315affffb5f
 # ╠═ed92cece-3f89-45f5-ac17-cbc9a9abb906
@@ -2540,6 +2577,7 @@ floataside(
 # ╟─c4876d26-e841-4e28-8303-131d4635fc23
 # ╠═15fadfc2-3cf8-4fda-9aed-a79c602b1d51
 # ╠═af333d3b-1e3a-4227-8cce-479907c11448
+# ╠═425a5f53-ab8b-4596-bda7-586842e13878
 # ╠═ab302d08-1a6f-4553-85af-043c565b107f
 # ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═9498845e-fa44-4d01-a7bc-33d01ec11f79
@@ -2547,9 +2585,9 @@ floataside(
 # ╟─f672a256-641a-478e-b0aa-2df6e68b4d86
 # ╠═bab42c91-2d00-463d-a921-97487e4eac67
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
-# ╠═e4d93d39-c391-47ce-a248-6f0205761cca
+# ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
-# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╟─f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
 # ╠═d0985ca6-fef5-4b67-9ad6-f51d84b595b4
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c

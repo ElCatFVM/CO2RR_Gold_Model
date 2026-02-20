@@ -234,6 +234,106 @@ begin
 	end
 end
 
+# ╔═╡ ee091126-671e-46d8-8ed5-9457aeefd8fb
+function project_root()
+    return normpath(joinpath(@__DIR__, ".."))
+end
+
+# ╔═╡ 4b02a8c0-a854-436a-9fdc-99ecf637e858
+function output_dir()
+    return joinpath(project_root(), "data", "output")
+end
+
+# ╔═╡ 59b13ba5-c85d-4e31-bd06-e1541b426205
+function capsplot_fixed(
+    result, title;
+    is_Landstorfer::Bool = false,
+    nshow::Int = 201,
+    xlimits_L=(-1.0, 1.0),
+    ylimits_L=(0, 100),
+    show_cdl0::Bool=true,
+)
+
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~}\phi_{pzc})",
+        ylabel = L"C_{dl}~(\mu \mathrm{F\,cm^{-2}})",
+        xlabelsize = 25,
+        ylabelsize = 25,
+        xticklabelsize = 25,
+        yticklabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        limits = (xlimits_L, ylimits_L)
+    )
+
+    nres = length(result)
+    hmol = 1 / max(nres, 1)
+
+    plot_objs = Any[]
+    labels = String[]
+
+    for i in 1:nres
+        c = RGB(i * hmol, 0, 1 - i * hmol)
+
+        v   = result[i].voltage_range
+        cap = vec(result[i].dlcaps)
+
+        n = min(nshow, length(v), length(cap))
+        v   = v[1:n]
+        cap = cap[1:n] / (μF / cm^2)
+
+        # --- label ---
+        lbl = if hasproperty(result[i], :molarity)
+            "$(result[i].molarity) M"
+        elseif hasproperty(result[i], :comb)
+            "×$(result[i].comb)"
+        else
+            "Run $i"
+        end
+
+        line = lines!(ax, v, cap;
+                      color=c,
+                      linewidth=4)
+
+        push!(plot_objs, line)
+        push!(labels, lbl)
+
+        # --- PZC marker ---
+        if show_cdl0
+            scatter!(ax, [0.0],
+                     [result[i].cdl0] / (μF / cm^2);
+                     color=c,
+                     markersize=10)
+        end
+    end
+
+    # 강조 영역 (앞 스타일 유지)
+    vspan!(ax, -1.30, -0.70, color=(colorant"#87CEFA", 0.25))
+    vspan!(ax, -0.20,  0.10, color=(colorant"#F7DC6F", 0.25))
+    vspan!(ax,  0.10,  0.90, color=(colorant"#F1948A", 0.25))
+
+    leg = Legend(fig[1, 1], plot_objs, labels, title;
+        framevisible = false,
+        halign = :right,
+        valign = :bottom,
+        labelsize = 20,
+        titlesize = 23,
+        tellwidth = false,
+        tellheight = false
+    )
+
+    translate!(leg.blockscene, -40, 40, 0)
+
+    return fig
+end
+
+# ╔═╡ 12a083c3-dde1-4a99-8d66-c7c43afc6b68
+
+
 # ╔═╡ Cell order:
 # ╠═1472eb23-8b3b-453b-9a91-a550a9988c54
 # ╠═1abfb78d-7291-4950-97df-aeb789378bfc
@@ -243,3 +343,7 @@ end
 # ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
 # ╠═4911ad1e-e75a-4d41-83dc-675b3f26ce39
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
+# ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb
+# ╠═4b02a8c0-a854-436a-9fdc-99ecf637e858
+# ╠═59b13ba5-c85d-4e31-bd06-e1541b426205
+# ╠═12a083c3-dde1-4a99-8d66-c7c43afc6b68
