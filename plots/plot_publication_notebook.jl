@@ -8,10 +8,13 @@ using InteractiveUtils
 begin
 	using Pkg
  	Pkg.activate(joinpath(@__DIR__, ".."))	
-	using CSV, DataFrames, Colors
+	using CSV, DataFrames, Colors, LessUnitful
 	using CairoMakie
 	using Printf
 end
+
+# ╔═╡ f81c8540-591a-4a56-843f-f51085195e2e
+@unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
 
 # ╔═╡ 1abfb78d-7291-4950-97df-aeb789378bfc
 GoldModel = CSV.read("../data/dataplotfiles/iv_GoldModel.csv", DataFrame);
@@ -332,10 +335,81 @@ function capsplot_fixed(
 end
 
 # ╔═╡ 12a083c3-dde1-4a99-8d66-c7c43afc6b68
+let
 
+
+    csv_paths = [
+        raw"../data/output/DLCap_Dirichlet_DMGL_γ_pb_model_1.csv",
+        raw"../data/output/DLCap_Dirichlet_DMGL_γ_pb_model_2.csv",
+        raw"../data/output/DLCap_Dirichlet_DMGL_γ_pb_model_3.csv",
+    ]
+
+    xcol = :Voltage
+    ycol = :Capacitance
+	n = length(csv_paths)
+    colors = Makie.resample_cmap(:cool, n)
+    labels = ["model 1", "model 2", "model 3"]
+
+    fig = Figure(size = (480, 660))  # not too tall
+    axs = Axis[]
+
+    xlims = (-0.8, 0.4)
+    ylims = (0, 200)   
+    for i in 1:3
+        ax = Axis(fig[i, 1];
+            ylabel = (i == 2 ? "Cdl (μF cm⁻²)" : ""), 
+            xlabel = (i == 3 ? "Voltage (V)" : ""),   
+            title  = labels[i],
+
+            limits = (xlims[1], xlims[2], ylims[1], ylims[2]),
+
+            xgridvisible = false,
+            ygridvisible = false,
+
+            xlabelsize = 18, ylabelsize = 18,
+            titlesize = 16,
+
+            spinewidth = 3.5,
+            xtickwidth = 3.5,
+            ytickwidth = 3.5,
+            xticklabelsize = 15,
+            yticklabelsize = 15,
+        )
+
+        # Hide x tick labels for upper panels (shared x-axis look)
+        if i < 3
+            ax.xticklabelsvisible = false
+            ax.xlabelvisible = false
+        end
+
+        push!(axs, ax)
+    end
+
+    # Link x-axes so zoom/pan stays consistent (true shared x)
+    linkxaxes!(axs...)
+
+    for (i, p) in enumerate(csv_paths)
+        df = CSV.read(p, DataFrame; header=1)
+
+        lines!(
+            axs[i],
+            df[!, xcol],
+            df[!, ycol] / (μF / cm^2),
+            color = colors[i],
+            linewidth = 3,
+        )
+    end
+
+    # Tight-ish spacing
+    rowgap!(fig.layout, 8)
+    colgap!(fig.layout, 8)
+
+    display(fig)
+end
 
 # ╔═╡ Cell order:
 # ╠═1472eb23-8b3b-453b-9a91-a550a9988c54
+# ╠═f81c8540-591a-4a56-843f-f51085195e2e
 # ╠═1abfb78d-7291-4950-97df-aeb789378bfc
 # ╠═9e7ebac4-b131-4362-9c2e-a07070715df6
 # ╠═270509a2-433d-42af-886b-983f226f3229

@@ -1105,6 +1105,11 @@ md"""
 Compare the simulation results: $(@bind comp PlutoUI.CheckBox(default=true))
 """
 
+# ╔═╡ 91051ed4-9fd0-4c21-95f4-efc042060e4d
+md"""
+Extract the polarization Curve: $(@bind extractIV PlutoUI.CheckBox(default=true))
+"""
+
 # ╔═╡ de144adb-a467-4077-8cb1-d86462f56110
 html"""<hr>"""
 
@@ -1337,8 +1342,7 @@ floataside(
 			---
 			
 			###### __Activity Coefficient__  
-			- LiquidElectrolyte.Mode: $(Child("Lmode", Select(["DMGL_γ", "Stefan_γ"])))
-			- NoteBook.Mode: $(Child("Nmode", Select(["DMGL_γ", "Stefan_γ", "Potassium_γ"])))
+			- LiquidElectrolyte.Mode: $(Child("mode", Select(["DMGL_γ", "Stefan_γ"])))
 			- Boundary Condition : $(Child("BC_Select", Select(["Robin", "Neumann", "Dirichlet"])))
 			"""
 	    end;
@@ -1364,11 +1368,12 @@ end;
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
-	Lγ_key = user_input_model.Lmode 
-	Lγ_mode = Lγ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
-
+	γ_key = user_input_model.mode 
+	γ_mode = γ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
+"""
 	Nγ_key = user_input_model.Nmode
 	Nγ_mode = Nγ_key == "Stefan_γ" ? Stefan_γ! : Nγ_key == "DMGL_γ" ? DGML_γ! : Potassium_γ! 
+	"""
 end;
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
@@ -1376,7 +1381,7 @@ begin
     use_md_hydrated = user_input_ion.use_physical_size   # Bool toggle you will use
 
     # a: hydrated radii in water (Å), κ: MD hydration number (1st shell)
-    if use_md_hydrated == true && Lγ_key == "DMGL_γ"
+    if use_md_hydrated == true && γ_key == "DMGL_γ"
         # --- hydrated radii [nm] (aqueous effective radii) ---
         a_HCO3 = 3.33   #  (Å)
         a_CO3  = 3.94   #  (Å)
@@ -1394,7 +1399,7 @@ begin
         κ_H    = 4.0     #  (MD)
         κ_CO   = 0.0     # neutral
         κ_K    = 6.0     #   (MD)
-	elseif use_md_hydrated == true && Lγ_key == "Stefan_γ"
+	elseif use_md_hydrated == true && γ_key == "Stefan_γ"
         # Stefan's Model / Consider all effective size
         a_HCO3 = 8.5;  κ_HCO3 = 0
         a_CO3  = 9.9;  κ_CO3  = 0
@@ -1403,19 +1408,20 @@ begin
         a_H    = 7.3;  κ_H    = 0
         a_CO   = 2.8;  κ_CO   = 0
         a_K    = 8.2;  κ_K    = 0
-	elseif use_md_hydrated == false && Lγ_key == "DMGL_γ"
+	elseif use_md_hydrated == false && γ_key == "DMGL_γ"
 		# Stefan's Model / Only Potaissium has a size
         a_HCO3 = 0.00;  κ_HCO3 = 0
         a_CO3  = 0.00;  κ_CO3  = 0
-        a_CO2  = 1.70;  κ_CO2  = 0
+        a_CO2  = 0.0;  κ_CO2  = 0
         a_OH   = 0.00;  κ_OH   = 0
         a_H    = 0.00;  κ_H    = 0
         a_CO   = 0.00;  κ_CO   = 0
-        a_K    = 3.31;  κ_K    = 6.0
+        #a_K    = 3.31;  κ_K    = 6.0
+        a_K    = 8.20;  κ_K    = 0.0
 	else
 		a_HCO3 = 0.0;  κ_HCO3 = 0
         a_CO3  = 0.0;  κ_CO3  = 0
-        a_CO2  = 3.4;  κ_CO2  = 0
+        a_CO2  = 0.0;  κ_CO2  = 0
         a_OH   = 0.0;  κ_OH   = 0
         a_H    = 0.0;  κ_H    = 0
         a_CO   = 0.0;  κ_CO   = 0
@@ -1832,7 +1838,7 @@ elydata_Gold = ElectrolyteData(;
 								M     = getproperty.(bulk, :M),
 							  	Γ_we  = Γ_we,
 							  	Γ_bulk= Γ_bulk,
-							   	actcoeff! = Lγ_mode
+							   	actcoeff! = γ_mode
 							   )
 
 # ╔═╡ 12235c3c-18f2-4fc7-95ef-800f71783036
@@ -1847,13 +1853,13 @@ function activity_coefficient!(
 )
     (; v, ip, pscale, p_bulk, M, M0, v0, κ, RT, nc, Mrel, tildev, v0, cspecies, rexp) = data
 
-    if Nγ_mode == Stefan_γ!
+    if γ_mode == Stefan_γ!
         # Ringe et al. approach (volume fraction-based)
     	for ic in cspecies
         	γ[ic] = (1.0 / (1 - sum(u[i] * v[i] for i in 1:nc)))# / (mol/dm^3)))
     	end
 		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
-    elseif Nγ_mode == DGML_γ!
+    elseif γ_mode == DGML_γ!
 		
         # Dreyer et al. approach
         p = u[ip] * pscale - p_bulk
@@ -1886,7 +1892,7 @@ begin
 
 		γ = get_tmp(γ_cache, u[ico2])
 		# compute activity coefficients according to the approach in Ringe et al.
-		activity_coefficient!(γ, u, data, Nγ_mode)
+		activity_coefficient!(γ, u, data, γ_mode)
 		
 		# compute activity coefficients according to the approach in Dreyer et al.
 		# p = u[ip] * pscale-p_bulk
@@ -1924,8 +1930,8 @@ begin
 		(; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, ε, cspecies) = data
 				
 		γ = get_tmp(γ_cache, u[ico2])
-		γ_co2 	 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico2]
-		γ_co 	 	= activity_coefficient!(γ, u, data, Nγ_mode)[ico]
+		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
+		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
 		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
 		σ = C_gap * (ϕ_we - ϕ_pzc - u[iϕ])#integrate(f, ρ, u; data)
 		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
@@ -2104,6 +2110,12 @@ else
 	result_pb = nothing
 end
 
+# ╔═╡ dbd3471a-1b80-4ad5-aa2d-aa2f486af86d
+if double_layer_curve 
+	fig_pb, ax_pb = AuCO2RR_plots.capsplot_fixed(result_pb, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 200)) 
+	fig_pb
+end
+
 # ╔═╡ 3ef57b7d-ec19-46bc-a881-0506cf5167f3
 if double_layer_curve
 	#pnp
@@ -2117,13 +2129,7 @@ end
 
 # ╔═╡ e115560a-f79e-4a08-9bd2-5c11b0346827
 if double_layer_curve
-	fig_pnp, ax_pnp = AuCO2RR_plots.capsplot_fixed(result_pnp, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 300))
-	fig_pnp
-end
-
-# ╔═╡ dbd3471a-1b80-4ad5-aa2d-aa2f486af86d
-if double_layer_curve 
-	fig_pb, ax_pb = AuCO2RR_plots.capsplot_fixed(result_pb, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 300)) 
+	fig_pnp, ax_pnp = AuCO2RR_plots.capsplot_fixed(result_pnp, "Poisson-Nernst-Planck", xlimits_L=(-1.0, 1.0), ylimits_L=(0, 200))
 	fig_pnp
 end
 
@@ -2181,7 +2187,7 @@ end
 
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 if CV
-	AuCO2RR_plots.plot_conc_profile_logx(pnpresult, bulk, X, 13)
+	AuCO2RR_plots.plot_conc_profile_logx(pnpresult, bulk, X, 120)
 end
 
 # ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
@@ -2335,7 +2341,7 @@ if IV
 
 
 
-	if Lγ_key == "Stefan_γ"
+	if γ_key == "Stefan_γ"
 	    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
 			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
 		text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
@@ -2375,7 +2381,7 @@ if double_layer_curve
     outdir = joinpath("..", "data", "output")
     isdir(outdir) || mkpath(outdir)
 
-    base = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.Nmode)
+    base = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode)
 
     for i in eachindex(result_pb)
         df = DataFrame(
@@ -2387,6 +2393,61 @@ if double_layer_curve
 
         CSV.write(filepath, df)
     end
+end
+
+# ╔═╡ 26f02407-ce54-436f-9630-63c0e2d32f73
+if double_layer_curve
+    outdir_pb = joinpath("..", "data", "output")
+    isdir(outdir) || mkpath(outdir)
+
+    base_pb = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pb")
+
+    for i in eachindex(result_pb)
+        df = DataFrame(
+            Voltage = result_pb[i].voltage_range,
+            Capacitance = result_pb[i].dlcaps
+        )
+        fname = string(base_pb, "_", i, ".csv")
+        filepath = joinpath(outdir, fname)
+
+        CSV.write(filepath, df)
+    end
+end
+
+# ╔═╡ bc3077b4-6816-4214-a51f-6a5c9377bb0c
+if double_layer_curve
+    outdir_pnp = joinpath("..", "data", "output")
+    isdir(outdir) || mkpath(outdir)
+
+    base_pnp = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp")
+
+    for i in eachindex(result_pb)
+        df = DataFrame(
+            Voltage = result_pnp[i].voltage_range,
+            Capacitance = result_pnp[i].dlcaps
+        )
+        fname = string(base_pnp, "_", i, ".csv")
+        filepath = joinpath(outdir, fname)
+
+        CSV.write(filepath, df)
+    end
+end
+
+# ╔═╡ 28638585-e95c-4947-9143-9ac8d8202f80
+if extractIV
+    outdir_pc = joinpath("..", "data", "output")
+    isdir(outdir_pc) || mkpath(outdir_pc)
+
+    base_pc = string("IV_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp")
+
+        df = DataFrame(
+            Voltage = ivresult.voltages,
+            Current = currents(ivresult, iohminus)
+        )
+        fname = string(base_pc, "_", "ohminus", ".csv")
+        filepath = joinpath(outdir_pc, fname)
+
+        CSV.write(filepath, df)
 end
 
 # ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
@@ -2479,7 +2540,7 @@ floataside(
 # ╟─f18dc873-1c9d-46d3-9596-92d28705e894
 # ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
-# ╟─9d814b85-a5b6-42e5-abf4-15500bbdb717
+# ╠═9d814b85-a5b6-42e5-abf4-15500bbdb717
 # ╟─e1e0ca0f-7f88-40f0-850e-590b25da0331
 # ╟─0db74a70-af86-492c-affb-9de62ffe4455
 # ╟─4f388fe0-6bc8-4a29-bccc-fa725e62c6a7
@@ -2496,6 +2557,8 @@ floataside(
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
 # ╠═7627c74f-503d-465d-af66-d42bf57efd53
+# ╠═26f02407-ce54-436f-9630-63c0e2d32f73
+# ╠═bc3077b4-6816-4214-a51f-6a5c9377bb0c
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
@@ -2588,6 +2651,8 @@ floataside(
 # ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
 # ╟─f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═91051ed4-9fd0-4c21-95f4-efc042060e4d
+# ╠═28638585-e95c-4947-9143-9ac8d8202f80
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
 # ╠═d0985ca6-fef5-4b67-9ad6-f51d84b595b4
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c
