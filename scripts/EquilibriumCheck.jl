@@ -28,12 +28,14 @@ begin
 	using LessUnitful
 	using ExtendableGrids, GridVisualize
 	using DelimitedFiles
+	using Interpolations
 	using PlutoUI, HypertextLiteral
 	using PreallocationTools
 	using Latexify
 	using Catalyst
 	using Printf
 	using Test
+	using LinearAlgebra
 	using Colors
 	using FileIO
 	using CSV, DataFrames
@@ -85,7 +87,7 @@ md"""
 
 # ╔═╡ 5a146a44-03dc-45f3-ae15-993d11c2edac
 begin
-	@phconstants N_A c_0 k_B e h ε_0	
+	@phconstants N_A c_0 k_B e h ε_0 R
 	const F = N_A * e
 
 	const voltages = (-1.15:0.1:-0.0) * V
@@ -138,6 +140,7 @@ begin
     const kwf  = 2.4e-5 * (mol/dm^3) / s
     const kwr  = kwf / kwe
 	const aH₂O = 1.0 #* mol/dm^3
+	const c̄    = 55.508mol / dm^3
 
 	# surface constants
 	const S 		= 9.61e-5 / N_A * (1.0e10)^2 * mol/m^2
@@ -150,6 +153,11 @@ begin
 	const na 		= 3 # CO_t, CO2_t, COOH_t
 	const M0 		= 18.0153 * ufac"g/mol"
 	const v0        = N_A * (8.2 * Å)^3#18.048 * ufac"cm^3/mol"# # 1 / (55.4 * ufac"M") #
+	const c̄ 		= 55.508mol / dm^3
+
+	const iq 		= 13
+	const iQ 		= 14
+
 	
 	const species_dict = Dict(
 		"K⁺" => ikplus,
@@ -450,6 +458,51 @@ md"""
 ### Boundary Condition Function
 """
 
+# ╔═╡ d8c01196-7b81-43a5-ac0c-6dac8efee3d8
+md"""
+#### Dirichlet Boundary Condition Function - First version
+"""
+
+# ╔═╡ c71e46d7-ada3-4c3b-b11b-24b14bf08b00
+const bcvals = [0.0, 0.0]
+
+# ╔═╡ c314ae44-fced-4789-ace0-930aeab7b1ff
+function dlcapsweep_dir(system; nsweep = 100, δ = 1.0e-4)
+    voltages = range(0, vmax, length = nsweep + 1)
+    solutions = []
+    dlcaps = zeros(0)
+    for v in voltages
+        bcvals[1] = v
+        if length(solutions) == 0
+            inival = VoronoiFVM.unknowns(system, inival = 0)
+        else
+            inival = solutions[end]
+        end
+        push!(solutions, solve(system; inival))
+        # Here, we can directly access the double layer charge as
+        # solution component
+        Q = solutions[end][iQ, 1]
+        bcvals[1] = v + δ
+        solδ = solve(system; inival = solutions[end])
+        Qδ = solδ[iQ, 1]
+        push!(dlcaps, (Qδ[1] - Q[1]) / δ)
+    end
+    return voltages, dlcaps, TransientSolution(solutions, voltages)
+end
+
+# ╔═╡ c8a41cc3-b587-4b9e-8c40-cda63108019d
+function plotcdl(pbvolts, pbcaps, pbv)
+    vc = linear_interpolation(pbvolts, pbcaps)
+    cdl = round(vc(pbv) / ufac"μF/cm^2", sigdigits = 4)
+    vis = GridVisualizer(size = (500, 200), xlabel = "Δϕ", ylabel = L"C_{dl}/(μF/cm^2)", legend = :lt)
+    scalarplot!(vis, pbvolts, pbcaps / ufac"μF/cm^2")
+    scalarplot!(
+        vis, [pbv], [cdl], markershape = :circle, clear = false, markersize = 20,
+        label = "$(cdl)"
+    )
+    return reveal(vis)
+end
+
 # ╔═╡ 2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 md"""
 ## Double Layer Capacitance
@@ -460,8 +513,29 @@ md"""
 ### System Setup
 """
 
-# ╔═╡ 66da15be-e4e3-4592-8354-a05ef092ac86
-
+# ╔═╡ fe16ab13-c5e2-4eb5-9206-3c9dcd2af434
+function dlcapsweep(system; nsweep = 100, δ = 1.0e-4)
+    voltages = range(0, vmax, length = nsweep + 1)
+    solutions = []
+    dlcaps = zeros(0)
+    for v in voltages
+        bcvals[1] = v
+        if length(solutions) == 0
+            inival = VoronoiFVM.unknowns(system, inival = 0)
+        else
+            inival = solutions[end]
+        end
+        push!(solutions, solve(system; inival))
+        # Here, we can directly access the double layer charge as
+        # solution component
+        Q = solutions[end][iQ, 1]
+        bcvals[1] = v + δ
+        solδ = solve(system; inival = solutions[end])
+        Qδ = solδ[iQ, 1]
+        push!(dlcaps, (Qδ[1] - Q[1]) / δ)
+    end
+    return voltages, dlcaps, TransientSolution(solutions, voltages)
+end
 
 # ╔═╡ d76d8413-c019-4728-b182-7f7cb78dede4
 md"""
@@ -555,19 +629,6 @@ Run boundary layer thickness varied cyclic voltammetry $(@bind L_varied_checkbox
 md"""
 #### Position at 0.99 Cbulk at a Given Time
 """
-
-# ╔═╡ 1753c20f-9b53-4120-a8c8-e2b086f46f44
-md"""
-#### RDE_CV plots
-"""
-
-# ╔═╡ bb9ba12f-e98b-48de-b55a-d76b276ae952
-md"""
-Run boundary layer thickness varied cyclic voltammetry $(@bind BL_thickness_varied_checkbox PlutoUI.CheckBox())
-"""
-
-# ╔═╡ add42535-4311-4ac6-8f0e-b045426283e7
-
 
 # ╔═╡ b1e64332-95a4-46a5-a45d-457c26e3fc67
 const target_time = 20
@@ -1110,6 +1171,11 @@ md"""
 Extract the polarization Curve: $(@bind extractIV PlutoUI.CheckBox(default=true))
 """
 
+# ╔═╡ 43cb97f2-22ce-4940-8a17-3c04d4d2ced6
+md"""
+Extract the polarization Curve: $(@bind extract_conc PlutoUI.CheckBox(default=true))
+"""
+
 # ╔═╡ de144adb-a467-4077-8cb1-d86462f56110
 html"""<hr>"""
 
@@ -1204,6 +1270,15 @@ begin
     floataside(stuff; kwargs...) = floataside(md"""$(stuff)"""; kwargs...)
 end;
 
+# ╔═╡ 2df1166b-2629-4049-b83d-95dd691480f9
+floataside(
+    md"""
+    Select voltage in plots:
+
+    $(@bind pb_v PlutoUI.Slider(range(0,vmax,length=201),default=0.05,show_value=true))
+    """, top = 1200
+)
+
 # ╔═╡ 6a9fad5b-4964-4e12-b131-8cb2628d1ab3
 floataside(
     @bind user_input_cv confirm(
@@ -1240,76 +1315,6 @@ end
 
 # ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
 sawtooth
-
-# ╔═╡ e1ef1e83-c472-4267-8450-38c65f48d3dc
-let
-    try
-        fig = Figure(size = (1920, 1080))
-        ax = Axis(fig[1, 1],
-            ylabel = L"I (mA/cm^2)",
-            xlabel = L"\phi\ (V\ vs\ SHE)",
-            title  = @sprintf("pH = 9 | v=%.1f mV/s", sawtooth.scanrate * 1e3),
-            titlesize = 30,
-        )
-
-        rpms = sort(collect(keys(RDE_result)))
-
-        cols = [RGB(0.3 + 0.7*(i/length(rpms)),
-                    0.1 + 0.7*(1 - i/length(rpms)),
-                    0.9 - 0.6*(i/length(rpms)))
-                for i in 1:length(rpms)]
-
-        plot_objs = Any[]
-        labels    = String[]
-
-        for (j, rpm) in enumerate(rpms)
-            recNT = RDE_result[rpm]
-            rec   = recNT.result
-            δ     = recNT.δ
-
-            ϕ = rec.voltages
-            I = currents(rec, ico) .* (cm^2/mA)
-
-            line = lines!(ax, ϕ, I; color = cols[j], linewidth=2)
-            push!(plot_objs, line)
-
-            # --- target_time에 해당하는 점 찍기 ---
-            t = rec.tsol.t
-            n = min(length(t), length(ϕ), length(I))   # 길이 mismatch 방어
-            idx = argmin(abs.(t[1:n] .- target_time))
-
-            scatter!(ax, [ϕ[idx]], [I[idx]];
-                     markersize = 12,
-                     marker = :circle,
-                     color = cols[j])
-
-            # --- legend label ---
-            rpm_str = @sprintf("%7.4f", rpm)
-            δ_um    = δ * 1e6
-            δ_str   = @sprintf("%9.6f", δ_um)
-            push!(labels, "rpm=$(rpm_str), δ=$(δ_str) μm")
-        end
-
-        Legend(fig[1, 2], plot_objs, labels, "Theoretical";
-            framevisible = true,
-            labelsize = 12,
-            titlesize = 13,
-            patchsize = (15, 5),
-            rowgap = 1, colgap = 1,
-            patchlineattrs = (linewidth = 6,)
-        )
-
-        fig
-    catch e
-        if e isa UndefVarError
-            # normal → skip
-        else
-            println("⚠️ Error occurred: ", e)
-            println(stacktrace(catch_backtrace()))
-        end
-    end
-end
-
 
 # ╔═╡ d75725cd-0ef6-421f-be56-f559312e73b6
 floataside(
@@ -1357,14 +1362,24 @@ begin
 
     L = user_input_model.L * μm
 
-    hmin = 1.0e-6 	* μm
+    hmin = 1.0e-6 	* nm
 
-    hmax = 1.0	* μm 
+    hmax = 1.0	* nm 
 
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
 
     grid = ExtendableGrids.simplexgrid(X)
+
+	const nv = ones(num_nodes(grid))
 end;
+
+# ╔═╡ 3e47c496-ba6f-4356-b94b-c690fdbbe58f
+function pb_generic(y0, u0, sys, data)
+    y = reshape(y0, sys)
+    u = reshape(u0, sys)
+    y[iQ, 1] = u[iQ, 1] - dot(u[iq, :], nv) # implements Q=\int_\Omega q
+    return
+end
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
@@ -1412,12 +1427,12 @@ begin
 		# Stefan's Model / Only Potaissium has a size
         a_HCO3 = 0.00;  κ_HCO3 = 0
         a_CO3  = 0.00;  κ_CO3  = 0
-        a_CO2  = 0.0;  κ_CO2  = 0
+        a_CO2  = 0.00;  κ_CO2  = 0
         a_OH   = 0.00;  κ_OH   = 0
         a_H    = 0.00;  κ_H    = 0
         a_CO   = 0.00;  κ_CO   = 0
         #a_K    = 3.31;  κ_K    = 6.0
-        a_K    = 8.20;  κ_K    = 0.0
+        a_K    = 8.20;  κ_K    = 0.0#5.0
 	else
 		a_HCO3 = 0.0;  κ_HCO3 = 0
         a_CO3  = 0.0;  κ_CO3  = 0
@@ -1919,8 +1934,8 @@ end;
 
 # ╔═╡ 91113083-d80e-4528-be41-82d10f6860fc
 begin
-	const ps_cache = DiffCache(zeros(18), 13)
-	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 13)
+	const ps_cache = DiffCache(zeros(18), 14)
+	const us_cache = DiffCache(zeros(isurfaceend-isurfacestart+1), 14)
 	
 	function we_breactions(f, 
 			u::VoronoiFVM.BNodeUnknowns, 
@@ -2018,6 +2033,9 @@ begin
 	molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
 end;
 
+# ╔═╡ 165446a0-da6c-4ecc-a5ba-c96eb300af12
+const c0_bulk   = c̄ - sum(model.c_bulk) # solvent bulk molar concentration
+
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
 	f,
@@ -2097,6 +2115,133 @@ end
 if Ldependancy
 	AuCO2RR_plots.plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 end
+
+# ╔═╡ 53d6779f-5262-47bc-9f21-a04db2b96866
+pbo_molfrac(ϕ, i) = (model.c_bulk[i] / c̄) * exp(model.z[i] * ϕ * F / (R * T))
+
+# ╔═╡ 36480d8e-3e42-4515-8560-3ac732cb2137
+function pbo_spacechargedensity(ϕ)
+	
+    sumyz = zero(ϕ)
+    for i in 1:length(model.z)
+        sumyz += model.z[i] * pbo_molfrac(ϕ, i)
+    end
+    return F * c̄ * sumyz
+end
+
+# ╔═╡ 0a49d77a-0705-42e7-9df8-531a93bcc836
+function pbo_reaction(f, u, node, data)
+    f[model.iϕ] = u[iq] # implements the  `-q` part of of the lhs of the poission equation
+    f[iq] = u[iq] - pbo_spacechargedensity(u[model.iϕ]) # implements q=F\sum z_i c_i
+    return
+end
+
+# ╔═╡ e3ecf3f8-9293-43f1-ac71-36bcd90f69d8
+function pb_flux(y, u, edge, data)
+    return y[model.iϕ] = model.ε * ε_0 * (u[model.iϕ, 1] - u[model.iϕ, 2])
+end
+
+# ╔═╡ b9ec7cff-975f-4f57-a16c-1d2928fa7fd5
+function pb_bc(y, u, bnode, data)
+    boundary_dirichlet!(y, u, bnode, species = model.iϕ, region = 2, value = bcvals[2])
+    boundary_dirichlet!(y, u, bnode, species = model.iϕ, region = 1, value = bcvals[1])
+    return
+end
+
+# ╔═╡ 44ecb5d1-dfcc-4723-8572-e9b31343dc27
+begin
+    pbo_system = VoronoiFVM.System(
+        grid;
+        reaction = pbo_reaction,
+        flux = pb_flux,
+        bcondition = pb_bc,
+        generic = pb_generic,
+        unknown_storage = :sparse # use sparse storage of the unknown vector
+    )
+
+    enable_species!(pbo_system, species = [model.iϕ, iq], regions = [1])
+    # add the double layer charge as additional species at boundary 1:
+    enable_boundary_species!(pbo_system, iQ, [1])
+    nv .= nodevolumes(pbo_system)
+end;
+
+# ╔═╡ d709d399-1d6b-4a19-90ba-2861f96e26f5
+pbo_volts, pbo_caps, pbo_sols = dlcapsweep_dir(pbo_system)
+
+# ╔═╡ b1ce50b7-3908-4cbc-a697-9e6a03de510f
+plotcdl(pbo_volts, pbo_caps, pb_v)
+
+# ╔═╡ 60a14490-e8c0-4c86-b082-cca671edb29d
+model
+
+# ╔═╡ 08a532a0-efea-4e8b-926c-cf410291e93f
+function pbi_molfrac(ϕ, j)
+    N = length(model.z)
+    denom = one(ϕ)
+    for i in 1:length(model.z)
+        denom += exp(model.z[i] * ϕ * F / (R * T)) * model.c_bulk[i] / c0_bulk
+    end
+    return exp(model.z[j] * ϕ * F / (R * T)) * model.c_bulk[j] / (c0_bulk * denom)
+end
+
+# ╔═╡ 3e32b5a4-42db-4a31-ba49-94493ec3e3b5
+function pbi_spacechargedensity(ϕ)
+    sumyz = zero(ϕ)
+    for i in 1:length(model.z)
+        sumyz += model.z[i] * pbi_molfrac(ϕ, i)
+    end
+    return F * c̄ * sumyz
+end
+
+# ╔═╡ e70de438-d5d7-484f-befd-efa47671094a
+function pbi_reaction(y, u, node, data)
+    y[model.iϕ] = u[iq]
+    y[iq] = u[iq] - pbi_spacechargedensity(u[model.iϕ])
+    return
+end
+
+# ╔═╡ 02d0c158-8038-4e84-af8a-39a65356f1f0
+begin
+
+    pbi_system = VoronoiFVM.System(
+        grid;
+        reaction = pbi_reaction,
+        flux = pb_flux,
+        bcondition = pb_bc,
+        generic = pb_generic,
+        unkown_storage = :sparse
+    )
+
+    enable_species!(pbi_system, species = [model.iϕ, iq], regions = [1])
+    enable_boundary_species!(pbi_system, iQ, [1])
+
+end
+
+# ╔═╡ 98d4857e-860a-4bae-8451-e9a2e2685ac1
+pbi_volts, pbi_caps, pbi_sols = dlcapsweep(pbi_system)
+
+# ╔═╡ e7872b48-df2d-4541-a015-ea34260843c1
+plotcdl(pbi_volts, pbi_caps, pb_v)
+
+# ╔═╡ 1021fd74-965d-4622-bf75-33b57b948b33
+function plotsols(pbsols, pbv, pb_molfrac)
+    vis = GridVisualizer(size = (700, 200), layout = (1, 2), xlabel = "x/nm")
+    ϕ = pbsols(pbv)[model.iϕ, :]
+    cp = c̄ * pb_molfrac.(ϕ, 1) / ufac"mol/dm^3"
+    cm = c̄ * pb_molfrac.(ϕ, 2) / ufac"mol/dm^3"
+    q = pbsols(pbv)[iq, :] / (F * ufac"mol/dm^3")
+    scalarplot!(vis[1, 1], X / nm, ϕ, color = :green, ylabel = "ϕ/V")
+    scalarplot!(vis[1, 2], X / nm, cp, color = :red, ylabel = "c/(mol/L)")
+    scalarplot!(vis[1, 2], X / nm, cm, color = :blue, clear = false)
+    scalarplot!(vis[1, 2], X / nm, q, color = :green, clear = false)
+    return reveal(vis)
+end
+
+# ╔═╡ f4189cb7-9a75-4e3b-9b69-1d9c9704f05f
+plotsols(pbo_sols, pb_v, pbo_molfrac)
+
+# ╔═╡ a4bd660c-a86e-4aa3-83a6-557f2df90c1c
+plotsols(pbi_sols, pb_v, pbi_molfrac)
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
 is_Landstorfer = model != elydata_Gold
@@ -2376,31 +2521,21 @@ if IV
     conc_fig
 end
 
-# ╔═╡ 7627c74f-503d-465d-af66-d42bf57efd53
-if double_layer_curve
-    outdir = joinpath("..", "data", "output")
-    isdir(outdir) || mkpath(outdir)
-
-    base = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode)
-
-    for i in eachindex(result_pb)
-        df = DataFrame(
-            Voltage = result_pb[i].voltage_range,
-            Capacitance = result_pb[i].dlcaps
-        )
-        fname = string(base, "_", i, ".csv")
-        filepath = joinpath(outdir, fname)
-
-        CSV.write(filepath, df)
-    end
-end
+# ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
+conc_out
 
 # ╔═╡ 26f02407-ce54-436f-9630-63c0e2d32f73
 if double_layer_curve
     outdir_pb = joinpath("..", "data", "output")
-    isdir(outdir) || mkpath(outdir)
+    isdir(outdir_pb) || mkpath(outdir_pb)
 
-    base_pb = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pb")
+	if user_input_ion.use_physical_size == false
+		ionsize_pb = "Potassium_only"
+	else
+		ionsize_pb = "All_species"
+	end
+	
+    base_pb = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pb_", ionsize_pb)
 
     for i in eachindex(result_pb)
         df = DataFrame(
@@ -2408,7 +2543,7 @@ if double_layer_curve
             Capacitance = result_pb[i].dlcaps
         )
         fname = string(base_pb, "_", i, ".csv")
-        filepath = joinpath(outdir, fname)
+        filepath = joinpath(outdir_pb, fname)
 
         CSV.write(filepath, df)
     end
@@ -2417,9 +2552,15 @@ end
 # ╔═╡ bc3077b4-6816-4214-a51f-6a5c9377bb0c
 if double_layer_curve
     outdir_pnp = joinpath("..", "data", "output")
-    isdir(outdir) || mkpath(outdir)
-
-    base_pnp = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp")
+    isdir(outdir_pnp) || mkpath(outdir_pnp)
+	
+	if user_input_ion.use_physical_size == false
+		ionsize_pnp = "Potassium_only"
+	else
+		ionsize_pnp = "All_species"
+	end
+	
+    base_pnp = string("DLCap_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize_pnp)
 
     for i in eachindex(result_pb)
         df = DataFrame(
@@ -2427,7 +2568,7 @@ if double_layer_curve
             Capacitance = result_pnp[i].dlcaps
         )
         fname = string(base_pnp, "_", i, ".csv")
-        filepath = joinpath(outdir, fname)
+        filepath = joinpath(outdir_pnp, fname)
 
         CSV.write(filepath, df)
     end
@@ -2438,16 +2579,49 @@ if extractIV
     outdir_pc = joinpath("..", "data", "output")
     isdir(outdir_pc) || mkpath(outdir_pc)
 
-    base_pc = string("IV_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp")
+	if user_input_ion.use_physical_size == false
+		ionsize = "Potassium_only"
+	else
+		ionsize = "All_species"
+	end
+
+    base_pc = string("Polarization_Curve_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize)
 
         df = DataFrame(
             Voltage = ivresult.voltages,
             Current = currents(ivresult, iohminus)
         )
-        fname = string(base_pc, "_", "ohminus", ".csv")
+        fname = string(base_pc, ".csv")
         filepath = joinpath(outdir_pc, fname)
 
         CSV.write(filepath, df)
+end
+
+# ╔═╡ d52f9cb8-9a48-43de-ab75-92380f7aca2e
+if extract_conc	
+    outdir_conc = joinpath("..", "data", "output")
+    isdir(outdir_conc) || mkpath(outdir_conc)
+	
+	Volts  = conc_out.vgrid               
+	Concent = conc_out.conc_electrode        
+	sp = String.(conc_out.species)    
+	
+	@assert size(Concent, 1) == length(sp) == 7
+	@assert size(Concent, 2) == length(Volts)
+	
+	df_conc = DataFrame(Voltage = Volts)
+	
+	for i in 1:length(sp)
+	    df_conc[!, sp[i]] = vec(Concent[i, :])
+	end
+	base_conc = string("Concentration_", user_input_model.BC_Select, "_", user_input_model.mode,"_",ionsize ,".csv")
+
+    filepath_conc = joinpath(outdir_conc, base_conc)
+
+	CSV.write(filepath_conc, df_conc; bom=true)  
+
+
+	
 end
 
 # ╔═╡ 315dd351-9d68-48f1-aa7a-8f43f3dec6ac
@@ -2515,6 +2689,7 @@ floataside(
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
+# ╠═165446a0-da6c-4ecc-a5ba-c96eb300af12
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
@@ -2547,18 +2722,41 @@ floataside(
 # ╠═5d179c52-43d7-4bcb-a2df-93c5806876fa
 # ╟─161a810d-c05e-42ad-97ab-131059d6784a
 # ╟─5f17b4f7-54d6-4ad0-9886-252854840a80
-# ╟─53b4dc3e-95f0-4eee-ba1c-68c222638acd
+# ╠═53b4dc3e-95f0-4eee-ba1c-68c222638acd
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
+# ╟─d8c01196-7b81-43a5-ac0c-6dac8efee3d8
+# ╠═53d6779f-5262-47bc-9f21-a04db2b96866
+# ╠═36480d8e-3e42-4515-8560-3ac732cb2137
+# ╠═0a49d77a-0705-42e7-9df8-531a93bcc836
+# ╠═3e47c496-ba6f-4356-b94b-c690fdbbe58f
+# ╠═e3ecf3f8-9293-43f1-ac71-36bcd90f69d8
+# ╠═b9ec7cff-975f-4f57-a16c-1d2928fa7fd5
+# ╠═44ecb5d1-dfcc-4723-8572-e9b31343dc27
+# ╠═c314ae44-fced-4789-ace0-930aeab7b1ff
+# ╠═c71e46d7-ada3-4c3b-b11b-24b14bf08b00
+# ╠═d709d399-1d6b-4a19-90ba-2861f96e26f5
+# ╠═60a14490-e8c0-4c86-b082-cca671edb29d
+# ╠═b1ce50b7-3908-4cbc-a697-9e6a03de510f
+# ╠═f4189cb7-9a75-4e3b-9b69-1d9c9704f05f
+# ╠═08a532a0-efea-4e8b-926c-cf410291e93f
+# ╠═3e32b5a4-42db-4a31-ba49-94493ec3e3b5
+# ╠═e70de438-d5d7-484f-befd-efa47671094a
+# ╠═02d0c158-8038-4e84-af8a-39a65356f1f0
+# ╠═98d4857e-860a-4bae-8451-e9a2e2685ac1
+# ╠═e7872b48-df2d-4541-a015-ea34260843c1
+# ╠═a4bd660c-a86e-4aa3-83a6-557f2df90c1c
+# ╠═2df1166b-2629-4049-b83d-95dd691480f9
+# ╠═c8a41cc3-b587-4b9e-8c40-cda63108019d
+# ╠═1021fd74-965d-4622-bf75-33b57b948b33
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
-# ╠═66da15be-e4e3-4592-8354-a05ef092ac86
 # ╠═084e2127-ea77-4894-8990-380c2e8802c7
 # ╠═3ef57b7d-ec19-46bc-a881-0506cf5167f3
-# ╠═7627c74f-503d-465d-af66-d42bf57efd53
 # ╠═26f02407-ce54-436f-9630-63c0e2d32f73
 # ╠═bc3077b4-6816-4214-a51f-6a5c9377bb0c
+# ╠═fe16ab13-c5e2-4eb5-9206-3c9dcd2af434
 # ╟─d76d8413-c019-4728-b182-7f7cb78dede4
 # ╟─4656ee04-ae86-442f-b37c-c5563170f992
 # ╠═7fc5e2a3-c217-4042-9a42-e66d547bef96
@@ -2597,10 +2795,6 @@ floataside(
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═b25f2246-0182-4d50-a606-0d81776d414f
-# ╟─1753c20f-9b53-4120-a8c8-e2b086f46f44
-# ╟─bb9ba12f-e98b-48de-b55a-d76b276ae952
-# ╠═add42535-4311-4ac6-8f0e-b045426283e7
-# ╠═e1ef1e83-c472-4267-8450-38c65f48d3dc
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
 # ╠═48029647-f162-459b-8824-fbf652d127f7
 # ╠═4116166d-5f82-4d9b-80fb-c8035b9b6ade
@@ -2650,9 +2844,12 @@ floataside(
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
 # ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
-# ╟─f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═11d6598c-3d6a-472a-8863-9275d5e567c6
 # ╠═91051ed4-9fd0-4c21-95f4-efc042060e4d
 # ╠═28638585-e95c-4947-9143-9ac8d8202f80
+# ╠═43cb97f2-22ce-4940-8a17-3c04d4d2ced6
+# ╠═d52f9cb8-9a48-43de-ab75-92380f7aca2e
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
 # ╠═d0985ca6-fef5-4b67-9ad6-f51d84b595b4
 # ╟─8ae53b8a-0fb3-4c1c-8e5f-a3782a85141c
