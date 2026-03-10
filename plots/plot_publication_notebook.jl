@@ -126,7 +126,7 @@ let
     # Experimental Data Plotting based on M.T.M Koper
     raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
     pres = vec(Matrix(raw[1:1, :]))
-	pressures=[0.1, 0.3, 0.6, 1.0]
+	pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
     sub = Matrix(raw[4:end, :])
     num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
     num_df = DataFrame(num, :auto)
@@ -137,7 +137,7 @@ let
     labels1 = String[]
     for j in 1:npairs
         xcol, ycol = 2j - 1, 2j
-        label = @sprintf("%.1f pCO₂ atm", pressures[j])        
+        label = pressures[j] * " pCO₂ atm"       
 		push!(labels1, label)
         line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j], linewidth = 4)
         push!(plot_objs1, line)
@@ -171,6 +171,9 @@ let
 	translate!(leg.blockscene,  -40, 40, 0)
 	fig
 end
+
+# ╔═╡ 8545d818-d255-4e8a-af8f-72fdaf9d4bdd
+
 
 # ╔═╡ 4911ad1e-e75a-4d41-83dc-675b3f26ce39
 begin
@@ -832,9 +835,9 @@ let
     end
 
 
-    df_conc = CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
-    df_pol  = CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
-    df_cdl  = CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+    df_conc = CSV.read(raw"../data/output/Concentration_Dirichlet_Stefan_γ_Potassium_only.csv", DataFrame)
+    df_pol  = CSV.read(raw"../data/output/Polarization_Curve_Dirichlet_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl  = CSV.read(raw"../data/output/DLCap_Dirichlet_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
 
 
     fig = Figure(size = (1200, 720),figure_padding = (300, 300, 30, 45))
@@ -842,7 +845,7 @@ let
     ax_cdl = Axis(fig[1, 1],
         xlabel = L"\text{Voltage} \mathrm{(V)}",
 		ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
-        limits = (-0.8, 0.8, 0, 50),
+        limits = (-0.8, 0.8, 0, 300),
     )
     style_axis!(ax_cdl; big=false)
 
@@ -859,7 +862,7 @@ let
         xlabel = L"\text{Voltage} \mathrm{(V)}",
         ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
         yscale = log10,
-        limits = (-1.25, -0.50, 1e-11, 1e1),
+        limits = (-1.25, 0.00, 1e-11, 1e1),
     )
     style_axis!(ax_con; big=true)
 
@@ -891,8 +894,8 @@ let
 	yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}", L"10^{-15}"]
 	ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
 
-	yt_vals_cdl = [10, 30, 50]
-	yt_labs_cdl = [L"10", L"30", L"50"]
+	yt_vals_cdl = [10, 150, 300]
+	yt_labs_cdl = [L"10", L"150", L"300"]
 	ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
 	xt = [-0.8, -0.4, 0.0, 0.4, 0.8]		
 	ax_cdl.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
@@ -956,6 +959,7 @@ end
 # ╠═270509a2-433d-42af-886b-983f226f3229
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╠═8545d818-d255-4e8a-af8f-72fdaf9d4bdd
 # ╠═4911ad1e-e75a-4d41-83dc-675b3f26ce39
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb
