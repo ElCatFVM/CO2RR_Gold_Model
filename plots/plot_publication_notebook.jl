@@ -795,14 +795,14 @@ end
 
 # ╔═╡ 17b95990-f6e8-4da5-909a-1a2d46d7494d
 let
-     FS_BIG   = 16   
-     FS_SMALL = 16      
-     SP_BIG   = 3.5
-     SP_SMALL = 3.5
-     TICKW_BIG   = 2.0
-     TICKW_SMALL = 2.0
-     TICKL_BIG   = 8
-     TICKL_SMALL = 8
+    FS_BIG   = 16
+    FS_SMALL = 16
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
 
     function style_axis!(ax; big::Bool)
         if big
@@ -834,118 +834,148 @@ let
         return ax
     end
 
+    df_conc = 
+		CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+    df_pol  = 
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl  = 
+		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+    df_act  = 
+		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
 
-    df_conc = CSV.read(raw"../data/output/Concentration_Dirichlet_Stefan_γ_Potassium_only.csv", DataFrame)
-    df_pol  = CSV.read(raw"../data/output/Polarization_Curve_Dirichlet_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
-    df_cdl  = CSV.read(raw"../data/output/DLCap_Dirichlet_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
 
+	df_conc_pr = 
+		CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
+    df_pol_pr  = 
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl_pr  = 
+		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+    #df_act_pr  = 
+	#	CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+	
 
-    fig = Figure(size = (1200, 720),figure_padding = (300, 300, 30, 45))
+    fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
 
     ax_cdl = Axis(fig[1, 1],
         xlabel = L"\text{Voltage} \mathrm{(V)}",
-		ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
-        limits = (-0.8, 0.8, 0, 300),
+        ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
+        limits = (-0.8, 0.8, 10, 30),
     )
     style_axis!(ax_cdl; big=false)
 
     ax_pol = Axis(fig[1, 2],
         xlabel = L"\text{Voltage} \mathrm{(V)}",
-		ylabel = L"|j| \; \textrm{(mA\,cm^{-2})}",
+        ylabel = L"|j| \; \textrm{(mA\,cm^{-2})}",
         limits = (-1.3, -0.4, 1e-10, 100),
-		yscale = log10
-				  
+        yscale = log10
     )
     style_axis!(ax_pol; big=false)
 
-    ax_con = Axis(fig[2, 1:2],
+    ax_con = Axis(fig[2, 1],
         xlabel = L"\text{Voltage} \mathrm{(V)}",
         ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
         yscale = log10,
-        limits = (-1.25, 0.00, 1e-11, 1e1),
+        limits = (-1.25, -0.5, 1e-11, 1e1),
     )
     style_axis!(ax_con; big=true)
 
-	
-    rowsize!(fig.layout, 1, Relative(0.33))
-    rowsize!(fig.layout, 2, Relative(0.67))
+    ax_act = Axis(fig[2, 2],
+        xlabel = L"\text{Voltage} \mathrm{(V)}",
+        ylabel = L"\mathbf{a_i^{+}}",
+        yscale = log10,
+        limits = (-1.25, -0.5, 1e-11, 1e4),
+    )
+    style_axis!(ax_act; big=true)
+
+    rowsize!(fig.layout, 1, Relative(0.28))
+    rowsize!(fig.layout, 2, Relative(0.72))
     colsize!(fig.layout, 1, Relative(1))
     colsize!(fig.layout, 2, Relative(1))
     rowgap!(fig.layout, 14)
     colgap!(fig.layout, 22)
 
-
     species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
     colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
 
-    vgrid = df_conc[!, :Voltage]
+    vgrid_con = df_conc[!, :Voltage]
     conc_electrode = permutedims(Matrix(df_conc[!, Symbol.(species)]))  # (7, N)
 
-    xt = [-1.2, -1.0, -0.8, -0.6]
-    ax_con.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
-    ax_pol.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+    vgrid_act = df_act[!, :Voltage]
+    act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))    # (7, N)
 
+	vgrid_con_pr = df_conc_pr[!, :Voltage]
+    conc_electrode_pr = permutedims(Matrix(df_conc_pr[!, Symbol.(species)]))  # (7, N)
+
+    #vgrid_act = df_act[!, :Voltage]
+    #act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))    # (7, N)
+
+    xt_bottom = [-1.2, -1.0, -0.8, -0.6]
+    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_act.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
 
     yt_vals_con = 10.0 .^ (0:-3:-9)
     yt_labs_con = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
     ax_con.yticks = (yt_vals_con, yt_labs_con)
 
-	yt_vals_pol = 10.0 .^ (0:-4:-15)
-	yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}", L"10^{-15}"]
-	ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
 
-	yt_vals_cdl = [10, 150, 300]
-	yt_labs_cdl = [L"10", L"150", L"300"]
-	ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
-	xt = [-0.8, -0.4, 0.0, 0.4, 0.8]		
-	ax_cdl.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
+   	yt_vals_act = 10.0 .^ (3:-3:-9)
+    yt_labs_act = [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]	
+    ax_act.yticks = (yt_vals_act, yt_labs_act)
 
-	
+    yt_vals_pol = 10.0 .^ (0:-5:-15)
+    yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}", L"10^{-15}"]
+    ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
+
+    yt_vals_cdl = [10, 20, 30, 40]
+    yt_labs_cdl = [L"10", L"20", L"30", L"40"]
+    ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
+
+    xt_top = [-0.8, -0.4, 0.0, 0.4, 0.8]
+    ax_cdl.xticks = (xt_top, [@sprintf("%.1f", x) for x in xt_top])
+
     for ia in 1:7
         y = max.(conc_electrode[ia, :], eps(Float64))
-        lines!(ax_con, vgrid, y; color=colors[ia], linewidth=3)
+        lines!(ax_con, vgrid_con, y; color=colors[ia], linewidth=3)
     end
 
-	
-	# Stefan_Robin_Potassium
-    #text!(ax_con, -1.15, 0.3,      text=L"\mathrm{K^+}",        color=colors[1], fontsize=18)
-    #text!(ax_con, -0.90, 2e-7,     text=L"\mathrm{H^+}",        color=colors[2], fontsize=18)
-    #text!(ax_con, -1.05, 3e-11,    text=L"\mathrm{CO_3^{2-}}",  color=colors[4], fontsize=18)
-    #text!(ax_con, -1.00, 1.5e-7,   text=L"\mathrm{HCO_3^-}",    color=colors[3], fontsize=18)
-    #text!(ax_con, -1.20, 5.2e-6,   text=L"\mathrm{CO_2}",       color=colors[5], fontsize=18)
-    #text!(ax_con, -0.90, 1e-9,     text=L"\mathrm{OH^-}",       color=colors[6], fontsize=18)
-    #text!(ax_con, -1.17, 2.4e-4,   text=L"\mathrm{CO}",         color=colors[7], fontsize=18)
-	
-	text!(ax_con, -1.2, 0.3, text=L"\mathrm{K^+}",
-			  color=colors[1], fontsize=18, font="sans-bold")
-	text!(ax_con, -0.90, 0.0000004, text=L"\mathrm{H^+}", 
-			  color=colors[2], fontsize=18, font = "sans-bold") 
-	text!(ax_con, -1.05, 2e-9, text=L"\mathrm{CO_3^{2-}}",
-			  color=colors[4], fontsize=18, font = "sans-bold") 
-	text!(ax_con, -1.0, 7e-6, text=L"\mathrm{HCO_3^-}", 
-			  color=colors[3], fontsize=18, font = "sans-bold") 
-	text!(ax_con, -1.21, 5e-4, text=L"\mathrm{CO_2}", 
-			  color=colors[5], fontsize=18, font = "sans-bold")
-	text!(ax_con, -0.9, 7e-9, text=L"\mathrm{OH^-}",
-			  color=colors[6], fontsize=18, font = "sans-bold") 
-	text!(ax_con, -1.15, 0.003, text=L"\mathrm{CO}", 
-		 	  color=colors[7], fontsize=18, font = "sans-bold")
+    for ia in 1:7
+        y = max.(act_electrode[ia, :], eps(Float64))
+        lines!(ax_act, vgrid_act, y; color=colors[ia], linewidth=3)
+    end
 
+	for ia in 1:7
+        y = max.(conc_electrode_pr[ia, :], eps(Float64))
+        lines!(ax_con, vgrid_con_pr, y; color=colors[ia], linewidth=3, linestyle = :dash)
+    end
 
-	
     lines!(ax_pol,
         df_pol[!, :Voltage],
-        (abs.(df_pol[!, :Current] .* (cm^2/mA))),
+        abs.(df_pol[!, :Current] .* (cm^2/mA));
         color = :skyblue,
         linewidth = 3,
     )
 
+	lines!(ax_pol,
+        df_pol_pr[!, :Voltage],
+        abs.(df_pol_pr[!, :Current] .* (cm^2/mA));
+        color = :skyblue,
+        linewidth = 3,
+    )
 
     lines!(ax_cdl,
         df_cdl[!, :Voltage],
-        df_cdl[!, :Capacitance] / (μF / cm^2),
+        df_cdl[!, :Capacitance] / (μF / cm^2);
         color = RGBAf(0.5, 0.2, 0.8, 0.5),
         linewidth = 3,
+    )
+
+	 lines!(ax_cdl,
+        df_cdl_pr[!, :Voltage],
+        df_cdl_pr[!, :Capacitance] / (μF / cm^2);
+        color = RGBAf(0.5, 0.2, 0.6, 1.0),
+        linewidth = 3,
+		linestyle = :dash
     )
 
     display(fig)

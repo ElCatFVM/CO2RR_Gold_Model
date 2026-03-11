@@ -455,7 +455,7 @@ function Potassium_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
 	γ .= 0 
-    γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus] / (mol/dm^3))
+    γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus]) # / (mol/dm^3))
     
     return γ
 end
@@ -517,84 +517,32 @@ md"""
 ---
 """
 
-# ╔═╡ 1521ae52-8778-43da-924a-e07d3a411e92
-function calc_QBL(sol, sys; tolϕ = 1e-12, tolarg = 1e-12)
-    data = sys.vfvmsys.physics.data
-    Δp = sol[data.ip, 1] - sol[data.ip, end]
-    Δϕ = sol[data.iϕ, 1] - sol[data.iϕ, end]
+# ╔═╡ fb8a9a17-ed12-4f87-9957-06e5e265fcb2
+function calc_QBL_local(u, data; tolϕ = 1e-12)
+    (; ip, iϕ, κ, ε_0, pscale, ε) = data
 
-    arg = 2 * (1.0 + data.ε) * data.ε_0 * Δp * data.pscale
+    Δp = u[ip]
+    Δϕ = u[iϕ]
 
-    # near reference / PZC state
     if abs(Δϕ) < tolϕ
-        return 0.0
+        return zero(Δϕ)
+    end
+    arg = 2 * (1.0 .+ ε) * ε_0 * Δp * pscale
+
+    if arg < 0
+        error("Invalid local QBL state: Δp=$(Δp), Δϕ=$(Δϕ)")
     end
 
-    # tiny negative due to numerical noise
-    if arg < 0 && abs(arg) < tolarg
-        arg = 0.0
-    elseif arg < 0
-        @warn "Negative argument in calc_QBL" Δp Δϕ arg
-        return NaN
-    end
-
-    Q = sign(Δϕ) * sqrt(arg)
-    return Q
+    return sign(Δϕ) * sqrt(arg)
 end
 
-# ╔═╡ 7f059ca8-5799-4d49-9718-8b299c825873
-function calc_QBL0(u,sys)
-    data=sys.physics.data
-    Δp=u[ip]
-    Δϕ=u[iϕ]
-       Q=sign(Δϕ)*sqrt(2*(1.0 + data.κ) * data.ε_0*Δp*data.pscale)
-    @show Q, Δϕ, Δp*data.pscale
-    return Q
-end
-
-# ╔═╡ 35fcaeed-1168-4f71-8e8f-99b1a885392b
-function dlcapsweep_dir(sys, inival0; vmin=0.0, vmax=1.0, nsweep=100, δ=1e-4)
-    voltages = collect(range(vmin, vmax, length=nsweep+1))
-    solutions = Any[]
-    dlcaps = Float64[]
-
-    prev_sol = inival0
-
-    for U in voltages
-        bcvals[1] = U
-        sol = solve(sys.vfvmsys; inival=prev_sol)
-        push!(solutions, sol)
-
-        Q = calc_QBL(sol, sys)
-
-        bcvals[1] = U + δ
-        solδ = solve(sys.vfvmsys; inival=sol)
-        Qδ = calc_QBL(solδ, sys)
-
-        push!(dlcaps, (Qδ - Q) / δ)
-
-        prev_sol = sol
-    end
-
-    bcvals[1] = voltages[end]
-    return voltages, dlcaps, solutions
-end
-
-# ╔═╡ d22303fc-89e4-4e9a-bdb4-089186c5e421
-function make_bulk_inival(sys, model; cmin=1e-20)
-    data = sys.vfvmsys.physics.data
-    vfvm = sys.vfvmsys
-	
-    U0 = zeros(num_species(vfvm), num_nodes(vfvm.grid))
-
-    for ic in data.cspecies
-        U0[ic, :] .= max(data.c_bulk[ic], cmin)
-    end
-
-    U0[data.iϕ, :] .= 0.0
-    U0[data.ip, :] .= 0.0
-
-    return U0
+# ╔═╡ 960b1e96-da59-44c1-9828-929ece1a2955
+function surface_charge(u, data, boundary)
+	if boundary == "Robin"
+  		return C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
+	else
+		return calc_QBL_local(u, data)
+	end
 end
 
 # ╔═╡ 2a20d9be-6c1e-4c1f-8bb6-a7693800732d
@@ -1236,115 +1184,8 @@ md"""
 Compare the simulation results: $(@bind comp PlutoUI.CheckBox(default=true))
 """
 
-# ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
-function activity_vs_voltage_axis(
-    result;
-    bulk,
-    grid,
-    electrolyte,
-    ipressure,
-    useonly_pH::Bool = false,
-    showlegend::Bool = false,
-)
-    species  = getproperty.(bulk, :name)
-    colors   = getproperty.(bulk, :color)
-    nspecies = length(species)
+# ╔═╡ 5d0458f3-6564-43df-af01-4a4b829ce262
 
-    tsol  = LiquidElectrolytes.voltages_solutions(result)
-    vgrid = result.voltages
-
-    xcoords    = grid.components[XCoordinates]
-    ielectrode = argmin(xcoords)
-
-    scale = 1.0 / (mol / dm^3)
-    nv = length(vgrid)
-
-    activity_electrode = fill(NaN, nspecies, nv)
-    gamma_electrode    = fill(NaN, nspecies, nv)
-    conc_electrode     = fill(NaN, nspecies, nv)
-
-    cspecies = electrolyte.cspecies
-
-    for (j, v) in enumerate(vgrid)
-        sol = tsol(v)
-        sol === nothing && continue
-
-        # concentration vector and pressure at electrode
-        cnode = zeros(eltype(sol), maximum(cspecies))
-        for ic in cspecies
-            cnode[ic] = sol[ic, ielectrode]
-        end
-        pnode = sol[ipressure, ielectrode]
-
-        γnode = similar(cnode)
-        DGML_γ!(γnode, cnode, pnode, electrolyte)
-
-        @inbounds for ia in 1:nspecies
-            cM = sol[ia, ielectrode] * scale
-            γ  = γnode[ia]
-            a  = γ * cM   # dimensionless activity with c° = 1 M
-
-            conc_electrode[ia, j]     = cM
-            gamma_electrode[ia, j]    = γ
-            activity_electrode[ia, j] = a
-        end
-    end
-
-    fig = Figure(size=(960, 540))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
-        ylabel = L"\mathbf{a_i}",
-        yscale = log10,
-        limits = ((-1.25, -0.50), (1e-11, 1e1)),
-    )
-
-    xt = [-1.2, -1.0, -0.8, -0.6]
-    ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
-
-    yt_vals = 10.0 .^ (0:-3:-9)
-    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax.yticks = (yt_vals, yt_lbls)
-
-    ax.spinewidth = 5.5
-    ax.xtickwidth = 2.0
-    ax.ytickwidth = 2.0
-    ax.xticksize  = 8
-    ax.yticksize  = 8
-    ax.xlabelsize = 25
-    ax.ylabelsize = 25
-    ax.xticklabelsize = 25
-    ax.yticklabelsize = 25
-    ax.xgridvisible = false
-    ax.ygridvisible = false
-    ax.xlabelpadding = 10
-    ax.ylabelpadding = 10
-    ax.xlabelfont = :bold
-
-    if useonly_pH
-        iH = findfirst(isequal("H⁺"), species)
-        iH === nothing && error("H⁺ not found in species list.")
-        y = max.(activity_electrode[iH, :], eps(Float64))
-        lines!(ax, vgrid, y; color=colors[iH], linewidth=5, label=species[iH])
-    else
-        for ia in 1:nspecies
-            y = max.(activity_electrode[ia, :], eps(Float64))
-            lines!(ax, vgrid, y; color=colors[ia], linewidth=5, label=species[ia])
-        end
-    end
-
-    showlegend && axislegend(ax, position=:rt)
-
-    return (
-        fig=fig,
-        ax=ax,
-        species=species,
-        colors=colors,
-        conc_electrode=conc_electrode,
-        gamma_electrode=gamma_electrode,
-        activity_electrode=activity_electrode,
-        vgrid=vgrid,
-    )
-end
 
 # ╔═╡ 91051ed4-9fd0-4c21-95f4-efc042060e4d
 md"""
@@ -1449,15 +1290,6 @@ begin
     end
     floataside(stuff; kwargs...) = floataside(md"""$(stuff)"""; kwargs...)
 end;
-
-# ╔═╡ 2df1166b-2629-4049-b83d-95dd691480f9
-floataside(
-    md"""
-    Select voltage in plots:
-
-    $(@bind pb_v PlutoUI.Slider(range(0,vmax,length=201),default=0.05,show_value=true))
-    """, top = 1200
-)
 
 # ╔═╡ 6a9fad5b-4964-4e12-b131-8cb2628d1ab3
 floataside(
@@ -2058,7 +1890,9 @@ function activity_coefficient!(
     	end
 		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
     elseif γ_mode == DGML_γ!
-		
+	for ic in cspecies
+	    @show ic, u[ic]
+	end	
         # Dreyer et al. approach
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
@@ -2139,7 +1973,7 @@ begin
 		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
 		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
 		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
-		σ = C_gap * (ϕ_we - ϕ_pzc - u[iϕ])#integrate(f, ρ, u; data)
+		σ = surface_charge(u, data, user_input_model.BC_Select)
 		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
 
 	
@@ -2227,45 +2061,6 @@ end;
 # ╔═╡ 165446a0-da6c-4ecc-a5ba-c96eb300af12
 const c0_bulk   = c̄ - sum(model.c_bulk) # solvent bulk molar concentration
 
-# ╔═╡ 4c22f0ba-75f9-4d85-9180-bc56952adef8
-# ╠═╡ disabled = true
-#=╠═╡
-function pbi_molfrac(ϕ, j)
-    N = length(elydata_NaF.z)
-    denom = 1.0
-    for i in 1:length(elydata_NaF.z)
-        denom += exp(elydata_NaF.z[i] * ϕ * F / R * T) * elydata_NaF.c_bulk[i] / c0_bulk
-    end
-    return exp(elydata_NaF.z[j] * ϕ * F / R * T) * elydata_NaF.c_bulk[j] / (c0_bulk * denom)
-end
-  ╠═╡ =#
-
-# ╔═╡ e431fbc4-b5fb-43fb-83d6-349fce0d861e
-#=╠═╡
-function pbi_spacechargedensity(ϕ)
-    sumyz = zero(ϕ)
-    for i in 1:length(elydata_NaF.z)
-        sumyz += elydata_NaF.z[i] * pbi_molfrac(ϕ, i)
-    end
-    return F * c̄ * sumyz
-end
-  ╠═╡ =#
-
-# ╔═╡ 58d5cb4c-49de-423c-8f47-9d29d9ef720c
-#=╠═╡
-function pbi_reaction(y, u, node, data)
-    y[iφ] = u[iq]
-    y[iq] = u[iq] - pbi_spacechargedensity(u[iφ])
-    return
-end
-  ╠═╡ =#
-
-# ╔═╡ 6f8a0241-2004-47e2-91fa-0c0ada393897
-#=╠═╡
-pbi_molfrac(0.0 * V, 1)
-
-  ╠═╡ =#
-
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
 	f,
@@ -2326,6 +2121,15 @@ if L_varied_checkbox
 	)
 end
 
+# ╔═╡ 012b426e-3550-4678-a666-eeb4bd32d20e
+function simulate_CO2R_dir(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
+	kwargs 	 	= merge(solver_control, kwargs) 
+    cell        = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+	ivresult    = ivsweep(cell; voltages, store_solutions=true, kwargs...)
+
+	cell, ivresult
+end;
+
 # ╔═╡ 06ca7d68-9c76-4d1c-947a-dd64a0fe9ec3
 function simulate_CO2R(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
 	kwargs 	 	= merge(solver_control, kwargs) 
@@ -2359,47 +2163,6 @@ function pb_bc(y, u, bnode, data)
     boundary_dirichlet!(y, u, bnode, species = model.iϕ, region = Γ_we, value = bcvals[1])
     return
 end
-
-# ╔═╡ f296c4cf-eada-4f7b-bd3f-da666a1fcaf3
-#=╠═╡
-begin
-
-    pbi_system = VoronoiFVM.System(
-        grid;
-        reaction = pbi_reaction,
-        flux = pb_flux,
-        bcondition = pb_bc,
-        generic = pb_generic,
-        unknown_storage = :sparse
-    )
-
-    enable_species!(pbi_system, species = [iφ, iq], regions = [1])
-    enable_boundary_species!(pbi_system, iQ, [1])
-   # nv .= nodevolumes(pbo_system)
-
-end
-  ╠═╡ =#
-
-# ╔═╡ 98d4857e-860a-4bae-8451-e9a2e2685ac1
-#=╠═╡
-if DLCap_Dirichlet
-	pbi_volts, pbi_caps, pbi_sols = dlcapsweep(pbi_system)
-end
-  ╠═╡ =#
-
-# ╔═╡ e7872b48-df2d-4541-a015-ea34260843c1
-#=╠═╡
-if DLCap_Dirichlet
-	plotcdl(pbi_volts, pbi_caps, pb_v)
-end
-  ╠═╡ =#
-
-# ╔═╡ a4bd660c-a86e-4aa3-83a6-557f2df90c1c
-#=╠═╡
-if DLCap_Dirichlet
-	plotsols(pbi_sols, pb_v, pbi_molfrac)
-end
-  ╠═╡ =#
 
 # ╔═╡ 53d6779f-5262-47bc-9f21-a04db2b96866
 pbo_molfrac(ϕ, i) = (model.c_bulk[i] / c̄) * exp(model.z[i] * ϕ * F / (R * T))
@@ -2437,89 +2200,6 @@ begin
     enable_boundary_species!(pbo_system, iQ, [1])
     nv .= nodevolumes(pbo_system)
 end;
-
-# ╔═╡ d709d399-1d6b-4a19-90ba-2861f96e26f5
-# ╠═╡ disabled = true
-#=╠═╡
-if DLCap_Dirichlet
-	pbo_volts, pbo_caps, pbo_sols = dlcapsweep(pbo_system)
-end
-  ╠═╡ =#
-
-# ╔═╡ b1ce50b7-3908-4cbc-a697-9e6a03de510f
-#=╠═╡
-if DLCap_Dirichlet
-	plotcdl(pbo_volts, pbo_caps, pb_v)
-end
-  ╠═╡ =#
-
-# ╔═╡ f4189cb7-9a75-4e3b-9b69-1d9c9704f05f
-#=╠═╡
-if DLCap_Dirichlet
-	plotsols(pbo_sols, pb_v, pbo_molfrac)
-end
-  ╠═╡ =#
-
-# ╔═╡ 36d7792c-c2f6-4a71-bfc4-655f2f8a3adc
-#=╠═╡
-if DLCap_Dirichlet
-	pbo_sols[end]
-end
-  ╠═╡ =#
-
-# ╔═╡ f2823683-609b-42d3-8b11-24c7495e06f2
-begin
-	pb_cdl_dlcap_dirichlet =PNPSystem(grid; bcondition = pb_bcondition,  celldata = deepcopy(model))
-	inival0 = make_bulk_inival(pb_cdl_dlcap_dirichlet, model)
-end
-
-# ╔═╡ a11d9f6b-70a4-4c1f-9b15-512d9cd10592
-function capscalc(sys, molarities)
-    result = []
-    for imol in 1:length(molarities)
-        data = sys.vfvmsys.physics.data
-        data.c_bulk .= molarities[imol] * ufac"mol/dm^3"
-        t = @elapsed r = dlcapsweep_dir(
-            sys,
-            inival0
-        )
-        volts = voltages(r)
-        caps = r.dlcaps
-     end
-    return result
-end
-
-# ╔═╡ 33a52aa7-88ce-4973-8bae-44353eb6f382
-dir_voltages, dir_dlcaps, dir_solutions = dlcapsweep_dir(pb_cdl_dlcap_dirichlet,inival0)
-
-# ╔═╡ e10b7932-f022-4ebb-8199-dd5a10697c4e
-let
-	fig = Figure(size=(700,450))
-	
-	ax = Axis(fig[1,1],
-	    xlabel = L"\mathbf{U}\ (\mathrm{V})",
-	    ylabel = L"\mathbf{C_{dl}}\ (\mathrm{F/m^2})",
-	    title = "Differential Capacitance",
-	    xticklabelsize=14,
-	    yticklabelsize=14
-	)
-	
-	lines!(
-	    ax,
-	    dir_voltages,
-	    dir_dlcaps,
-	    linewidth=3
-	)
-	
-	scatter!(
-	    dir_voltages,
-	    dir_dlcaps,
-	   # caps,
-	    markersize=6
-	)
-	
-	fig
-end
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
 is_Landstorfer = model != elydata_Gold
@@ -2834,13 +2514,6 @@ if IV
     conc_fig
 end
 
-# ╔═╡ 47d92164-456a-43a0-8ed2-fed7f9fe31a2
-activity_vs_voltage_axis(ivresult;
-        bulk = bulk,
-        grid = grid, 
-		electrolyte = model,
-		ipressure = model.ip)
-
 # ╔═╡ 26f02407-ce54-436f-9630-63c0e2d32f73
 if double_layer_curve
     outdir_pb = joinpath("..", "data", "output")
@@ -2891,6 +2564,159 @@ if double_layer_curve
     end
 end
 
+# ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
+function activity_vs_voltage_axis(
+    result;
+    bulk,
+    grid,
+    electrolyte,
+    ipressure,
+    useonly_pH::Bool = false,
+    showlegend::Bool = false,
+)
+    species  = getproperty.(bulk, :name)
+    colors   = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    tsol  = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = result.voltages
+
+    xcoords    = grid.components[XCoordinates]
+    ielectrode = argmin(xcoords)
+
+    scale = 1.0 / (mol / dm^3)
+    nv = length(vgrid)
+
+    activity_electrode = fill(NaN, nspecies, nv)
+    gamma_electrode    = fill(NaN, nspecies, nv)
+    conc_electrode     = fill(NaN, nspecies, nv)
+
+    cspecies = electrolyte.cspecies
+
+    for (j, v) in enumerate(vgrid)
+        sol = tsol(v)
+        sol === nothing && continue
+
+        # concentration vector and pressure at electrode
+        cnode = zeros(eltype(sol), maximum(cspecies))
+        for ic in cspecies
+            cnode[ic] = sol[ic, ielectrode]
+        end
+        pnode = sol[ipressure, ielectrode]
+
+        γnode = similar(cnode)
+		
+		if user_input_model.mode == "DMGL_γ"
+       		DGML_γ!(γnode, cnode, pnode, electrolyte)
+		else
+			Stefan_γ!(γnode, cnode, pnode, electrolyte)
+		end
+
+		
+        for ia in 1:nspecies
+			c = sol[ia, ielectrode]
+            c_scale = c * scale
+            γ  = γnode[ia]
+            a  = γ * c_scale   # dimensionless activity with c° = 1 M
+
+            conc_electrode[ia, j]     = c
+            gamma_electrode[ia, j]    = γ
+            activity_electrode[ia, j] = a
+        end
+    end
+
+    fig = Figure(size=(960, 540))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
+        ylabel = L"\mathbf{a_i}",
+        yscale = log10,
+        limits = ((-1.25, -0.50), (1e-11, 1e1)),
+    )
+
+
+    if useonly_pH
+        iH = findfirst(isequal("H⁺"), species)
+        iH === nothing && error("H⁺ not found in species list.")
+        y = max.(activity_electrode[iH, :], eps(Float64))
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=5, label=species[iH])
+    else
+        for ia in 1:nspecies
+            y = max.(activity_electrode[ia, :], eps(Float64))
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=5, label=species[ia])
+        end
+    end
+
+    showlegend && axislegend(ax, position=:rt)
+
+    return (
+        fig=fig,
+        species=species,
+        colors=colors,
+        conc_electrode=conc_electrode,
+        gamma_electrode=gamma_electrode,
+        activity_electrode=activity_electrode,
+        vgrid=vgrid,
+    )
+	
+end
+
+# ╔═╡ 47d92164-456a-43a0-8ed2-fed7f9fe31a2
+
+if IV
+activity = activity_vs_voltage_axis(ivresult;
+							        bulk = bulk,
+							        grid = grid, 
+									electrolyte = model,
+									ipressure = model.ip
+	)
+    act_fig = activity.fig
+    act_colors = activity.colors
+    act_species = activity.species
+	act_activity = activity.activity_electrode
+
+
+	if γ_key == "Stefan_γ"
+	    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.90, 8e-10, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.00024, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+	else
+  		text!(conc_ax, -1.2, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000004, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 2e-9, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 7e-6, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.21, 5e-4, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.9, 7e-9, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.003, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+
+	end
+	act_fig
+
+end
+
+# ╔═╡ 0357d55d-0476-4a36-9d7e-3fee38c30674
+act_activity
+
+# ╔═╡ 3f3d5cfd-49d8-4d29-8e19-5048b8c1a82b
+activity.vgrid
+
 # ╔═╡ 28638585-e95c-4947-9143-9ac8d8202f80
 if extractIV
     outdir_pc = joinpath("..", "data", "output")
@@ -2912,6 +2738,45 @@ if extractIV
         filepath = joinpath(outdir_pc, fname)
 
         CSV.write(filepath, df)
+end
+
+# ╔═╡ f000e6ad-0224-43f4-bdf5-1c0c4308160f
+if extractIV
+	outdir_ac = joinpath("..", "data", "output")
+	isdir(outdir_ac) || mkpath(outdir_ac)
+
+	if user_input_ion.use_physical_size == false
+	    ionsize_ac = "Potassium_only"
+	else
+	    ionsize_ac = "All_species"
+	end
+
+	base_ac = string(
+	    "Activity_Curve_",
+	    user_input_model.BC_Select, "_",
+	    user_input_model.mode, "_pnp_",
+	    ionsize_ac
+	)
+	
+	Vol_ac = activity.vgrid
+	Act_ac   = activity.activity_electrode
+	
+	spc_ac = ["K+", "H+", "HCO3-", "CO3--", "CO2", "OH-", "CO"]
+	
+	@assert size(Act_ac,1) == length(spc_ac)
+	@assert size(Act_ac,2) == length(Vol_ac)
+	
+	df_ac = DataFrame(Voltage = Vol_ac)
+	
+	for i in 1:length(spc_ac)
+	    df_ac[!, spc_ac[i]] = vec(Act_ac[i, :])
+	end
+	
+	fname_ac = string(base_ac, ".csv")
+	filepath_ac = joinpath(outdir_ac, fname_ac)
+	
+	CSV.write(filepath_ac, df_ac; bom=true)
+
 end
 
 # ╔═╡ d52f9cb8-9a48-43de-ab75-92380f7aca2e
@@ -3021,8 +2886,9 @@ floataside(
 # ╟─d2c0642d-dfa5-4a76-bd36-ac4a735a3299
 # ╠═06d45088-ab8b-4e5d-931d-b58701bf8464
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
+# ╠═960b1e96-da59-44c1-9828-929ece1a2955
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
-# ╠═f0b5d356-6b97-4878-98de-bee5f380d41a
+# ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
@@ -3040,8 +2906,8 @@ floataside(
 # ╠═0db74a70-af86-492c-affb-9de62ffe4455
 # ╟─4f388fe0-6bc8-4a29-bccc-fa725e62c6a7
 # ╠═5d179c52-43d7-4bcb-a2df-93c5806876fa
-# ╟─161a810d-c05e-42ad-97ab-131059d6784a
-# ╟─5f17b4f7-54d6-4ad0-9886-252854840a80
+# ╠═161a810d-c05e-42ad-97ab-131059d6784a
+# ╠═5f17b4f7-54d6-4ad0-9886-252854840a80
 # ╠═53b4dc3e-95f0-4eee-ba1c-68c222638acd
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
 # ╠═9a4e01d9-f469-4427-bf4c-883adb67ae24
@@ -3057,28 +2923,8 @@ floataside(
 # ╠═3e3c38a5-85bc-4a7a-867b-a706b7bdb2d0
 # ╠═83ea329a-5d40-401d-8db1-59618c909f33
 # ╠═291df771-1607-4fe3-8667-3f1614312e8f
-# ╠═d709d399-1d6b-4a19-90ba-2861f96e26f5
-# ╠═b1ce50b7-3908-4cbc-a697-9e6a03de510f
-# ╠═f4189cb7-9a75-4e3b-9b69-1d9c9704f05f
-# ╠═36d7792c-c2f6-4a71-bfc4-655f2f8a3adc
 # ╟─dc5b1cfc-9221-45e9-a4f3-69ec4f7ebb70
-# ╟─4c22f0ba-75f9-4d85-9180-bc56952adef8
-# ╟─e431fbc4-b5fb-43fb-83d6-349fce0d861e
-# ╟─58d5cb4c-49de-423c-8f47-9d29d9ef720c
-# ╟─f296c4cf-eada-4f7b-bd3f-da666a1fcaf3
-# ╟─6f8a0241-2004-47e2-91fa-0c0ada393897
-# ╟─98d4857e-860a-4bae-8451-e9a2e2685ac1
-# ╟─e7872b48-df2d-4541-a015-ea34260843c1
-# ╟─a4bd660c-a86e-4aa3-83a6-557f2df90c1c
-# ╟─2df1166b-2629-4049-b83d-95dd691480f9
-# ╠═1521ae52-8778-43da-924a-e07d3a411e92
-# ╠═7f059ca8-5799-4d49-9718-8b299c825873
-# ╠═35fcaeed-1168-4f71-8e8f-99b1a885392b
-# ╠═d22303fc-89e4-4e9a-bdb4-089186c5e421
-# ╠═a11d9f6b-70a4-4c1f-9b15-512d9cd10592
-# ╠═f2823683-609b-42d3-8b11-24c7495e06f2
-# ╠═33a52aa7-88ce-4973-8bae-44353eb6f382
-# ╠═e10b7932-f022-4ebb-8199-dd5a10697c4e
+# ╠═fb8a9a17-ed12-4f87-9957-06e5e265fcb2
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
@@ -3154,6 +3000,7 @@ floataside(
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
 # ╠═541c5ad3-dede-408d-a92a-285f26357c56
+# ╠═012b426e-3550-4678-a666-eeb4bd32d20e
 # ╠═06ca7d68-9c76-4d1c-947a-dd64a0fe9ec3
 # ╟─57db41d1-57c0-4eee-ba35-6f9b7e1e8263
 # ╠═11b12556-5b61-42c2-a911-4ea98a0a1e85
@@ -3175,11 +3022,15 @@ floataside(
 # ╟─904ac4c2-50a8-4f70-8050-a0a1d4a448fa
 # ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
+# ╠═5d0458f3-6564-43df-af01-4a4b829ce262
 # ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╠═47d92164-456a-43a0-8ed2-fed7f9fe31a2
 # ╠═11d6598c-3d6a-472a-8863-9275d5e567c6
 # ╠═91051ed4-9fd0-4c21-95f4-efc042060e4d
 # ╠═28638585-e95c-4947-9143-9ac8d8202f80
+# ╠═f000e6ad-0224-43f4-bdf5-1c0c4308160f
+# ╠═0357d55d-0476-4a36-9d7e-3fee38c30674
+# ╠═3f3d5cfd-49d8-4d29-8e19-5048b8c1a82b
 # ╠═43cb97f2-22ce-4940-8a17-3c04d4d2ced6
 # ╠═d52f9cb8-9a48-43de-ab75-92380f7aca2e
 # ╟─de144adb-a467-4077-8cb1-d86462f56110
