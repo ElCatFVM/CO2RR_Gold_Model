@@ -519,7 +519,7 @@ md"""
 
 # ╔═╡ fb8a9a17-ed12-4f87-9957-06e5e265fcb2
 function calc_QBL_local(u, data; tolϕ = 1e-12)
-    (; ip, iϕ, κ, ε_0, pscale, ε) = data
+    (; ip, iϕ, ε_0, pscale, ε) = data
 
     Δp = u[ip]
     Δϕ = u[iϕ]
@@ -539,7 +539,7 @@ end
 # ╔═╡ 960b1e96-da59-44c1-9828-929ece1a2955
 function surface_charge(u, data, boundary)
 	if boundary == "Robin"
-  		return C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
+  		return 
 	else
 		return calc_QBL_local(u, data)
 	end
@@ -1890,9 +1890,9 @@ function activity_coefficient!(
     	end
 		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
     elseif γ_mode == DGML_γ!
-	for ic in cspecies
-	    @show ic, u[ic]
-	end	
+		##for ic in cspecies
+		##    @show ic, u[ic]
+		#end	
         # Dreyer et al. approach
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
@@ -1973,7 +1973,7 @@ begin
 		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
 		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
 		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
-		σ = surface_charge(u, data, user_input_model.BC_Select)
+		σ = C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
 		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
 
 	
@@ -2761,7 +2761,7 @@ if extractIV
 	Vol_ac = activity.vgrid
 	Act_ac   = activity.activity_electrode
 	
-	spc_ac = ["K+", "H+", "HCO3-", "CO3--", "CO2", "OH-", "CO"]
+	spc_ac = ["K⁺", "H⁺", "HCO₃⁻", "CO₃²⁻", "CO₂", "OH⁻", "CO"]
 	
 	@assert size(Act_ac,1) == length(spc_ac)
 	@assert size(Act_ac,2) == length(Vol_ac)

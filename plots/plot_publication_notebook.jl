@@ -850,8 +850,8 @@ let
 		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl_pr  = 
 		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
-    #df_act_pr  = 
-	#	CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+    df_act_pr  = 
+		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
 	
 
     fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
@@ -906,8 +906,8 @@ let
 	vgrid_con_pr = df_conc_pr[!, :Voltage]
     conc_electrode_pr = permutedims(Matrix(df_conc_pr[!, Symbol.(species)]))  # (7, N)
 
-    #vgrid_act = df_act[!, :Voltage]
-    #act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))    # (7, N)
+    vgrid_act_pr = df_act_pr[!, :Voltage]
+    act_electrode_pr = permutedims(Matrix(df_act_pr[!, Symbol.(species)]))    # (7, N)
 
     xt_bottom = [-1.2, -1.0, -0.8, -0.6]
     ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
@@ -947,6 +947,11 @@ let
 	for ia in 1:7
         y = max.(conc_electrode_pr[ia, :], eps(Float64))
         lines!(ax_con, vgrid_con_pr, y; color=colors[ia], linewidth=3, linestyle = :dash)
+    end
+
+	for ia in 1:7
+        y = max.(act_electrode_pr[ia, :], eps(Float64))
+        lines!(ax_act, vgrid_act_pr, y; color=colors[ia], linewidth=3, linestyle = :dash)
     end
 
     lines!(ax_pol,
