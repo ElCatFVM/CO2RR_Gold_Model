@@ -62,6 +62,13 @@ This design enables efficient, on-demand simulations without unnecessary recompu
     - figures (CV/IV plots)
     - logs (timing, convergence, parameter summary)
   
+
+## 4) plots/plot_publication_notebook.jl
+
+1. First, run an `EquilibriumCheck.jl` and extract a CSV file. It automatically saved at ../data/output
+2. After, run the `plot_publication_notebook.jl` to check the publication figure style.
+3. All plots maked at that notebook, and save it.
+
 ---
 ## 4) E-acta Link
 
