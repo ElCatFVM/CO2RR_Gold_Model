@@ -173,7 +173,96 @@ let
 end
 
 # ╔═╡ 8545d818-d255-4e8a-af8f-72fdaf9d4bdd
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        limits = ((-1.3, 0.9), (-5.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
 
+    # --------------------------------------------------
+    # extracted CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/iohminus_pressure_sweep.csv", DataFrame)
+
+    # pressure
+    plist = sort(unique(df.Pressure))
+
+
+    cols1 = resample_cmap(:winter, length(plist))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.Pressure .== p, :]
+
+
+        label = @sprintf("%.1f pCO₂ atm", p)
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            subdf.Value;
+            color = cols1[j],
+            linewidth = 4
+        )
+        push!(plot_objs1, line)
+    end
+
+    # --------------------------------------------------
+    # reaction region shading
+    # --------------------------------------------------
+    vspan!(ax, -1.30, -0.70, color=(colorant"#87CEFA", 0.30))
+    text!(ax, -1.00, 1.55,
+        text = "CO₂ reduction reaction",
+        font = "sans-bold",
+        align = (:center, :top),
+        fontsize = 16,
+        color = "#1E90FF"
+    )
+
+    vspan!(ax, -0.20, 0.10, color=(colorant"#F7DC6F", 0.30))
+    text!(ax, -0.05, 1.55,
+        text = "CO oxidation\nreaction\nwith CO₃²⁻",
+        font = "sans-bold",
+        align = (:center, :top),
+        fontsize = 16,
+        color = :orange
+    )
+
+    vspan!(ax, 0.10, 0.90, color=(colorant"#F1948A", 0.30))
+    text!(ax, 0.50, 1.55,
+        text = "CO oxidation reaction with H₂O",
+        font = "sans-bold",
+        align = (:center, :top),
+        fontsize = 16,
+        color = "#FF6347"
+    )
+
+    ax.xticks = -1.5:0.3:1.0
+    ax.yticks = 1:-1:-5
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
 
 # ╔═╡ 4911ad1e-e75a-4d41-83dc-675b3f26ce39
 begin
@@ -835,23 +924,23 @@ let
     end
 
     df_conc = 
-		CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
     df_pol  = 
-		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl  = 
-		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
     df_act  = 
-		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
 
 
 	df_conc_pr = 
-		CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
     df_pol_pr  = 
-		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl_pr  = 
-		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
     df_act_pr  = 
-		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/All_Species/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
 	
 
     fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
@@ -964,7 +1053,202 @@ let
 	lines!(ax_pol,
         df_pol_pr[!, :Voltage],
         abs.(df_pol_pr[!, :Current] .* (cm^2/mA));
+        color = :black,
+		linestyle = :dash,
+        linewidth = 3,
+    )
+
+    lines!(ax_cdl,
+        df_cdl[!, :Voltage],
+        df_cdl[!, :Capacitance] / (μF / cm^2);
+        color = RGBAf(0.5, 0.2, 0.8, 0.5),
+        linewidth = 3,
+    )
+
+	 lines!(ax_cdl,
+        df_cdl_pr[!, :Voltage],
+        df_cdl_pr[!, :Capacitance] / (μF / cm^2);
+        color = RGBAf(0.5, 0.2, 0.6, 1.0),
+        linewidth = 3,
+		linestyle = :dash
+    )
+
+    display(fig)
+end
+
+# ╔═╡ 0290138e-4839-49a0-9a77-050bb4ab2cc0
+let
+    FS_BIG   = 16
+    FS_SMALL = 16
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
+
+    function style_axis!(ax; big::Bool)
+        if big
+            ax.spinewidth = SP_BIG
+            ax.xtickwidth = TICKW_BIG
+            ax.ytickwidth = TICKW_BIG
+            ax.xticksize  = TICKL_BIG
+            ax.yticksize  = TICKL_BIG
+            ax.xlabelsize = FS_BIG
+            ax.ylabelsize = FS_BIG
+            ax.xticklabelsize = FS_BIG
+            ax.yticklabelsize = FS_BIG
+            ax.xlabelpadding = 10
+            ax.ylabelpadding = 10
+            ax.xlabelfont = :bold
+        else
+            ax.spinewidth = SP_SMALL
+            ax.xtickwidth = TICKW_SMALL
+            ax.ytickwidth = TICKW_SMALL
+            ax.xticksize  = TICKL_SMALL
+            ax.yticksize  = TICKL_SMALL
+            ax.xlabelsize = FS_SMALL
+            ax.ylabelsize = FS_SMALL
+            ax.xticklabelsize = FS_SMALL
+            ax.yticklabelsize = FS_SMALL
+        end
+        ax.xgridvisible = false
+        ax.ygridvisible = false
+        return ax
+    end
+
+    df_conc = 
+		CSV.read(raw"../data/output/Only_Potassium/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+    df_pol  = 
+		CSV.read(raw"../data/output/Only_Potassium/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl  = 
+		CSV.read(raw"../data/output/Only_Potassium/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+    df_act  = 
+		CSV.read(raw"../data/output/Only_Potassium/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+
+
+	df_conc_pr = 
+		CSV.read(raw"../data/output/Only_Potassium/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
+    df_pol_pr  = 
+		CSV.read(raw"../data/output/Only_Potassium/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl_pr  = 
+		CSV.read(raw"../data/output/Only_Potassium/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+    df_act_pr  = 
+		CSV.read(raw"../data/output/Only_Potassium/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+	
+
+    fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
+
+    ax_cdl = Axis(fig[1, 1],
+        xlabel = L"\text{Voltage} \mathrm{(V)}",
+        ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
+        limits = (-0.8, 0.8, 10, 30),
+    )
+    style_axis!(ax_cdl; big=false)
+
+    ax_pol = Axis(fig[1, 2],
+        xlabel = L"\text{Voltage} \mathrm{(V)}",
+        ylabel = L"|j| \; \textrm{(mA\,cm^{-2})}",
+        limits = (-1.3, -0.4, 1e-10, 100),
+        yscale = log10
+    )
+    style_axis!(ax_pol; big=false)
+
+    ax_con = Axis(fig[2, 1],
+        xlabel = L"\text{Voltage} \mathrm{(V)}",
+        ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
+        yscale = log10,
+        limits = (-1.25, -0.5, 1e-11, 1e1),
+    )
+    style_axis!(ax_con; big=true)
+
+    ax_act = Axis(fig[2, 2],
+        xlabel = L"\text{Voltage} \mathrm{(V)}",
+        ylabel = L"\mathbf{a_i^{+}}",
+        yscale = log10,
+        limits = (-1.25, -0.5, 1e-11, 1e4),
+    )
+    style_axis!(ax_act; big=true)
+
+    rowsize!(fig.layout, 1, Relative(0.28))
+    rowsize!(fig.layout, 2, Relative(0.72))
+    colsize!(fig.layout, 1, Relative(1))
+    colsize!(fig.layout, 2, Relative(1))
+    rowgap!(fig.layout, 14)
+    colgap!(fig.layout, 22)
+
+    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
+
+    vgrid_con = df_conc[!, :Voltage]
+    conc_electrode = permutedims(Matrix(df_conc[!, Symbol.(species)]))  # (7, N)
+
+    vgrid_act = df_act[!, :Voltage]
+    act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))    # (7, N)
+
+	vgrid_con_pr = df_conc_pr[!, :Voltage]
+    conc_electrode_pr = permutedims(Matrix(df_conc_pr[!, Symbol.(species)]))  # (7, N)
+
+    vgrid_act_pr = df_act_pr[!, :Voltage]
+    act_electrode_pr = permutedims(Matrix(df_act_pr[!, Symbol.(species)]))    # (7, N)
+
+    xt_bottom = [-1.2, -1.0, -0.8, -0.6]
+    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_act.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+
+    yt_vals_con = 10.0 .^ (0:-3:-9)
+    yt_labs_con = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    ax_con.yticks = (yt_vals_con, yt_labs_con)
+
+
+   	yt_vals_act = 10.0 .^ (3:-3:-9)
+    yt_labs_act = [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]	
+    ax_act.yticks = (yt_vals_act, yt_labs_act)
+
+    yt_vals_pol = 10.0 .^ (0:-5:-15)
+    yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}", L"10^{-15}"]
+    ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
+
+    yt_vals_cdl = [10, 20, 30, 40]
+    yt_labs_cdl = [L"10", L"20", L"30", L"40"]
+    ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
+
+    xt_top = [-0.8, -0.4, 0.0, 0.4, 0.8]
+    ax_cdl.xticks = (xt_top, [@sprintf("%.1f", x) for x in xt_top])
+
+    for ia in 1:7
+        y = max.(conc_electrode[ia, :], eps(Float64))
+        lines!(ax_con, vgrid_con, y; color=colors[ia], linewidth=3)
+    end
+
+    for ia in 1:7
+        y = max.(act_electrode[ia, :], eps(Float64))
+        lines!(ax_act, vgrid_act, y; color=colors[ia], linewidth=3)
+    end
+
+	for ia in 1:7
+        y = max.(conc_electrode_pr[ia, :], eps(Float64))
+        lines!(ax_con, vgrid_con_pr, y; color=colors[ia], linewidth=3, linestyle = :dash)
+    end
+
+	for ia in 1:7
+        y = max.(act_electrode_pr[ia, :], eps(Float64))
+        lines!(ax_act, vgrid_act_pr, y; color=colors[ia], linewidth=3, linestyle = :dash)
+    end
+
+    lines!(ax_pol,
+        df_pol[!, :Voltage],
+        abs.(df_pol[!, :Current] .* (cm^2/mA));
         color = :skyblue,
+        linewidth = 3,
+    )
+
+	lines!(ax_pol,
+        df_pol_pr[!, :Voltage],
+        abs.(df_pol_pr[!, :Current] .* (cm^2/mA));
+        color = :black,
+		linestyle = :dash,
         linewidth = 3,
     )
 
@@ -1007,3 +1291,4 @@ end
 # ╠═08bb3a34-88d9-4934-a9c5-a5d61fa77e7e
 # ╠═89112dd8-08c8-4887-90db-e2e9c5ce0d88
 # ╠═17b95990-f6e8-4da5-909a-1a2d46d7494d
+# ╠═0290138e-4839-49a0-9a77-050bb4ab2cc0

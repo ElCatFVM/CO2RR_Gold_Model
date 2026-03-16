@@ -15,7 +15,7 @@ module AuCO2RR_plots
 
 
     include("cvplot.jl")
-    export plot_cv_current, plot_time_voltage_and_dt, plot_conc_time_electrode, plot_cv_current, plot_conc_time_electrode, plot_conc_profile_logx, cv_conc_gif, plot_cv_model_vs_koper_facets, plot_pressure_varied_sweep, plot_pH_varied_sweep, plot_iv_with_experiment, plot_scanrate_sweeps, plot_conc_profile_with_delta 
+    export plot_cv_current, plot_time_voltage_and_dt, plot_conc_time_electrode, plot_cv_current, plot_conc_time_electrode, plot_conc_profile_logx, cv_conc_gif, plot_cv_model_vs_koper_facets, plot_pressure_varied_sweep, plot_pH_varied_sweep, plot_iv_with_experiment, plot_scanrate_sweeps, plot_conc_profile_with_delta, pressure_varied_cvsweep 
 
 
     include("capsplot.jl")

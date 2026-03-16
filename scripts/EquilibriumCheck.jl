@@ -539,7 +539,7 @@ end
 # ╔═╡ 960b1e96-da59-44c1-9828-929ece1a2955
 function surface_charge(u, data, boundary)
 	if boundary == "Robin"
-  		return 
+  		return C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
 	else
 		return calc_QBL_local(u, data)
 	end
@@ -637,6 +637,47 @@ md"""
 md"""
 Run pressure varied cyclic voltammetry $(@bind pressure_varied_checkbox PlutoUI.CheckBox())
 """
+
+# ╔═╡ b767a48f-1b20-4b85-b9a8-36d6a914c5fe
+function _pressure_colname(p)
+    s = @sprintf("%.4g", p)  
+    s = replace(s, "." => "p", "-" => "m", "+" => "")
+    return Symbol("pCO2_" * s * "_atm")
+end
+
+# ╔═╡ e6dca43d-69b5-4d35-903c-6742b16a4715
+function export_pressure_varied_species_csv_long(
+    P_recs;
+    species=iohminus,
+    outfile::AbstractString="../data/output/pressure_varied_species_long.csv",
+    scale=cm^2/mA,
+)
+    pressures = Float64[]
+    voltages  = Float64[]
+    values    = Float64[]
+
+    for (p, rec) in P_recs
+        V = rec.voltages
+        Y = currents(rec, species) .* scale   # <- current 추출
+
+        @assert length(V) == length(Y)
+
+        append!(pressures, fill(Float64(p), length(V)))
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        Pressure = pressures,
+        Voltage  = voltages,
+        Value    = values,
+    )
+
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
 
 # ╔═╡ a2c7c4da-77cd-493f-8f98-0c86fecf271a
 md"""
@@ -1164,6 +1205,59 @@ Show only pH: $(@bind useonly_pH PlutoUI.CheckBox(default=false))
 # ╔═╡ 425a5f53-ab8b-4596-bda7-586842e13878
 
 
+# ╔═╡ f2a1829d-e3d9-45c1-85a8-4ffb1564fe0f
+function electrode_activity_vs_voltage(result, grid, electrolyte;
+    c_ref = 1.0 * ufac"mol/dm^3",
+    node_selector = :minx,
+)
+    tsol = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = LiquidElectrolytes.voltages(result)
+
+    xcoords = grid.components[XCoordinates]
+    ielectrode = node_selector === :minx ? argmin(xcoords) : argmax(xcoords)
+
+    cspecies = electrolyte.cspecies
+    ip       = LiquidElectrolytes.pressure_index(electrolyte)
+
+    nspecies = length(cspecies)
+    nv       = length(vgrid)
+
+    γ_e = fill(NaN, nspecies, nv)
+    a_e = fill(NaN, nspecies, nv)
+    c_e = fill(NaN, nspecies, nv)
+
+    for (j, U) in enumerate(vgrid)
+        sol = tsol(U)
+        sol === nothing && continue
+
+        unode = view(sol, :, ielectrode)
+        pnode = unode[ip]
+
+        γ = zeros(eltype(sol), size(sol, 1))
+
+        electrolyte.actcoeff!(γ, unode, pnode, electrolyte)
+
+        for (k, ic) in enumerate(cspecies)
+            cval = unode[ic]                   
+            γval = γ[ic]                       
+            aval = γval * (cval / c_ref)       
+
+            c_e[k, j] = cval / c_ref          
+            γ_e[k, j] = γval
+            a_e[k, j] = aval
+        end
+    end
+
+    return (
+        voltages = vgrid,
+        ielectrode = ielectrode,
+        cspecies = cspecies,
+        gamma_electrode = γ_e,
+        activity_electrode = a_e,
+        concentration_scaled = c_e,
+    )
+end
+
 # ╔═╡ f8b5dc8f-1f41-4600-825e-2f9653f2d925
 md"""
 ### **Polarization Curve**
@@ -1440,21 +1534,21 @@ begin
         a_K    = 8.2;  κ_K    = 0
 	elseif use_md_hydrated == false && γ_key == "DMGL_γ"
 		# Stefan's Model / Only Potaissium has a size
-        a_HCO3 = 0.00;  κ_HCO3 = 0
-        a_CO3  = 0.00;  κ_CO3  = 0
-        a_CO2  = 0.00;  κ_CO2  = 0
-        a_OH   = 0.00;  κ_OH   = 0
-        a_H    = 0.00;  κ_H    = 0
-        a_CO   = 0.00;  κ_CO   = 0
+        a_HCO3 = 0;  κ_HCO3 = 0
+        a_CO3  = 0;  κ_CO3  = 0
+        a_CO2  = 0;  κ_CO2  = 0
+        a_OH   = 0;  κ_OH   = 0
+        a_H    = 0;  κ_H    = 0
+        a_CO   = 0;  κ_CO   = 0
         #a_K    = 3.31;  κ_K    = 6.0
-        a_K    = 8.20;  κ_K    = 0.0#5.0
+        a_K    = 8.2;  κ_K    = 0.0#5.0
 	else
-		a_HCO3 = 0.0;  κ_HCO3 = 0
-        a_CO3  = 0.0;  κ_CO3  = 0
-        a_CO2  = 0.0;  κ_CO2  = 0
-        a_OH   = 0.0;  κ_OH   = 0
-        a_H    = 0.0;  κ_H    = 0
-        a_CO   = 0.0;  κ_CO   = 0
+		a_HCO3 = 0;  κ_HCO3 = 0
+        a_CO3  = 0;  κ_CO3  = 0
+        a_CO2  = 0;  κ_CO2  = 0
+        a_OH   = 0;  κ_OH   = 0
+        a_H    = 0;  κ_H    = 0
+        a_CO   = 0;  κ_CO   = 0
         a_K    = 8.2;  κ_K    = 0
 	end
 
@@ -1973,7 +2067,7 @@ begin
 		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
 		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
 		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
-		σ = C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
+		σ 			= surface_charge(u, data, user_input_model.BC_Select)
 		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
 
 	
@@ -2073,7 +2167,7 @@ function pnp_bcondition(
 	(; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
 	
 	if user_input_model.BC_Select == "Dirichlet"
-		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = ϕ_we)
+		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - ϕ_pzc))
 
 	elseif user_input_model.BC_Select == "Robin"
 		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
@@ -2272,36 +2366,24 @@ if pressure_varied_checkbox
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
 end
 
-# ╔═╡ 9e8047e5-2e8a-4267-b8a7-4094190c8fc5
-if pressure_varied_checkbox
+# ╔═╡ e614b311-bc71-4054-96ca-c81385815b7f
+P_recs
 
-	cvdf = DataFrame()
-	maxlen = maximum(length(r.voltages) for (_, r) in P_recs)
-	species = iohminus
-	for (pco2, res) in P_recs
-	    E = collect(res.voltages[5])
-	    j = collect(res.j_we[5])
-	
-	    n = min(length(E), length(j))
-	
-	    Epad = Vector{Union{Missing, Float64}}(missing, maxlen)
-	    jpad = Vector{Union{Missing, Float64}}(missing, maxlen)
-	
-	    Epad[1:n] .= E[1:n]
-	    jpad[1:n] .= j[1:n]
-	
-	    pstr = replace(string(pco2), "." => "p")
-	    cvdf[!, Symbol("E_pCO2_" * pstr)] = Epad
-	    cvdf[!, Symbol("j_pCO2_" * pstr)] = jpad
-	end
-	
-	CSV.write("../data/output/CV_results_all.csv", cvdf)
-end
+# ╔═╡ 4231590b-18c4-4af8-b798-364c529e47d8
+df_out = export_pressure_varied_species_csv_long(
+    P_recs;
+    species=iohminus,
+    outfile="../data/output/iohminus_pressure_sweep.csv",
+    scale=cm^2/mA,
+)
 
 # ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 if pressure_varied_checkbox
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
 end
+
+# ╔═╡ a95f298b-72de-4fb9-96f1-f3ee1c372d3a
+AuCO2RR_plots.pressure_varied_cvsweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 if CV
@@ -2514,6 +2596,9 @@ if IV
     conc_fig
 end
 
+# ╔═╡ 9076385e-d6eb-4fc7-93d8-dca97195d003
+electrode_activity_vs_voltage(ivresult, grid, model)
+
 # ╔═╡ 26f02407-ce54-436f-9630-63c0e2d32f73
 if double_layer_curve
     outdir_pb = joinpath("..", "data", "output")
@@ -2563,6 +2648,9 @@ if double_layer_curve
         CSV.write(filepath, df)
     end
 end
+
+# ╔═╡ 360313f0-2dad-4f7f-8d11-1800c6d934b3
+base_cv = string("CV_", user_input_model.BC_Select, "_", user_input_model.mode, ionsize_pb)
 
 # ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
 function activity_vs_voltage_axis(
@@ -2711,11 +2799,14 @@ activity = activity_vs_voltage_axis(ivresult;
 
 end
 
+# ╔═╡ 223aa524-b341-49ca-811d-44cc12d39e94
+activity
+
 # ╔═╡ 0357d55d-0476-4a36-9d7e-3fee38c30674
 act_activity
 
 # ╔═╡ 3f3d5cfd-49d8-4d29-8e19-5048b8c1a82b
-activity.vgrid
+activity
 
 # ╔═╡ 28638585-e95c-4947-9143-9ac8d8202f80
 if extractIV
@@ -2963,9 +3054,14 @@ floataside(
 # ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
 # ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
 # ╟─56814250-16b2-4578-820d-2096998c84f4
+# ╠═e614b311-bc71-4054-96ca-c81385815b7f
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
-# ╠═9e8047e5-2e8a-4267-b8a7-4094190c8fc5
+# ╠═b767a48f-1b20-4b85-b9a8-36d6a914c5fe
+# ╠═e6dca43d-69b5-4d35-903c-6742b16a4715
+# ╠═360313f0-2dad-4f7f-8d11-1800c6d934b3
+# ╠═4231590b-18c4-4af8-b798-364c529e47d8
 # ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
+# ╠═a95f298b-72de-4fb9-96f1-f3ee1c372d3a
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─a2c7c4da-77cd-493f-8f98-0c86fecf271a
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
@@ -3014,6 +3110,8 @@ floataside(
 # ╠═af333d3b-1e3a-4227-8cce-479907c11448
 # ╠═425a5f53-ab8b-4596-bda7-586842e13878
 # ╠═ab302d08-1a6f-4553-85af-043c565b107f
+# ╠═9076385e-d6eb-4fc7-93d8-dca97195d003
+# ╠═f2a1829d-e3d9-45c1-85a8-4ffb1564fe0f
 # ╟─f8b5dc8f-1f41-4600-825e-2f9653f2d925
 # ╠═9498845e-fa44-4d01-a7bc-33d01ec11f79
 # ╠═22244e24-5b56-4933-8a09-44b601f116c3
@@ -3025,6 +3123,7 @@ floataside(
 # ╠═5d0458f3-6564-43df-af01-4a4b829ce262
 # ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╠═47d92164-456a-43a0-8ed2-fed7f9fe31a2
+# ╠═223aa524-b341-49ca-811d-44cc12d39e94
 # ╠═11d6598c-3d6a-472a-8863-9275d5e567c6
 # ╠═91051ed4-9fd0-4c21-95f4-efc042060e4d
 # ╠═28638585-e95c-4947-9143-9ac8d8202f80

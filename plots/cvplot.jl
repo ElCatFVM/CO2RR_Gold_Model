@@ -906,3 +906,46 @@ function plot_pressure_varied_sweep(
     Legend(fig[1, 2], plots, labels, "Overlay"; framevisible=true)
     return fig
 end
+
+function pressure_varied_cvsweep(
+    P_recs;
+    species=iohminus,
+    fig_size=(1600, 900),
+    scale=cm^2/mA,
+    limits=nothing,
+)
+    fig = Figure(size = fig_size)
+    sim_linewidth = 3
+    ax = if limits !== nothing
+        Axis(fig[1, 1],
+             xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+             ylabel = L"I (mA/cm^2)",
+             limits = limits)
+    else
+        Axis(fig[1, 1],
+             xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
+             ylabel = L"I (mA/cm^2)")
+    end
+
+    plots  = Any[]
+    labels = String[]
+
+    # ------------------------------------------------------------
+    # 2) Simulation curves (existing logic)
+    # ------------------------------------------------------------
+    n = length(P_recs)
+    cols_sim = [RGB(1 - t, 0, t) for t in LinRange(0, 1, max(n, 1))]
+
+    for j in 1:n
+        p, rec = P_recs[j]
+        label = "$(p)\t pCO2(atm)"
+        I = currents(rec, species) .* scale
+
+        line = lines!(ax, rec.voltages, I; color = cols_sim[j], linewidth = sim_linewidth)
+        push!(plots, line)
+        push!(labels, "Theoretical | $label")
+    end
+
+    Legend(fig[1, 2], plots, labels, "Overlay"; framevisible=true)
+    return fig
+end
