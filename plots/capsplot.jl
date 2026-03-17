@@ -137,45 +137,6 @@ function capsplot_v(vis, result_named)
 end
 
 
-function capsplot_κ(vis, sys; κ_values = [0, 1, 5, 10, 20, 30, 40])
-    n = length(κ_values)
-    colors = [RGB(0, 0, i/n) for i in 1:n]
-    dls = LiquidElectrolytes.DLCapSweepResult[]
-
-    sys_local = deepcopy(sys)
-    data = electrolytedata(sys_local)
-
-    κ_original = copy(data.κ)
-    cbulk_original = copy(data.c_bulk)
-
-    try
-        for (j, κval) in enumerate(κ_values)
-            data.κ .= κval
-            data.c_bulk .= [0.05, 0.05] * ufac"mol/dm^3"
-
-            result = caps(sys_local)
-            push!(dls, result)
-
-            scalarplot!(
-                vis,
-                result.voltages,
-                result.dlcaps / (μF / cm^2);
-                linestyle = :solid,
-                color = colors[j],
-                clear = false,
-                label = "κ = $(κval)"
-            )
-        end
-    catch e
-        @warn "capsplot_κ failed" exception=e
-        rethrow()
-    finally
-        data.κ .= κ_original
-        data.c_bulk .= cbulk_original
-    end
-
-    return dls
-end
 
 function capsplot_κ(vis, sys; κ_values = [0, 1, 5, 10, 20, 30, 40], c_bulk = [0.05, 0.05])
     n = length(κ_values)
