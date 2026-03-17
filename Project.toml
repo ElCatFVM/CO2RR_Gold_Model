@@ -2,7 +2,6 @@ name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
 version = "0.1.0"
 
-
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
@@ -12,6 +11,7 @@ Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
+DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 ExtendableGrids = "cfc395e8-590f-11e8-1f13-43a2532b2fa8"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GridVisualize = "5eed8a63-0fb0-45eb-886d-8d5a387d12b8"

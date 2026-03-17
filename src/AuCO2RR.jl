@@ -23,6 +23,6 @@ module AuCO2RR
 
     include("iv.jl")
     export pressure_varied_sweep, sweep_over_L_c, scanrate_varied_sweep, run_pH_sweep
- 
+    export ivsweep_over_L
 
 end # module

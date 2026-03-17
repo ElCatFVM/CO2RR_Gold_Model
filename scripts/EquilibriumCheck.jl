@@ -2236,7 +2236,7 @@ end;
 # ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═╡ show_logs = false
 if Ldependancy
-	ivL = AuCO2RR_plots.ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
+	ivL = ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
 end
 
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67

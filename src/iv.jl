@@ -84,6 +84,38 @@ end
 
 
 
+function ivsweep_over_L(model, bcondition;
+	voltages,
+ 	L_values = round.(Int, range(80, 1500, length=6)),
+    eneutral = true,
+	solver_control,
+	kwargs...)
+    results = Dict{Int, Any}()
+    kwargs 	 	= merge(solver_control, kwargs) 
+
+	#cell, ivresult
+    for L in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+        #celldata.eneutral = eneutral
+        #celldata.tunnel   = tunnel
+        #celldata.bikerman = bikerman
+
+#        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
+    #cell   = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+
+        pnpcell = PNPSystem(grid; bcondition=bcondition, reaction=reaction, celldata=celldata)
+
+        results[L] = ivsweep(pnpcell; voltages, store_solutions=true, kwargs...)
+
+    end
+
+    return results
+end
 
 
  # module?
