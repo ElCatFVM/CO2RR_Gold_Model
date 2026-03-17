@@ -454,7 +454,7 @@ function Potassium_γ!(γ, c, p, electrolyte)
 	
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
-	γ .= 0 
+	γ .= 1
     γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus]) # / (mol/dm^3))
     
     return γ
