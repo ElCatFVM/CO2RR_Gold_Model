@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.23
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -49,7 +49,8 @@ end;
 # ╔═╡ aecc5e8f-1e78-4965-8f9f-4b52d850f490
 begin
 	using AuCO2RR
-	using AuCO2RR: AuCO2RR_plots
+	include(joinpath(pkgdir(AuCO2RR), "plots", "AuCO2RR_plots.jl"))
+	using .AuCO2RR_plots
 end
 
 # ╔═╡ 3ac837b8-559b-41c2-8f83-1331839dcf7e
@@ -454,7 +455,7 @@ function Potassium_γ!(γ, c, p, electrolyte)
 	
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
-	γ .= 0 
+	γ .= 1
     γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus]) # / (mol/dm^3))
     
     return γ
@@ -1281,6 +1282,132 @@ Compare the simulation results: $(@bind comp PlutoUI.CheckBox(default=true))
 # ╔═╡ 5d0458f3-6564-43df-af01-4a4b829ce262
 
 
+# ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
+function activity_vs_voltage_axis(
+    result;
+    bulk,
+    grid,
+    electrolyte,
+    ipressure,
+    model_type::String, # "Stefan(MPB)" "DGML"
+    useonly_pH::Bool = false,
+    showlegend::Bool = false,
+)
+    species  = getproperty.(bulk, :name)
+    colors   = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    tsol  = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = result.voltages
+
+    xcoords    = grid.components[XCoordinates]
+    ielectrode = argmin(xcoords)
+
+    scale = 1.0 / (mol / dm^3)
+    nv = length(vgrid)
+
+    activity_electrode = fill(NaN, nspecies, nv)
+    gamma_electrode    = fill(NaN, nspecies, nv)
+    conc_electrode     = fill(NaN, nspecies, nv)
+
+    cspecies = electrolyte.cspecies
+
+    for (j, v) in enumerate(vgrid)
+        sol = tsol(v)
+        sol === nothing && continue
+
+        # Extract spatial unit (x=0) our unit vector and magnitude
+        cnode = zeros(eltype(sol), maximum(cspecies))
+        for ic in cspecies
+            cnode[ic] = sol[ic, ielectrode]
+        end
+        pnode = sol[ipressure, ielectrode]
+
+        v0 = electrolyte.v0
+        bar_c = 1.0 / v0
+        RT = electrolyte.RT
+        
+        Phi = sum(cnode[ic] * electrolyte.v[ic] for ic in cspecies)
+        solvent_frac = max(1.0 - Phi, eps(Float64))
+
+        for ia in 1:nspecies
+            c = sol[ia, ielectrode]
+            v_a = electrolyte.v[ia]
+            size_ratio = v_a / v0
+            
+            term_conc = c / bar_c
+            
+            if model_type == "DMGL_γ"
+				# DGML Model: Treats the electrolyte as an ideal incompressible mixture.
+                # term_press: Captures the mechanical pressure penalty scaled by the specific volume difference.
+                # Species with v_a > 0 are physically repelled by local pressure gradients (Barodiffusion).
+                # Dimensionless species (v_a = 0) feel pure pressure-correction without steric linkage.
+                term_press  = exp((1.0 - size_ratio) * pnode / (bar_c * RT))
+                term_steric = solvent_frac^(-size_ratio)
+                a_eff_thermo = term_conc * term_press * term_steric
+                
+            elseif model_type == "Stefan_γ"
+				# Stefan's Model (Bikerman-Freise): Applies a global lattice-based steric penalty.
+                # All species, regardless of their actual size (even v_a = 0), are subjected to the exact same penalty (1 - Φ)^-1.
+                # This causes the unphysical coupled depletion of point-charge species when supporting cations overcrowd.
+                a_eff_thermo = term_conc * (solvent_frac^(-1.0))
+                
+            else
+                error("Invalid model_type. Use 'DGML' or 'Stefan'.")
+            end
+            
+            c_scale = c * scale
+            a_eff_scaled = a_eff_thermo * (bar_c * scale)
+
+            conc_electrode[ia, j]     = c
+            gamma_electrode[ia, j]    = a_eff_scaled / max(c_scale, eps(Float64))
+            activity_electrode[ia, j] = a_eff_scaled
+        end
+    end
+
+    fig = Figure(size=(1200, 800)) 
+
+    ax = Axis(fig[1,1];
+        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
+        ylabel = L"\mathbf{\tilde{a}_i}",
+        limits = ((-1.25, -0.50), nothing),
+        yscale = log10
+    )
+
+    if useonly_pH
+        iH = findfirst(isequal("H⁺"), species)
+        iH === nothing && error("H⁺ not found in species list.")
+        
+        valid_mask = .!isnan.(activity_electrode[iH, :])
+        x_data = vgrid[valid_mask]
+        y_data = max.(activity_electrode[iH, valid_mask], eps(Float64))
+        
+        lines!(ax, x_data, y_data; color=colors[iH], linewidth=5, label=species[iH])
+    else
+        for ia in 1:nspecies
+            valid_mask = .!isnan.(activity_electrode[ia, :])
+            x_data = vgrid[valid_mask]
+            y_data = max.(activity_electrode[ia, valid_mask], eps(Float64))
+            
+            if sum(valid_mask) > 0
+                lines!(ax, x_data, y_data; color=colors[ia], linewidth=5, label=species[ia])
+            end
+        end
+    end
+
+    showlegend && axislegend(ax, position=:rt)
+
+    return (
+        fig=fig,
+        species=species,
+        colors=colors,
+        conc_electrode=conc_electrode,
+        gamma_electrode=gamma_electrode,
+        activity_electrode=activity_electrode,
+        vgrid=vgrid,
+    )
+end
+
 # ╔═╡ 91051ed4-9fd0-4c21-95f4-efc042060e4d
 md"""
 Extract the polarization Curve: $(@bind extractIV PlutoUI.CheckBox(default=true))
@@ -1505,7 +1632,16 @@ begin
     use_md_hydrated = user_input_ion.use_physical_size   # Bool toggle you will use
 
     # a: hydrated radii in water (Å), κ: MD hydration number (1st shell)
-    if use_md_hydrated == true && γ_key == "DMGL_γ"
+	
+    if use_md_hydrated == true 
+		a_HCO3 = 8.2;  κ_HCO3 = 0
+        a_CO3  = 8.2;  κ_CO3  = 0
+        a_CO2  = 8.2;  κ_CO2  = 0
+        a_OH   = 8.2;  κ_OH   = 0
+        a_H    = 8.2;  κ_H    = 0
+        a_CO   = 8.2;  κ_CO   = 0
+        a_K    = 8.2;  κ_K    = 0
+		"""
         # --- hydrated radii [nm] (aqueous effective radii) ---
         a_HCO3 = 3.33   #  (Å)
         a_CO3  = 3.94   #  (Å)
@@ -1532,6 +1668,7 @@ begin
         a_H    = 7.3;  κ_H    = 0
         a_CO   = 2.8;  κ_CO   = 0
         a_K    = 8.2;  κ_K    = 0
+		"""
 	elseif use_md_hydrated == false && γ_key == "DMGL_γ"
 		# Stefan's Model / Only Potaissium has a size
         a_HCO3 = 0;  κ_HCO3 = 0
@@ -2199,7 +2336,7 @@ end;
 
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
-	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.01, 0.5, 5], nperiods = user_input_cv.nperiods)
+	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5], nperiods = user_input_cv.nperiods)
 	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc; species = iohminus)
 end
 
@@ -2236,7 +2373,7 @@ end;
 # ╔═╡ 60b410be-70f7-4053-a3db-7d777e0d3f08
 # ╠═╡ show_logs = false
 if Ldependancy
-	ivL = ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
+	ivL = AuCO2RR_plots.ivsweep_over_L(elydata_Gold, pnp_bcondition; voltages, solver_control)
 end
 
 # ╔═╡ bab42c91-2d00-463d-a921-97487e4eac67
@@ -2433,7 +2570,7 @@ end
 
 # ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
 if pH_varied_checkbox
-	results_pH = run_pH_sweep(model, sawtooth, grid, pnp_bcondition, reaction; pH_values = [3, 10])
+	results_pH = run_pH_sweep(model, sawtooth, grid, pnp_bcondition, reaction; pH_values = [4, 5, 6, 7, 8, 9, 10])
 	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
 end
 
@@ -2599,6 +2736,67 @@ end
 # ╔═╡ 9076385e-d6eb-4fc7-93d8-dca97195d003
 electrode_activity_vs_voltage(ivresult, grid, model)
 
+# ╔═╡ 47d92164-456a-43a0-8ed2-fed7f9fe31a2
+
+if IV
+activity = activity_vs_voltage_axis(ivresult;
+							        bulk = bulk,
+							        grid = grid, 
+									electrolyte = model,
+									ipressure = model.ip,
+									model_type = γ_key
+	)
+    act_fig = activity.fig
+    act_colors = activity.colors
+    act_species = activity.species
+	act_activity = activity.activity_electrode
+
+
+	if γ_key == "Stefan_γ"
+	    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.90, 8e-10, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.00024, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+	else
+  		text!(conc_ax, -1.2, 0.3, text=L"\mathrm{K^+}",
+			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
+		text!(conc_ax, -0.90, 0.0000004, text=L"\mathrm{H^+}", 
+			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.05, 2e-9, text=L"\mathrm{CO_3^{2-}}",
+			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.0, 7e-6, text=L"\mathrm{HCO_3^-}", 
+			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.21, 5e-4, text=L"\mathrm{CO_2}", 
+			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
+		text!(conc_ax, -0.9, 7e-9, text=L"\mathrm{OH^-}",
+			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
+		text!(conc_ax, -1.15, 0.003, text=L"\mathrm{CO}", 
+		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
+
+	end
+	act_fig
+
+end
+
+# ╔═╡ 223aa524-b341-49ca-811d-44cc12d39e94
+activity
+
+# ╔═╡ 0357d55d-0476-4a36-9d7e-3fee38c30674
+act_activity
+
+# ╔═╡ 3f3d5cfd-49d8-4d29-8e19-5048b8c1a82b
+activity
+
 # ╔═╡ 26f02407-ce54-436f-9630-63c0e2d32f73
 if double_layer_curve
     outdir_pb = joinpath("..", "data", "output")
@@ -2651,162 +2849,6 @@ end
 
 # ╔═╡ 360313f0-2dad-4f7f-8d11-1800c6d934b3
 base_cv = string("CV_", user_input_model.BC_Select, "_", user_input_model.mode, ionsize_pb)
-
-# ╔═╡ 11d6598c-3d6a-472a-8863-9275d5e567c6
-function activity_vs_voltage_axis(
-    result;
-    bulk,
-    grid,
-    electrolyte,
-    ipressure,
-    useonly_pH::Bool = false,
-    showlegend::Bool = false,
-)
-    species  = getproperty.(bulk, :name)
-    colors   = getproperty.(bulk, :color)
-    nspecies = length(species)
-
-    tsol  = LiquidElectrolytes.voltages_solutions(result)
-    vgrid = result.voltages
-
-    xcoords    = grid.components[XCoordinates]
-    ielectrode = argmin(xcoords)
-
-    scale = 1.0 / (mol / dm^3)
-    nv = length(vgrid)
-
-    activity_electrode = fill(NaN, nspecies, nv)
-    gamma_electrode    = fill(NaN, nspecies, nv)
-    conc_electrode     = fill(NaN, nspecies, nv)
-
-    cspecies = electrolyte.cspecies
-
-    for (j, v) in enumerate(vgrid)
-        sol = tsol(v)
-        sol === nothing && continue
-
-        # concentration vector and pressure at electrode
-        cnode = zeros(eltype(sol), maximum(cspecies))
-        for ic in cspecies
-            cnode[ic] = sol[ic, ielectrode]
-        end
-        pnode = sol[ipressure, ielectrode]
-
-        γnode = similar(cnode)
-		
-		if user_input_model.mode == "DMGL_γ"
-       		DGML_γ!(γnode, cnode, pnode, electrolyte)
-		else
-			Stefan_γ!(γnode, cnode, pnode, electrolyte)
-		end
-
-		
-        for ia in 1:nspecies
-			c = sol[ia, ielectrode]
-            c_scale = c * scale
-            γ  = γnode[ia]
-            a  = γ * c_scale   # dimensionless activity with c° = 1 M
-
-            conc_electrode[ia, j]     = c
-            gamma_electrode[ia, j]    = γ
-            activity_electrode[ia, j] = a
-        end
-    end
-
-    fig = Figure(size=(960, 540))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
-        ylabel = L"\mathbf{a_i}",
-        yscale = log10,
-        limits = ((-1.25, -0.50), (1e-11, 1e1)),
-    )
-
-
-    if useonly_pH
-        iH = findfirst(isequal("H⁺"), species)
-        iH === nothing && error("H⁺ not found in species list.")
-        y = max.(activity_electrode[iH, :], eps(Float64))
-        lines!(ax, vgrid, y; color=colors[iH], linewidth=5, label=species[iH])
-    else
-        for ia in 1:nspecies
-            y = max.(activity_electrode[ia, :], eps(Float64))
-            lines!(ax, vgrid, y; color=colors[ia], linewidth=5, label=species[ia])
-        end
-    end
-
-    showlegend && axislegend(ax, position=:rt)
-
-    return (
-        fig=fig,
-        species=species,
-        colors=colors,
-        conc_electrode=conc_electrode,
-        gamma_electrode=gamma_electrode,
-        activity_electrode=activity_electrode,
-        vgrid=vgrid,
-    )
-	
-end
-
-# ╔═╡ 47d92164-456a-43a0-8ed2-fed7f9fe31a2
-
-if IV
-activity = activity_vs_voltage_axis(ivresult;
-							        bulk = bulk,
-							        grid = grid, 
-									electrolyte = model,
-									ipressure = model.ip
-	)
-    act_fig = activity.fig
-    act_colors = activity.colors
-    act_species = activity.species
-	act_activity = activity.activity_electrode
-
-
-	if γ_key == "Stefan_γ"
-	    text!(conc_ax, -1.15, 0.3, text=L"\mathrm{K^+}",
-			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
-		text!(conc_ax, -0.90, 0.0000002, text=L"\mathrm{H^+}", 
-			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
-			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.0, 2.5e-7, text=L"\mathrm{HCO_3^-}", 
-			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.2, 5.2e-6, text=L"\mathrm{CO_2}", 
-			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
-		text!(conc_ax, -0.90, 8e-10, text=L"\mathrm{OH^-}",
-			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.15, 0.00024, text=L"\mathrm{CO}", 
-		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
-	else
-  		text!(conc_ax, -1.2, 0.3, text=L"\mathrm{K^+}",
-			  color=conc_colors[ikplus], fontsize=24, font="sans-bold")
-		text!(conc_ax, -0.90, 0.0000004, text=L"\mathrm{H^+}", 
-			  color=conc_colors[ihplus], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.05, 2e-9, text=L"\mathrm{CO_3^{2-}}",
-			  color=conc_colors[ico3], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.0, 7e-6, text=L"\mathrm{HCO_3^-}", 
-			  color=conc_colors[ihco3], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.21, 5e-4, text=L"\mathrm{CO_2}", 
-			  color=conc_colors[ico2], fontsize=24, font = "sans-bold")
-		text!(conc_ax, -0.9, 7e-9, text=L"\mathrm{OH^-}",
-			  color=conc_colors[iohminus], fontsize=24, font = "sans-bold") 
-		text!(conc_ax, -1.15, 0.003, text=L"\mathrm{CO}", 
-		 	  color=conc_colors[ico], fontsize=24, font = "sans-bold")
-
-	end
-	act_fig
-
-end
-
-# ╔═╡ 223aa524-b341-49ca-811d-44cc12d39e94
-activity
-
-# ╔═╡ 0357d55d-0476-4a36-9d7e-3fee38c30674
-act_activity
-
-# ╔═╡ 3f3d5cfd-49d8-4d29-8e19-5048b8c1a82b
-activity
 
 # ╔═╡ 28638585-e95c-4947-9143-9ac8d8202f80
 if extractIV
@@ -3121,7 +3163,7 @@ floataside(
 # ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
 # ╠═5d0458f3-6564-43df-af01-4a4b829ce262
-# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╟─f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╠═47d92164-456a-43a0-8ed2-fed7f9fe31a2
 # ╠═223aa524-b341-49ca-811d-44cc12d39e94
 # ╠═11d6598c-3d6a-472a-8863-9275d5e567c6

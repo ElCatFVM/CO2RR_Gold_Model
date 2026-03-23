@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.23
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -97,8 +97,8 @@ function plot_iv_conc(csv_path1, csv_path2)
     fig = Figure(size = (700, 500))
 
 
-    vgrid1 = df1[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
-    vgrid2 = df2[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
+    vgrid1 = df1[!, :Voltage]  
+    vgrid2 = df2[!, :Voltage] 
 
     ax = Axis(
         fig[1, 1];
@@ -139,14 +139,14 @@ function plot_iv_act(csv_path)
     fig = Figure(size = (700, 500))
 
 
-    vgrid = df[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
+    vgrid = df[!, :Voltage]  
 
     ax = Axis(
         fig[1, 1];
         xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
         ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
         yscale = log10,
-        limits = ((-1.25, -0.5), (1.0e-11, 1.0e1)),
+        limits = ((-1.25, -0.5), (1.0e-11, 1.0e6)),
     )
     style!(ax)
     xt = [-1.2, -1.0, -0.8, -0.6]
@@ -176,15 +176,15 @@ function plot_iv_act(csv_path1, csv_path2)
     fig = Figure(size = (700, 500))
 
 
-    vgrid1 = df1[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
-    vgrid2 = df2[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
-
+    vgrid1 = df1[!, :Voltage] 
+    vgrid2 = df2[!, :Voltage]  
+	
     ax = Axis(
         fig[1, 1];
         xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
         ylabel = L"\mathbf{a_i^{+}}\;(\mathrm{M})",
         yscale = log10,
-        limits = ((-1.25, -0.5), (1.0e-8, 1.0e6)),
+        limits = ((-1.25, -0.5), (1.0e-11, 1.0e6)),
     )
     style!(ax)
     xt = [-1.2, -1.0, -0.8, -0.6]
@@ -219,16 +219,16 @@ function plot_iv_gamma(csv_path1, csv_path2)
     fig = Figure(size = (700, 500))
 
 
-    vgrid1 = df1[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
-    vgrid2 = df2[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
-
+    vgrid1 = df1[!, :Voltage]  
+    vgrid2 = df2[!, :Voltage]
+	
     ax = Axis(
         fig[1, 1];
         xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
         ylabel = L"\mathbf{γ_i^{+}}\;(\mathrm{M})",
         #        yscale = log10,
     )
-      xlims!(ax,(-1.25, -0.5))
+    xlims!(ax,(-1.25, -0.5))
 	style!(ax)
     xt = [-1.2, -1.0, -0.8, -0.6]
     ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
@@ -298,6 +298,18 @@ plot_iv_act(
     sweepcomparedir("sweep_iv_actcoeff=Potassium_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"),
 )
 
+# ╔═╡ 2f8e0e31-0123-4423-a465-4be05cfbac5f
+plot_iv_conc(
+    sweepcomparedir("sweep_iv_actcoeff=Stefan_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"),
+    sweepcomparedir("sweep_iv_actcoeff=Potassium_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"),
+)
+
+# ╔═╡ 24b0e0f8-67e4-4cce-b712-15a645c5f86e
+plot_iv_act(
+    sweepcomparedir("sweep_iv_actcoeff=Stefan_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"),
+    sweepcomparedir("sweep_iv_actcoeff=Potassium_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"),
+)
+
 # ╔═╡ daacc29e-20ac-4520-806d-5169356d8892
 md"""
 ## IV curves
@@ -310,9 +322,8 @@ let
 	df2=CSV.read(sweepcomparedir("sweep_iv_actcoeff=Stefan_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"), DataFrame)
 	df3=CSV.read(sweepcomparedir("sweep_iv_actcoeff=Potassium_γ!_bcmodel=Robin_hydrated=true_model=Gold.csv"), DataFrame)
 
-fig=Figure(size=(700,300))
-ax=Axis(fig[1,1])
-	      xlims!(ax,(-1.25, -0.5))
+	fig=Figure(size=(700,300))
+	ax=Axis(fig[1,1])
 
 
 	lines!(ax,df0[!,"x"], -df0[!,"y"], label="GoldModel.csv")
@@ -420,6 +431,8 @@ restart_button() = html"""
 # ╠═9e2e5296-0ed5-4128-81ad-b546e17809f8
 # ╠═6b16b555-da01-44d5-b54b-52c5a0dd60d8
 # ╠═92680105-811e-49d2-8d29-d772226777d2
+# ╠═2f8e0e31-0123-4423-a465-4be05cfbac5f
+# ╠═24b0e0f8-67e4-4cce-b712-15a645c5f86e
 # ╟─daacc29e-20ac-4520-806d-5169356d8892
 # ╠═09bfabe4-ee58-4e84-af37-eedd7ad0d2b4
 # ╟─8af12f1c-d35b-4cc9-8185-1bb5adbb69e8

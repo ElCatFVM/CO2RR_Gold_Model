@@ -551,13 +551,13 @@ module sweeps
     end
 
     function sweep_IV(;
-            voltages = (-1.5:0.1:0.0) * V,
-            actcoeff = :DGML_γ!,
-            hydrated = true,
-            bcmodel = :Robin,
-            model = :Gold,
-            kwargs...
-        )
+        voltages = (-1.5:0.1:0.0) * V,
+        actcoeff = :DGML_γ!,
+        hydrated = true,
+        bcmodel = :Robin,
+        model = :Gold,
+        kwargs...
+    )
         solver_control = (;
             max_round = 4,
             maxiters = 20,
@@ -568,7 +568,6 @@ module sweeps
             damp_initial = 0.1,
             damp_growth = 2,
         )
-
 
         kwargs = merge(solver_control, kwargs)
         L = 80 * μm
@@ -586,7 +585,13 @@ module sweeps
             model = model
         )
 
-        cell = PNPSystem(grid; modeldata.bcondition, reaction = modeldata.reaction, celldata = deepcopy(modeldata.elydata))
+        cell = PNPSystem(
+            grid;
+            modeldata.bcondition,
+            reaction = modeldata.reaction,
+            celldata = deepcopy(modeldata.elydata)
+        )
+
         ivresult = ivsweep(cell; voltages, store_solutions = true, kwargs...)
 
         electrolyte = modeldata.elydata
@@ -597,26 +602,53 @@ module sweeps
         tsol = LiquidElectrolytes.voltages_solutions(ivresult)
         ielectrode = 1
 
-        c_ref = 1.0 * ufac"mol/dm^3"
-        γ_e = zeros(nspecies, nv)
-        a_e = zeros(nspecies, nv)
-        c_e = zeros(nspecies, nv)
-        for iv in 1:nv
-            sol = tsol.u[iv]
+        scale = 1.0 / (mol / dm^3)
+
+        γ_e = fill(NaN, nspecies, nv)
+        a_e = fill(NaN, nspecies, nv)
+        c_e = fill(NaN, nspecies, nv)
+
+        model_type = actcoeff == :Stefan_γ! ? "Stefan_γ" : "DMGL_γ"
+
+        for j in 1:nv
+            sol = tsol.u[j]  
+
             unode = view(sol, :, ielectrode)
             pnode = unode[ip]
-            γ = zeros(size(sol, 1))
-            electrolyte.actcoeff!(γ, unode, pnode, electrolyte)
-            for ic in cspecies
-                cval = unode[ic]
-                γval = γ[ic]
-                aval = γval * cval
 
-                c_e[ic, iv] = cval / c_ref
-                γ_e[ic, iv] = γval
-                a_e[ic, iv] = aval
+            v0 = electrolyte.v0
+            bar_c = 1.0 / v0
+            RT = electrolyte.RT
+
+            Phi = sum(unode[ic] * electrolyte.v[ic] for ic in cspecies)
+            solvent_frac = max(1.0 - Phi, eps(Float64))
+
+            for (i, ic) in enumerate(cspecies)
+                c = unode[ic]
+                v_a = electrolyte.v[ic]
+                size_ratio = v_a / v0
+
+                term_conc = c / bar_c
+
+                if model_type == "DMGL_γ"
+                    term_press = exp((1.0 - size_ratio) * pnode / (bar_c * RT))
+                    term_steric = solvent_frac^(-size_ratio)
+                    a_eff_thermo = term_conc * term_press * term_steric
+
+                elseif model_type == "Stefan_γ"
+                    a_eff_thermo = term_conc * solvent_frac^(-1.0)
+
+                else
+                    error("Invalid model_type. Use 'DMGL_γ' or 'Stefan_γ'.")
+                end
+
+                c_scale = c * scale
+                a_eff_scaled = a_eff_thermo * (bar_c * scale)
+
+                c_e[i, j] = c_scale
+                γ_e[i, j] = a_eff_scaled / max(c_scale, eps(Float64))
+                a_e[i, j] = a_eff_scaled
             end
-
         end
 
         df = DataFrame(
@@ -629,18 +661,14 @@ module sweeps
             df[!, "a_" * specnames[i]] = vec(a_e[i, :])
             df[!, "c_" * specnames[i]] = vec(c_e[i, :])
             df[!, "γ_" * specnames[i]] = vec(γ_e[i, :])
-            if specnames[i] == "CO"
-                @show specnames[i], vec(c_e[i, :])
-            end
         end
-        @show df[!, "c_CO"]
 
         params = (actcoeff = actcoeff, hydrated = hydrated, bcmodel = bcmodel, model = model)
         fname = savename("sweep_iv", params, "csv")
         CSV.write(sweepcomparedir(fname), df)
 
         return cell, ivresult
-    end;
+    end
 
 
     function main()

@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.23
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -924,23 +924,23 @@ let
     end
 
     df_conc = 
-		CSV.read(raw"../data/output/All_Species/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Same_Size.csv", DataFrame)
     df_pol  = 
-		CSV.read(raw"../data/output/All_Species/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
     df_cdl  = 
-		CSV.read(raw"../data/output/All_Species/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Same_Size_1.csv", DataFrame)
     df_act  = 
-		CSV.read(raw"../data/output/All_Species/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
 
 
 	df_conc_pr = 
-		CSV.read(raw"../data/output/All_Species/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Same_Size.csv", DataFrame)
     df_pol_pr  = 
-		CSV.read(raw"../data/output/All_Species/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
     df_cdl_pr  = 
-		CSV.read(raw"../data/output/All_Species/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Same_Size_1.csv", DataFrame)
     df_act_pr  = 
-		CSV.read(raw"../data/output/All_Species/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
 	
 
     fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
@@ -1057,7 +1057,7 @@ let
 		linestyle = :dash,
         linewidth = 3,
     )
-
+"""
     lines!(ax_cdl,
         df_cdl[!, :Voltage],
         df_cdl[!, :Capacitance] / (μF / cm^2);
@@ -1072,7 +1072,7 @@ let
         linewidth = 3,
 		linestyle = :dash
     )
-
+"""
     display(fig)
 end
 
@@ -1118,23 +1118,23 @@ let
     end
 
     df_conc = 
-		CSV.read(raw"../data/output/Only_Potassium/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
     df_pol  = 
-		CSV.read(raw"../data/output/Only_Potassium/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl  = 
-		CSV.read(raw"../data/output/Only_Potassium/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
     df_act  = 
-		CSV.read(raw"../data/output/Only_Potassium/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
 
 
 	df_conc_pr = 
-		CSV.read(raw"../data/output/Only_Potassium/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
     df_pol_pr  = 
-		CSV.read(raw"../data/output/Only_Potassium/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl_pr  = 
-		CSV.read(raw"../data/output/Only_Potassium/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
     df_act_pr  = 
-		CSV.read(raw"../data/output/Only_Potassium/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
 	
 
     fig = Figure(size = (1200, 820), figure_padding = (300, 300, 30, 45))
