@@ -142,7 +142,7 @@ let
         line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j], linewidth = 4)
         push!(plot_objs1, line)
     end
-
+"""
 	#---
 	vspan!(ax, -1.30, -0.70, color=(colorant"#87CEFA", 0.30))  # lightskyblue, alpha=0.3
 	text!(ax, -1.00, 1.55, text="CO₂ reduction reaction", font = "sans-bold", align=
@@ -156,7 +156,72 @@ let
 	text!(ax,  0.50,  1.55, text="CO oxidation reaction with H₂O", font = "sans-bold", 
 		  align=(:center, :top), fontsize=16, color="#FF6347")
 
+"""
+	#---
+	ax.xticks = -1.5:0.3:1.0
+	ax.yticks = 1:-1:-5
 
+	
+	leg = Legend(fig[1, 1], plot_objs1, labels1, "Experimental";
+	    framevisible = false,
+	    halign = :right, valign = :bottom,  labelsize = 20, titlesize = 23,
+	    padding = (0, 0, 0, 0),
+	    tellwidth = false, tellheight = false
+	)
+	translate!(leg.blockscene,  -40, 40, 0)
+	fig
+end
+
+# ╔═╡ f3c5d715-ea62-4f4c-bdea-90dcfde23a26
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+	          xlabel = L"φ~(\mathrm{V~vs~SHE})",
+	          ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+	          limits = ((-1.3, 0.9), (-5.5, 1.8)),
+	          xlabelsize = 25, ylabelsize = 25,
+	          xgridvisible = false, 
+			  ygridvisible = false,
+			  spinewidth = 4.5,
+			  xtickwidth = 4.5, 
+			  ytickwidth = 4.5, 
+			  xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+    # Experimental Data Plotting based on M.T.M Koper
+    raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
+    pres = vec(Matrix(raw[1:1, :]))
+	pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    cols1 = resample_cmap(:winter, npairs)
+
+    plot_objs1 = []
+    labels1 = String[]
+    for j in 1:npairs
+        xcol, ycol = 2j - 1, 2j
+        label = pressures[j] * " pCO₂ atm"       
+		push!(labels1, label)
+        line = lines!(ax, num_df[!, xcol], ((num_df[!, ycol])); color = cols1[j], linewidth = 4)
+        push!(plot_objs1, line)
+    end
+"""
+	#---
+	vspan!(ax, -1.30, -0.70, color=(colorant"#87CEFA", 0.30))  # lightskyblue, alpha=0.3
+	text!(ax, -1.00, 1.55, text="CO₂ reduction reaction", font = "sans-bold", align=
+		  (:center, :top), fontsize=16, color="#1E90FF")
+
+	vspan!(ax, -0.20,  0.10, color=(colorant"#F7DC6F", 0.30))  # light yellow
+	text!(ax,  -0.05,  1.55, text="CO oxidation\nreaction\nwith CO₃²⁻", font = 
+		  "sans-bold", align=(:center, :top), fontsize=16, color=:orange)
+	
+	vspan!(ax,  0.10,  0.90, color=(colorant"#F1948A", 0.30))  # light red
+	text!(ax,  0.50,  1.55, text="CO oxidation reaction with H₂O", font = "sans-bold", 
+		  align=(:center, :top), fontsize=16, color="#FF6347")
+
+"""
 	#---
 	ax.xticks = -1.5:0.3:1.0
 	ax.yticks = 1:-1:-5
@@ -175,6 +240,119 @@ end
 # ╔═╡ 8545d818-d255-4e8a-af8f-72fdaf9d4bdd
 let
     fig = Figure(size = (1050, 500))
+
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        limits = ((-1.3, 0.9), (-5.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+    # --------------------------------------------------
+    # experimental CSV 읽기
+    # --------------------------------------------------
+    raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
+
+    sub = Matrix(raw[4:end, :])
+    num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+
+    # Ar sat 제외
+    pressures_exp = ["0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
+    exp_indices = 2:7   # 1번째 pair(Ar sat) 제외
+
+    cols1 = resample_cmap(:winter, length(exp_indices))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (k, j) in enumerate(exp_indices)
+        xcol, ycol = 2j - 1, 2j
+        label = pressures_exp[k] * " pCO₂ atm"
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            num_df[!, xcol],
+            num_df[!, ycol];
+            color = cols1[k],
+            linewidth = 4
+        )
+        push!(plot_objs1, line)
+    end
+
+    ax_ex = Axis(fig[1, 2];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        limits = ((-1.3, 0.9), (-5.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+    # --------------------------------------------------
+    # simulation CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/pressure_varied_σ_1000.0000000000001Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
+
+    plist = sort(unique(df.Pressure))
+    cols2 = resample_cmap(:winter, length(plist))
+
+    plot_objs2 = Any[]
+    labels2 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.Pressure .== p, :]
+
+        label = @sprintf("%.1f pCO₂ atm", p)
+        push!(labels2, label)
+
+        line = lines!(
+            ax_ex,
+            subdf.Voltage,
+            subdf.Value ./ 2;
+            color = cols2[j],
+            linewidth = 4
+        )
+        push!(plot_objs2, line)
+    end
+
+    leg1 = Legend(fig[1, 1], plot_objs1, labels1, "Experiment";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        tellwidth = false, tellheight = false
+    )
+
+    leg2 = Legend(fig[1, 2], plot_objs2, labels2, "Simulation";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        tellwidth = false, tellheight = false
+    )
+
+    translate!(leg1.blockscene, -40, 40, 0)
+    translate!(leg2.blockscene, -40, 40, 0)
+	ax.xticks = -1.5:0.6:1.0 	; 	ax_ex.xticks = -1.5:0.6:1.0
+	ax.yticks = 1:-1:-5 		;	ax_ex.yticks = 1:-1:-5
+
+	
+    fig
+end
+
+# ╔═╡ 4a68d318-ab6f-45b3-ad63-33d4a77c534d
+let
+    fig = Figure(size = (1050, 500))
     ax = Axis(fig[1, 1];
         xlabel = L"\phi~(\mathrm{V~vs~SHE})",
         ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
@@ -191,7 +369,7 @@ let
     # --------------------------------------------------
     # extracted CSV 읽기
     # --------------------------------------------------
-    df = CSV.read("../data/output/iohminus_pressure_sweep.csv", DataFrame)
+    df = CSV.read("../data/output/pressure_varied_σ_1000.0000000000001Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
 
     # pressure
     plist = sort(unique(df.Pressure))
@@ -212,13 +390,13 @@ let
         line = lines!(
             ax,
             subdf.Voltage,
-            subdf.Value;
+            subdf.Value./2;
             color = cols1[j],
             linewidth = 4
         )
         push!(plot_objs1, line)
     end
-
+"""
     # --------------------------------------------------
     # reaction region shading
     # --------------------------------------------------
@@ -248,9 +426,130 @@ let
         fontsize = 16,
         color = "#FF6347"
     )
-
-    ax.xticks = -1.5:0.3:1.0
+"""
+    ax.xticks = -1.2:0.3:0.9
     ax.yticks = 1:-1:-5
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ b0a4b942-5654-4b22-8849-90bf6c7f957f
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+#3limits = ((-1.3, 0.9), (-15.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+    # --------------------------------------------------
+    # extracted CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/scanrate_varied_iohminus_σ_1000.0000000000001Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+
+    # pressure
+    plist = sort(unique(df.ScanRate))
+
+
+    cols1 = resample_cmap(:managua, length(plist))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.ScanRate .== p, :]
+
+		p *= 1000
+        label = @sprintf("%.1fmV/s ", p)
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            subdf.Value./2;
+            color = cols1[j],
+            linewidth = 4
+        )
+        push!(plot_objs1, line)
+    end
+    #ax.xticks = -1.5:0.3:1.0
+    #ax.yticks = 1:-3:-15
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ dbd04dda-d96a-4266-88eb-bc914f608224
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+#3limits = ((-1.3, 0.9), (-15.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+    # --------------------------------------------------
+    # extracted CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/L_varied_iohminus_σ_1000.0000000000001Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+
+    # pressure
+    plist = sort(unique(df.BoundaryLayerThickness
+))
+
+
+    cols1 = resample_cmap(:imola, length(plist))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.BoundaryLayerThickness .== p, :]
+        label = @sprintf("%.1f μm ", p)
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            subdf.Value./2;
+            color = cols1[j],
+            linewidth = 4
+        )
+        push!(plot_objs1, line)
+    end
+    #ax.xticks = -1.5:0.3:1.0
+    #ax.yticks = 1:-3:-15
 
     leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
         framevisible = false,
@@ -928,7 +1227,7 @@ let
     df_pol  = 
 		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
     df_cdl  = 
-		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Same_Size_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pb_Same_Size_1.csv", DataFrame)
     df_act  = 
 		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
 
@@ -938,7 +1237,7 @@ let
     df_pol_pr  = 
 		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
     df_cdl_pr  = 
-		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Same_Size_1.csv", DataFrame)
+		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pb_Same_Size_1.csv", DataFrame)
     df_act_pr  = 
 		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
 	
@@ -1057,7 +1356,7 @@ let
 		linestyle = :dash,
         linewidth = 3,
     )
-"""
+
     lines!(ax_cdl,
         df_cdl[!, :Voltage],
         df_cdl[!, :Capacitance] / (μF / cm^2);
@@ -1072,7 +1371,7 @@ let
         linewidth = 3,
 		linestyle = :dash
     )
-"""
+
     display(fig)
 end
 
@@ -1278,7 +1577,11 @@ end
 # ╠═270509a2-433d-42af-886b-983f226f3229
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╠═f3c5d715-ea62-4f4c-bdea-90dcfde23a26
 # ╠═8545d818-d255-4e8a-af8f-72fdaf9d4bdd
+# ╠═4a68d318-ab6f-45b3-ad63-33d4a77c534d
+# ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
+# ╠═dbd04dda-d96a-4266-88eb-bc914f608224
 # ╠═4911ad1e-e75a-4d41-83dc-675b3f26ce39
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb

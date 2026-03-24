@@ -662,7 +662,7 @@ module sweeps
             df[!, "c_" * specnames[i]] = vec(c_e[i, :])
             df[!, "γ_" * specnames[i]] = vec(γ_e[i, :])
         end
-
+        @show df[!, "c_CO"]
         params = (actcoeff = actcoeff, hydrated = hydrated, bcmodel = bcmodel, model = model)
         fname = savename("sweep_iv", params, "csv")
         CSV.write(sweepcomparedir(fname), df)

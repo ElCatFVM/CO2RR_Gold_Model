@@ -343,9 +343,6 @@ The free energies $ΔG_f$ of the surface species are corrected according to the 
 $ΔG_f(σ) = a_σ~σ + b_σ~σ^2$
 """
 
-# ╔═╡ 5be37256-1a05-4247-a9c0-6980e2be45bd
-
-
 # ╔═╡ 6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 md"""
 ### Electrolyte Data
@@ -646,39 +643,8 @@ function _pressure_colname(p)
     return Symbol("pCO2_" * s * "_atm")
 end
 
-# ╔═╡ e6dca43d-69b5-4d35-903c-6742b16a4715
-function export_pressure_varied_species_csv_long(
-    P_recs;
-    species=iohminus,
-    outfile::AbstractString="../data/output/pressure_varied_species_long.csv",
-    scale=cm^2/mA,
-)
-    pressures = Float64[]
-    voltages  = Float64[]
-    values    = Float64[]
+# ╔═╡ bb01b182-7840-4ad0-8cd6-fae57ab93173
 
-    for (p, rec) in P_recs
-        V = rec.voltages
-        Y = currents(rec, species) .* scale   # <- current 추출
-
-        @assert length(V) == length(Y)
-
-        append!(pressures, fill(Float64(p), length(V)))
-        append!(voltages, V)
-        append!(values, Y)
-    end
-
-    df = DataFrame(
-        Pressure = pressures,
-        Voltage  = voltages,
-        Value    = values,
-    )
-
-    mkpath(dirname(outfile))
-    CSV.write(outfile, df)
-
-    return df
-end
 
 # ╔═╡ a2c7c4da-77cd-493f-8f98-0c86fecf271a
 md"""
@@ -1536,6 +1502,9 @@ floataside(
 	top = 50
 )
 
+# ╔═╡ 5be37256-1a05-4247-a9c0-6980e2be45bd
+user_input_cv
+
 # ╔═╡ b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 begin 
 	sawtooth = SawTooth(
@@ -1548,6 +1517,9 @@ end
 
 # ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
 sawtooth
+
+# ╔═╡ 0a1054c5-cee7-4202-9d32-9eee6ec55265
+user_input_cv.nperiods
 
 # ╔═╡ d75725cd-0ef6-421f-be56-f559312e73b6
 floataside(
@@ -2344,7 +2316,7 @@ end
 if L_varied_checkbox
 	resL = sweep_over_L_cv(
 		elydata_Gold,
-		[80, 100] .* μm,
+		[80, 100, 200, 400, 600, 1000, 1500] .* μm,
 		pnp_bcondition,
 		sawtooth,
 		reaction;
@@ -2503,24 +2475,10 @@ if pressure_varied_checkbox
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
 end
 
-# ╔═╡ e614b311-bc71-4054-96ca-c81385815b7f
-P_recs
-
-# ╔═╡ 4231590b-18c4-4af8-b798-364c529e47d8
-df_out = export_pressure_varied_species_csv_long(
-    P_recs;
-    species=iohminus,
-    outfile="../data/output/iohminus_pressure_sweep.csv",
-    scale=cm^2/mA,
-)
-
 # ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 if pressure_varied_checkbox
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
 end
-
-# ╔═╡ a95f298b-72de-4fb9-96f1-f3ee1c372d3a
-AuCO2RR_plots.pressure_varied_cvsweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
 if CV
@@ -2534,7 +2492,7 @@ end
 
 # ╔═╡ c62ab378-0988-4fa5-b21d-5e1622c63c87
 if CV
-	AuCO2RR_plots.plot_cv_current(pnpresult, elydata_Gold; species = ico)
+	AuCO2RR_plots.plot_cv_current(pnpresult, elydata_Gold; species = iohminus)
 end
 
 # ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
@@ -2560,7 +2518,7 @@ end
 
 # ╔═╡ 74c43d72-3a23-4a24-a4ae-8b18b245610a
 if CV
-	AuCO2RR_plots.plot_iv_with_experiment(pnpresult, ico)
+	AuCO2RR_plots.plot_iv_with_experiment(pnpresult, iohminus)
 end
 
 # ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
@@ -2571,7 +2529,7 @@ end
 # ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
 if pH_varied_checkbox
 	results_pH = run_pH_sweep(model, sawtooth, grid, pnp_bcondition, reaction; pH_values = [4, 5, 6, 7, 8, 9, 10])
-	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = ico)
+	AuCO2RR_plots.plot_pH_varied_sweep(results_pH; species = iohminus)
 end
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
@@ -2873,6 +2831,195 @@ if extractIV
         CSV.write(filepath, df)
 end
 
+# ╔═╡ 7e102647-23a9-4f40-b6de-cb1938bbb23e
+	base_cvname = string("ad", "_σ_", 1000 , user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize, "_Scanrate_", user_input_cv.scanrate, "_Periods_", user_input_cv.nperiods)
+
+# ╔═╡ a34cdba3-38f6-4bc0-b26e-72c956599109
+function filename(function_name) 
+	σ = round(L / μm)
+	base_cvname = string(function_name, "_σ_", σ , user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize, "_Scanrate_", user_input_cv.scanrate, "_Periods_", user_input_cv.nperiods)
+
+	return base_cvname
+end
+
+# ╔═╡ 9e44f14b-a799-4ca5-8641-a3726780a4fe
+function export_cv_profile_csv(
+    rec;
+    species = iohminus,
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "cv_profile",
+    current_scale = cm^2 / mA,
+)
+    V = rec.voltages
+    I = currents(rec, species) .* current_scale
+
+    @assert length(V) == length(I)
+
+    df = DataFrame(
+        Voltage = V,
+        Current = I,
+    )
+
+    fname = filename(function_name)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ fd2fe768-020c-4751-bde0-8f75843580f7
+if CV
+	export_cv_profile_csv(pnpresult)
+end
+
+# ╔═╡ 406fb8e5-61e6-4688-96bf-a5530f57d4fa
+function export_scanrate_varied_species_csv_long(
+    saws,
+    scresults;
+    species=iohminus,
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "scanrate_varied",
+    current_scale = cm^2 / mA,
+    scanrate_scale = 1.0,
+    scanrate_get = saw -> saw.scanrate,   # <- saw에서 scan rate 꺼내는 방식
+)
+    @assert length(saws) == length(scresults)
+
+    scanrates = Float64[]
+    voltages  = Float64[]
+    values    = Float64[]
+
+    for (saw, rec) in zip(saws, scresults)
+        sr = Float64(scanrate_get(saw) * scanrate_scale)
+
+        V = rec.voltages
+        Y = currents(rec, species) .* current_scale
+
+        @assert length(V) == length(Y)
+
+        append!(scanrates, fill(sr, length(V)))
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        ScanRate = scanrates,
+        Voltage  = voltages,
+        Value    = values,
+    )
+
+    fname = filename(function_name)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ 5ccb0682-09de-4ae3-95e6-a8403d540d9b
+if scan_rate_varied_checkbox
+	export_scanrate_varied_species_csv_long(
+	    saw,
+	    scresult;
+	    species=iohminus,
+	    function_name="scanrate_varied_iohminus"
+	)
+end
+
+# ╔═╡ e6dca43d-69b5-4d35-903c-6742b16a4715
+function export_pressure_varied_species_csv_long(
+    P_recs;
+    species=iohminus,
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "pressure_varied",	
+    scale=cm^2/mA,
+)
+    pressures = Float64[]
+    voltages  = Float64[]
+    values    = Float64[]
+
+    for (p, rec) in P_recs
+        V = rec.voltages
+        Y = currents(rec, species) .* scale   # <- current 추출
+
+        @assert length(V) == length(Y)
+
+        append!(pressures, fill(Float64(p), length(V)))
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        Pressure = pressures,
+        Voltage  = voltages,
+        Value    = values,
+    )
+	fname = filename(function_name)
+	outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ 4231590b-18c4-4af8-b798-364c529e47d8
+if pressure_varied_checkbox
+	df_out = export_pressure_varied_species_csv_long(
+	    P_recs;
+	    species=iohminus,
+	    scale=cm^2/mA,
+	)
+end
+
+# ╔═╡ 93975adc-bd00-4f1d-a304-b01d061ca212
+function export_L_varied_species_csv_long(
+    L_recs;
+    species = iohminus,
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "L_varied",
+    current_scale = cm^2 / mA,
+    L_scale = 1e6,   # m -> μm
+)
+    Ls       = Float64[]
+    voltages = Float64[]
+    values   = Float64[]
+
+    # Dict는 순서가 보장되지 않으니 정렬해서 저장하는 게 좋음
+    for (L, rec) in sort(collect(L_recs); by = first)
+        V = rec.voltages
+        Y = currents(rec, species) .* current_scale
+
+        @assert length(V) == length(Y)
+
+        append!(Ls, fill(Float64(L) * L_scale, length(V)))  # μm로 저장
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        BoundaryLayerThickness = Ls,
+        Voltage = voltages,
+        Value   = values,
+    )
+
+    fname = filename(function_name)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ 6035d86f-c7f0-4fd8-b79b-83e405665f59
+if L_varied_checkbox
+	df_L = export_L_varied_species_csv_long(
+	    resL;
+	    species = iohminus,
+	    function_name = "L_varied_iohminus"
+	)
+end
+
 # ╔═╡ f000e6ad-0224-43f4-bdf5-1c0c4308160f
 if extractIV
 	outdir_ac = joinpath("..", "data", "output")
@@ -3088,25 +3235,33 @@ floataside(
 # ╠═2420382d-227a-4063-9450-1f1726df018e
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
 # ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
+# ╠═fd2fe768-020c-4751-bde0-8f75843580f7
+# ╠═9e44f14b-a799-4ca5-8641-a3726780a4fe
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
 # ╟─11892724-1851-46f2-802d-4da45127b0af
 # ╠═8cd25c0c-e260-4401-af12-a1def38bb7c2
 # ╟─c048e472-3983-4279-bf60-82784baa145e
 # ╟─3bdaab98-c0f7-46af-86b7-d68374e8a5d0
 # ╠═a05cf724-cd32-498e-8afb-ecbf4a1f1648
+# ╠═5ccb0682-09de-4ae3-95e6-a8403d540d9b
+# ╠═406fb8e5-61e6-4688-96bf-a5530f57d4fa
 # ╟─e0e59ef0-8b6c-4f31-8d39-c2c4bcd7f99e
 # ╟─56814250-16b2-4578-820d-2096998c84f4
-# ╠═e614b311-bc71-4054-96ca-c81385815b7f
 # ╠═7b38e59a-d005-4cfc-ba8c-b17e7c700119
 # ╠═b767a48f-1b20-4b85-b9a8-36d6a914c5fe
+# ╠═bb01b182-7840-4ad0-8cd6-fae57ab93173
+# ╠═0a1054c5-cee7-4202-9d32-9eee6ec55265
+# ╠═7e102647-23a9-4f40-b6de-cb1938bbb23e
+# ╠═a34cdba3-38f6-4bc0-b26e-72c956599109
 # ╠═e6dca43d-69b5-4d35-903c-6742b16a4715
 # ╠═360313f0-2dad-4f7f-8d11-1800c6d934b3
 # ╠═4231590b-18c4-4af8-b798-364c529e47d8
 # ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
-# ╠═a95f298b-72de-4fb9-96f1-f3ee1c372d3a
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─a2c7c4da-77cd-493f-8f98-0c86fecf271a
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
+# ╠═6035d86f-c7f0-4fd8-b79b-83e405665f59
+# ╠═93975adc-bd00-4f1d-a304-b01d061ca212
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═b25f2246-0182-4d50-a606-0d81776d414f
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67

@@ -3,4 +3,4 @@ Manifest*.toml
 *.png
 *.jpg
 *.Identifier
-data/output/*
+data/output/
