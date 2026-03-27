@@ -254,7 +254,7 @@ let
     )
 
 
-    df = CSV.read("../data/output/cv_profile_σ_800.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+    df = CSV.read("../data/output/cv_profile_σ_300.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
 
     cols1 = :red
 
@@ -614,11 +614,11 @@ end
 
 # ╔═╡ dbd04dda-d96a-4266-88eb-bc914f608224
 let
-    fig = Figure(size = (1050, 500))
+    fig = Figure(size = (1000, 1000))
     ax = Axis(fig[1, 1];
         xlabel = L"\phi~(\mathrm{V~vs~SHE})",
         ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-		limits = ((-1.25, -0.6), (10e-7, 10e2)),
+		#limits = ((-1.25, -0.6), (10e-7, 10e2)),
         xlabelsize = 25, ylabelsize = 25,
         xgridvisible = false,
         ygridvisible = false,
@@ -626,20 +626,20 @@ let
         xtickwidth = 4.5,
         ytickwidth = 4.5,
         xticklabelsize = 25, yticklabelsize = 25,
-		yscale = log10
+		#yscale = log10
     )
 
     # --------------------------------------------------
     # extracted CSV 읽기
     # --------------------------------------------------
-    df = CSV.read("../data/output/L_compensated_V_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+    df = CSV.read("../data/output/OHminus_volt_σ_300.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
 
     # pressure
     plist = sort(unique(df.BoundaryLayerThickness
 ))
 
 
-    cols1 = resample_cmap(:summer, length(plist))
+    cols1 = resample_cmap(:batlow, length(plist))
 
     plot_objs1 = Any[]
     labels1 = String[]
@@ -652,7 +652,7 @@ let
         line = lines!(
             ax,
             subdf.Voltage,
-            abs.(subdf.Value./2);
+            (subdf.Value./2);
             (color = cols1[j]),
             linewidth = 2
         )
@@ -679,7 +679,7 @@ let
     ax = Axis(fig[1, 1];
         xlabel = L"\phi~(\mathrm{V~vs~SHE})",
         ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-		limits = ((-1.25, -0.6), (10e-7, 10e2)),
+		#limits = ((-1.25, -0.6), (10e-7, 10e2)),
         xlabelsize = 25, ylabelsize = 25,
         xgridvisible = false,
         ygridvisible = false,
@@ -687,20 +687,20 @@ let
         xtickwidth = 4.5,
         ytickwidth = 4.5,
         xticklabelsize = 25, yticklabelsize = 25,
-		yscale = log10
+		#yscale = log10
     )
 
     # --------------------------------------------------
     # extracted CSV 읽기
     # --------------------------------------------------
-    df = CSV.read("../data/output/L_varied_iohminus_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+    df = CSV.read("../data/output/OHminus_comp_σ_300.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
 
     # pressure
     plist = sort(unique(df.BoundaryLayerThickness
 ))
 
 
-    cols1 = resample_cmap(:summer, length(plist))
+    cols1 = resample_cmap(:batlow, length(plist))
 
     plot_objs1 = Any[]
     labels1 = String[]
@@ -713,7 +713,7 @@ let
         line = lines!(
             ax,
             subdf.Voltage,
-            abs.(subdf.Value./2);
+            (subdf.Value./2);
             color = cols1[j],
             linewidth = 2
         )
@@ -1755,7 +1755,7 @@ end
 # ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
 # ╟─9d8dfbc4-952a-422c-9dc9-467f98ef9771
 # ╟─dbd04dda-d96a-4266-88eb-bc914f608224
-# ╠═4fc78f1e-258b-419e-8a16-be1ca5157bcf
+# ╟─4fc78f1e-258b-419e-8a16-be1ca5157bcf
 # ╠═4911ad1e-e75a-4d41-83dc-675b3f26ce39
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb

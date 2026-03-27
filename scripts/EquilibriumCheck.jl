@@ -612,7 +612,7 @@ function calc_R_comp(L, data; f_comp = 0.95, A = 1.0)
     return f_comp * R_u
 end
 
-# ╔═╡ 4bd973e3-18e8-47cc-b68e-f9baeccf1ba4
+# ╔═╡ afbb2386-871a-4858-964a-3d2ee212a614
 @eval LiquidElectrolytes begin
 
 function cvsweep_compensated(
@@ -621,23 +621,23 @@ function cvsweep_compensated(
     voltages = SawTooth(),
     nperiods = 1,
     store_solutions = false,
-    R_comp = 0.0,
-    alpha_relax = 0.3,
-    current_mode = :reaction,   # :reaction or :total
+    R_comp = 1.0,
+    lambda_damp = 0.2,
     clamp_comp = Inf,
+    max_inner = 8,
+    tol_V = 1e-4,
     solver_kwargs...
 )
     update_derived!(cdata)
     sys = esys.vfvmsys
-    factory = VoronoiFVM.TestFunctionFactory(sys)
-    tf_we = testfunction(factory, [bulk_electrode(cdata)], [working_electrode(cdata)])
-    tf_bulk = testfunction(factory, [working_electrode(cdata)], [bulk_electrode(cdata)])
 
-    i_prev_ref = Ref(0.0)
+    factory = VoronoiFVM.TestFunctionFactory(sys)
+    tf_we   = testfunction(factory, [bulk_electrode(cdata)], [working_electrode(cdata)])
+    tf_bulk = testfunction(factory, [working_electrode(cdata)], [bulk_electrode(cdata)])
 
     working_electrode_voltage!(cdata, voltages(0))
 
-    control = SolverControl(;
+	control = SolverControl(;
         verbose = "",
         handle_exceptions = true,
         damp_initial = 1,
@@ -653,7 +653,7 @@ function cvsweep_compensated(
 
     times = [i * period(voltages) for i in 0:nperiods]
 
-    inival = solve(
+    u_old = solve(
         sys;
         inival = unknowns(esys),
         control = deepcopy(control),
@@ -661,59 +661,80 @@ function cvsweep_compensated(
     )
 
     result = CVSweepResult()
+    result_oh = Float64[]
+    result_vo = Float64[]
 
-    function pre(sol, t)
-        V_target = voltages(t)
-        ΔV_comp = i_prev_ref[] * R_comp
-        if isfinite(clamp_comp)
-            ΔV_comp = clamp(ΔV_comp, -clamp_comp, clamp_comp)
+    for n in 1:length(times)-1
+        t_old = times[n]
+        t_new = times[n+1]
+        Δtstep = t_new - t_old
+
+        V_target = voltages(t_new)
+        V_app = V_target
+
+        sol_new = nothing
+        I_we = nothing
+
+        for k in 1:max_inner
+            ΔV_comp = V_app - V_target
+            if isfinite(clamp_comp)
+                ΔV_comp = clamp(ΔV_comp, -clamp_comp, clamp_comp)
+            end
+            V_app_eff = V_target + ΔV_comp
+
+            working_electrode_voltage!(cdata, V_app_eff)
+
+            tsol_step = solve(
+                sys;
+                inival = u_old,
+                times = [t_old, t_new],
+                control = deepcopy(control),
+                store_all = true
+            )
+
+            sol_new = tsol_step.u[end]
+
+            I_we = -VoronoiFVM.integrate(sys, tf_we, sol_new, u_old, Δtstep)
+            i_we = sum(I_we)
+
+            V_next_raw = V_target + R_comp * i_we
+            if isfinite(clamp_comp)
+                V_next_raw = V_target + clamp(V_next_raw - V_target, -clamp_comp, clamp_comp)
+            end
+
+            V_next = (1 - lambda_damp) * V_app + lambda_damp * V_next_raw
+
+            if abs(V_next - V_app) < tol_V
+                V_app = V_next
+                break
+            end
+
+            V_app = V_next
         end
-        working_electrode_voltage!(cdata, V_target + ΔV_comp)
-    end
 
-    function post(sol, oldsol, t, Δt)
-		#iterate over steps, while voltage is not converged, iterate
-		#in every step, do the voltage setup like pre function
-		
-        I = -VoronoiFVM.integrate(sys, sys.physics.breaction, sol; boundary = true)
+        I = -VoronoiFVM.integrate(sys, sys.physics.breaction, sol_new; boundary = true)
         I_react = I[:, working_electrode(cdata)]
-        I_we = -VoronoiFVM.integrate(sys, tf_we, sol, oldsol, Δt)
-        I_bulk = -VoronoiFVM.integrate(sys, tf_bulk, sol, oldsol, Δt)
+        I_bulk = -VoronoiFVM.integrate(sys, tf_bulk, sol_new, u_old, Δtstep)
 
-		#this one should just be I_we
-        i_feedback = current_mode == :total ? sum(I_we) : sum(I_react)
-        i_prev_ref[] = alpha_relax * i_feedback + (1.0 - alpha_relax) * i_prev_ref[]
-
-        push!(result.times, t)
-        push!(result.voltages, voltages(t))
+        push!(result.times, t_new)
+        push!(result.voltages, V_target)
         push!(result.j_reaction, I_react)
         push!(result.j_we, I_we)
         push!(result.j_bulk, I_bulk)
+
+        push!(result_oh, sum(I_we))
+        push!(result_vo, V_app - V_target)
+
+        u_old = sol_new
     end
 
-    function delta(sys, u, v, t, Δt)
-        n = wnorm(u - v, norm_weights(cdata), Inf)
-    end
-
-    tsol = solve(
-        sys;
-        inival,
-        times,
-        control,
-        pre,
-        post,
-        delta,
-        store_all = store_solutions
-    )
-
-    if store_solutions
-        result.tsol = tsol
-    end
-
-    return result
+    return result, result_oh, result_vo
 end
 
 end
+
+# ╔═╡ 910b8908-c58f-4e9c-97af-d441073bfb21
+
 
 # ╔═╡ ef7212fc-a3d0-4784-b901-219204b79dc0
 md"""
@@ -2539,12 +2560,12 @@ cvL = cvsweep_compensated_over_L(
     pnp_bcondition;
     sawtooth = sawtooth,
     nperiods = 1,
-    L_values = [100, 300, 500],
-    f_comp = 0.9,
-    alpha_relax = 0.3,
-    #clamp_comp = 0.08,
-    current_mode = :reaction,
-    store_solutions = false
+    L_values = [1000, 2000, 3000],
+    f_comp = 1.0,
+	alpha_relax = 0.008,
+	clamp_comp = Inf,
+	current_mode = :reaction,
+	store_solutions = false
 )
 
 # ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
@@ -2729,12 +2750,50 @@ begin
 	    nperiods = nperiods,
 	    reaction = reaction,
 	    model_type = :elydata_Gold,
-	    R_comp = 0.0,
-	    alpha_relax = 0.0,
+	    R_comp = 1.0,
+	    alpha_relax = 0.008,
 	    clamp_comp = Inf,
 	    current_mode = :reaction,
 	    store_solutions = false
 	)
+end
+
+# ╔═╡ 7d420bbc-912a-4e7b-aa31-040ed8bdf7e6
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+		#limits = ((-1.25, -0.6), (10e-7, 10e2)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+		#yscale = log10
+    )
+        line = lines!(
+            ax,
+            result0[1].voltages,
+            result0[2] / (cm^2 / mA) ;
+            #color = cols1[j],
+            linewidth = 2
+        )
+        #push!(plot_objs1, line)
+  
+"""
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+"""
+    fig
 end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
@@ -3233,6 +3292,87 @@ if pressure_varied_checkbox
 	)
 end
 
+# ╔═╡ f2d1924e-dd81-4844-8d33-0cc7893c2889
+function export_L_varied_species_csv_comp(
+    L_recs;
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "OHminus_comp",
+    current_scale = cm^2 / mA,
+    L_scale = 1e6,   # m -> μm
+)
+    Ls       = Float64[]
+    voltages = Float64[]
+    values   = Float64[]
+
+    for (L, rec) in sort(collect(L_recs); by = first)
+        V = rec[1].voltages
+        Y = rec[3] .* current_scale
+
+        @assert length(V) == length(Y)
+
+        append!(Ls, fill(Float64(L) * L_scale, length(V)))  # μm로 저장
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        BoundaryLayerThickness = Ls,
+        Voltage = voltages,
+        Value   = values,
+    )
+
+    fname = filename(function_name)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ 1085e5f5-a4d1-48f8-83f7-b29982f21aec
+export_L_varied_species_csv_comp(cvL)
+
+# ╔═╡ 620ef882-3f5a-4f63-b66e-323a3e9d658e
+function export_L_varied_species_csv_oh(
+    L_recs;
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "OHminus_volt",
+	species = iohminus,
+    current_scale = cm^2 / mA,
+    L_scale = 1e6,   # m -> μm
+)
+    Ls       = Float64[]
+    voltages = Float64[]
+    values   = Float64[]
+
+    for (L, rec) in sort(collect(L_recs); by = first)
+        V = rec[1].voltages
+        Y = currents(rec[1], species) .* current_scale
+
+        @assert length(V) == length(Y)
+
+        append!(Ls, fill(Float64(L) * L_scale, length(V)))  # μm로 저장
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        BoundaryLayerThickness = Ls,
+        Voltage = voltages,
+        Value   = values,
+    )
+
+    fname = filename(function_name)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ╔═╡ b5d2c8de-b201-41ee-bd72-d6f8c91e0f8c
+export_L_varied_species_csv_oh(cvL)
+
 # ╔═╡ 93975adc-bd00-4f1d-a304-b01d061ca212
 function export_L_varied_species_csv_long(
     L_recs;
@@ -3498,9 +3638,11 @@ floataside(
 # ╠═a274c939-31a5-4281-84bc-d621c1f9b117
 # ╠═5b036ef1-fe25-4afb-8ac9-0bd7c525f885
 # ╠═463e0a4a-5631-460f-a4c8-3c21da2f0066
-# ╠═4bd973e3-18e8-47cc-b68e-f9baeccf1ba4
+# ╠═afbb2386-871a-4858-964a-3d2ee212a614
+# ╠═910b8908-c58f-4e9c-97af-d441073bfb21
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╠═bd212319-f17a-46ea-bdb5-badec33eb127
+# ╠═7d420bbc-912a-4e7b-aa31-040ed8bdf7e6
 # ╠═9c1212cf-870c-414a-b06e-91ef8ae87dad
 # ╟─b95160b5-18f7-49d9-80be-9159abd2dcd1
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
@@ -3531,6 +3673,10 @@ floataside(
 # ╠═a34cdba3-38f6-4bc0-b26e-72c956599109
 # ╠═e6dca43d-69b5-4d35-903c-6742b16a4715
 # ╠═4539a61e-38d0-49c8-99cc-1c723df00c4b
+# ╠═b5d2c8de-b201-41ee-bd72-d6f8c91e0f8c
+# ╠═1085e5f5-a4d1-48f8-83f7-b29982f21aec
+# ╠═f2d1924e-dd81-4844-8d33-0cc7893c2889
+# ╠═620ef882-3f5a-4f63-b66e-323a3e9d658e
 # ╠═35a462d3-1f8a-4a8e-ab8e-a07e844469e0
 # ╠═9b8daa64-9e34-4da1-8136-ba5488e037c7
 # ╠═360313f0-2dad-4f7f-8d11-1800c6d934b3
