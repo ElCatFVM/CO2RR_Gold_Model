@@ -65,6 +65,9 @@ Pkg.status()
 # ╔═╡ 2176bc34-fc74-4532-912e-e73441b37245
 isdefined(AuCO2RR, :AuCO2RR_plots)
 
+# ╔═╡ f7d13047-4007-47ac-a3bb-a0b788dcd141
+pkgdir(LiquidElectrolytes)
+
 # ╔═╡ dc90b463-7574-46e1-a7fe-d60074403747
 names(AuCO2RR_plots; all=true)
 
@@ -595,6 +598,122 @@ md"""
 md"""
 ### System Setup
 """
+
+# ╔═╡ ba20b8f6-dfad-4560-b438-6082197e45d4
+function calc_kappa(data)
+    (; z, D, RT, c_bulk) = data
+    return F^2 / RT * sum(z[i]^2 * D[i] * c_bulk[i] for i in eachindex(c_bulk))
+end
+
+# ╔═╡ a274c939-31a5-4281-84bc-d621c1f9b117
+function calc_R_comp(L, data; f_comp = 0.95, A = 1.0)
+    κ = calc_kappa(data)
+    R_u = L / (κ * A)
+    return f_comp * R_u
+end
+
+# ╔═╡ 4bd973e3-18e8-47cc-b68e-f9baeccf1ba4
+@eval LiquidElectrolytes begin
+
+function cvsweep_compensated(
+    esys::AbstractElectrochemicalSystem;
+    cdata = celldata(esys),
+    voltages = SawTooth(),
+    nperiods = 1,
+    store_solutions = false,
+    R_comp = 0.0,
+    alpha_relax = 0.3,
+    current_mode = :reaction,   # :reaction or :total
+    clamp_comp = Inf,
+    solver_kwargs...
+)
+    update_derived!(cdata)
+    sys = esys.vfvmsys
+    factory = VoronoiFVM.TestFunctionFactory(sys)
+    tf_we = testfunction(factory, [bulk_electrode(cdata)], [working_electrode(cdata)])
+    tf_bulk = testfunction(factory, [working_electrode(cdata)], [bulk_electrode(cdata)])
+
+    i_prev_ref = Ref(0.0)
+
+    working_electrode_voltage!(cdata, voltages(0))
+
+    control = SolverControl(;
+        verbose = "",
+        handle_exceptions = true,
+        damp_initial = 1,
+        Δu_opt = 0.05,
+        Δt_min = 5.0e-5 * period(voltages),
+        Δt_max = 5.0e-3 * period(voltages),
+        Δt     = 5.0e-4 * period(voltages),
+        Δt_grow = 1.2,
+        unorm = u -> wnorm(u, norm_weights(cdata), Inf),
+        rnorm = u -> wnorm(u, norm_weights(cdata), 1),
+        solver_kwargs...
+    )
+
+    times = [i * period(voltages) for i in 0:nperiods]
+
+    inival = solve(
+        sys;
+        inival = unknowns(esys),
+        control = deepcopy(control),
+        damp_initial = 0.1
+    )
+
+    result = CVSweepResult()
+
+    function pre(sol, t)
+        V_target = voltages(t)
+        ΔV_comp = i_prev_ref[] * R_comp
+        if isfinite(clamp_comp)
+            ΔV_comp = clamp(ΔV_comp, -clamp_comp, clamp_comp)
+        end
+        working_electrode_voltage!(cdata, V_target + ΔV_comp)
+    end
+
+    function post(sol, oldsol, t, Δt)
+		#iterate over steps, while voltage is not converged, iterate
+		#in every step, do the voltage setup like pre function
+		
+        I = -VoronoiFVM.integrate(sys, sys.physics.breaction, sol; boundary = true)
+        I_react = I[:, working_electrode(cdata)]
+        I_we = -VoronoiFVM.integrate(sys, tf_we, sol, oldsol, Δt)
+        I_bulk = -VoronoiFVM.integrate(sys, tf_bulk, sol, oldsol, Δt)
+
+		#this one should just be I_we
+        i_feedback = current_mode == :total ? sum(I_we) : sum(I_react)
+        i_prev_ref[] = alpha_relax * i_feedback + (1.0 - alpha_relax) * i_prev_ref[]
+
+        push!(result.times, t)
+        push!(result.voltages, voltages(t))
+        push!(result.j_reaction, I_react)
+        push!(result.j_we, I_we)
+        push!(result.j_bulk, I_bulk)
+    end
+
+    function delta(sys, u, v, t, Δt)
+        n = wnorm(u - v, norm_weights(cdata), Inf)
+    end
+
+    tsol = solve(
+        sys;
+        inival,
+        times,
+        control,
+        pre,
+        post,
+        delta,
+        store_all = store_solutions
+    )
+
+    if store_solutions
+        result.tsol = tsol
+    end
+
+    return result
+end
+
+end
 
 # ╔═╡ ef7212fc-a3d0-4784-b901-219204b79dc0
 md"""
@@ -2160,6 +2279,54 @@ begin
 	end
 end;
 
+# ╔═╡ 9b8daa64-9e34-4da1-8136-ba5488e037c7
+function cvsweep_compensated_over_L(
+    model, bcondition;
+    sawtooth,
+    nperiods = 1,
+    L_values = round.(Int, range(80, 1500, length = 6)),
+    f_comp, # = 0.1,
+    alpha_relax  = 0.02,
+    clamp_comp  = Inf,
+    current_mode = :reaction,
+    store_solutions = true,
+    solver_kwargs...,
+)
+    results = Dict{Int, Any}()
+
+    for L in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+
+        pnpcell = PNPSystem(
+            grid;
+            bcondition = bcondition,
+            reaction = reaction,
+            celldata = celldata
+        )
+
+        R_comp = calc_R_comp(L * μm, celldata; f_comp = f_comp)
+
+        results[L] = LiquidElectrolytes.cvsweep_compensated(
+            pnpcell;
+            voltages = sawtooth,
+            nperiods = nperiods,
+            store_solutions = store_solutions,
+            R_comp = R_comp,
+            alpha_relax = alpha_relax,
+            clamp_comp = clamp_comp,
+            current_mode = current_mode,
+            solver_kwargs...
+        )
+    end
+
+    return results
+end
+
 # ╔═╡ 91113083-d80e-4528-be41-82d10f6860fc
 begin
 	const ps_cache = DiffCache(zeros(18), 14)
@@ -2306,17 +2473,85 @@ function pnp_bcondition(
 
 end;
 
+# ╔═╡ 5b036ef1-fe25-4afb-8ac9-0bd7c525f885
+function build_pnpcell(
+    pnpdata;
+    grid,
+    reaction,
+    model_type
+)
+    cdata_local = deepcopy(pnpdata)
+
+    reaction_kwarg = (model_type == :elydata_Gold) ? (; reaction = reaction) : (;)
+
+    pnpcell = LiquidElectrolytes.PNPSystem(
+        grid;
+        bcondition = pnp_bcondition,
+        celldata = cdata_local,
+        reaction_kwarg...
+    )
+
+    return pnpcell
+end
+
+# ╔═╡ 463e0a4a-5631-460f-a4c8-3c21da2f0066
+function sweep_compensated(
+    pnpdata;
+    grid,
+    sawtooth,
+    nperiods,
+    reaction,
+    model_type,
+    R_comp = 0.0,
+    alpha_relax = 0.3,
+    clamp_comp = Inf,
+    current_mode = :reaction,
+    store_solutions = false
+)
+    pnpcell = build_pnpcell(
+        pnpdata;
+        grid = grid,
+        reaction = reaction,
+        model_type = model_type
+    )
+
+    return LiquidElectrolytes.cvsweep_compensated(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods = nperiods,
+        store_solutions = store_solutions,
+        R_comp = R_comp,
+        alpha_relax = alpha_relax,
+        clamp_comp = clamp_comp,
+        current_mode = current_mode
+    )
+end
+
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
 	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5], nperiods = user_input_cv.nperiods)
 	AuCO2RR_plots.plot_scanrate_sweeps(scresult, sc; species = iohminus)
 end
 
+# ╔═╡ 4539a61e-38d0-49c8-99cc-1c723df00c4b
+cvL = cvsweep_compensated_over_L(
+    elydata_Gold,
+    pnp_bcondition;
+    sawtooth = sawtooth,
+    nperiods = 1,
+    L_values = [100, 300, 500],
+    f_comp = 0.9,
+    alpha_relax = 0.3,
+    #clamp_comp = 0.08,
+    current_mode = :reaction,
+    store_solutions = false
+)
+
 # ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
 if L_varied_checkbox
 	resL = sweep_over_L_cv(
 		elydata_Gold,
-		[80, 100, 200, 400, 600, 1000, 1500] .* μm,
+		[100, 300, 500] .* μm,
 		pnp_bcondition,
 		sawtooth,
 		reaction;
@@ -2440,12 +2675,16 @@ if double_layer_curve
 end
 
 # ╔═╡ 02d12ba4-4ab3-48f6-b084-edb06cb413b1
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	celldata = deepcopy(model)
 	pnpcell = PNPSystem(grid, celldata; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
 end
+  ╠═╡ =#
 
 # ╔═╡ 541c5ad3-dede-408d-a92a-285f26357c56
+#=╠═╡
 cell_e = PNPSystem(
     grid,
     celldata;
@@ -2453,6 +2692,7 @@ cell_e = PNPSystem(
     reaction = reaction,
     add_sigma = true,
 )
+  ╠═╡ =#
 
 # ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
 function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
@@ -2478,6 +2718,23 @@ end
 # ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 if pressure_varied_checkbox
 	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
+end
+
+# ╔═╡ bd212319-f17a-46ea-bdb5-badec33eb127
+begin
+	result0 = sweep_compensated(
+	    model;
+	    grid = grid,
+	    sawtooth = sawtooth,
+	    nperiods = nperiods,
+	    reaction = reaction,
+	    model_type = :elydata_Gold,
+	    R_comp = 0.0,
+	    alpha_relax = 0.0,
+	    clamp_comp = Inf,
+	    current_mode = :reaction,
+	    store_solutions = false
+	)
 end
 
 # ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
@@ -2868,6 +3125,10 @@ function export_cv_profile_csv(
     return df
 end
 
+# ╔═╡ 9c1212cf-870c-414a-b06e-91ef8ae87dad
+	export_cv_profile_csv(result0)
+
+
 # ╔═╡ fd2fe768-020c-4751-bde0-8f75843580f7
 if CV
 	export_cv_profile_csv(pnpresult)
@@ -3011,6 +3272,13 @@ function export_L_varied_species_csv_long(
     return df
 end
 
+# ╔═╡ 35a462d3-1f8a-4a8e-ab8e-a07e844469e0
+export_L_varied_species_csv_long(
+	cvL;
+	species = iohminus,
+	function_name = "L_compensated_V"
+)
+
 # ╔═╡ 6035d86f-c7f0-4fd8-b79b-83e405665f59
 if L_varied_checkbox
 	df_L = export_L_varied_species_csv_long(
@@ -3144,6 +3412,7 @@ floataside(
 # ╠═aecc5e8f-1e78-4965-8f9f-4b52d850f490
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╠═2176bc34-fc74-4532-912e-e73441b37245
+# ╠═f7d13047-4007-47ac-a3bb-a0b788dcd141
 # ╠═dc90b463-7574-46e1-a7fe-d60074403747
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
@@ -3225,7 +3494,14 @@ floataside(
 # ╠═02d12ba4-4ab3-48f6-b084-edb06cb413b1
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
+# ╠═ba20b8f6-dfad-4560-b438-6082197e45d4
+# ╠═a274c939-31a5-4281-84bc-d621c1f9b117
+# ╠═5b036ef1-fe25-4afb-8ac9-0bd7c525f885
+# ╠═463e0a4a-5631-460f-a4c8-3c21da2f0066
+# ╠═4bd973e3-18e8-47cc-b68e-f9baeccf1ba4
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
+# ╠═bd212319-f17a-46ea-bdb5-badec33eb127
+# ╠═9c1212cf-870c-414a-b06e-91ef8ae87dad
 # ╟─b95160b5-18f7-49d9-80be-9159abd2dcd1
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═7da046bf-d3b1-43a0-bdba-89b4da2f6be3
@@ -3254,6 +3530,9 @@ floataside(
 # ╠═7e102647-23a9-4f40-b6de-cb1938bbb23e
 # ╠═a34cdba3-38f6-4bc0-b26e-72c956599109
 # ╠═e6dca43d-69b5-4d35-903c-6742b16a4715
+# ╠═4539a61e-38d0-49c8-99cc-1c723df00c4b
+# ╠═35a462d3-1f8a-4a8e-ab8e-a07e844469e0
+# ╠═9b8daa64-9e34-4da1-8136-ba5488e037c7
 # ╠═360313f0-2dad-4f7f-8d11-1800c6d934b3
 # ╠═4231590b-18c4-4af8-b798-364c529e47d8
 # ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27

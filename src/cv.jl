@@ -31,7 +31,7 @@ function sweep_over_L_cv(
         celldata = deepcopy(elydata)
         celldata.eneutral = eneutral
 
-        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata)
+        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction = reaction)
 
         saw = SawTooth(
             scanrate = sawtooth.scanrate,

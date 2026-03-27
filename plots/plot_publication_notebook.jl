@@ -237,6 +237,54 @@ let
 	fig
 end
 
+# ╔═╡ b3f44506-52eb-491c-bc44-76c9c49a43cd
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+		limits = ((-1.3, 0.9), (-5.5, 2.5)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+    )
+
+
+    df = CSV.read("../data/output/cv_profile_σ_800.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+
+    cols1 = :red
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+
+        line = lines!(
+            ax,
+            df.Voltage,
+            df.Current./2;
+            color = cols1,
+            linewidth = 4
+        )
+        push!(plot_objs1, line)
+    ax.xticks = -1.5:0.3:0.9
+    #ax.yticks = 1:-3:-15
+"""
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+"""
+    fig
+end
+
 # ╔═╡ 8545d818-d255-4e8a-af8f-72fdaf9d4bdd
 let
     fig = Figure(size = (1050, 500))
@@ -503,13 +551,13 @@ let
     fig
 end
 
-# ╔═╡ dbd04dda-d96a-4266-88eb-bc914f608224
+# ╔═╡ 9d8dfbc4-952a-422c-9dc9-467f98ef9771
 let
     fig = Figure(size = (1050, 500))
     ax = Axis(fig[1, 1];
         xlabel = L"\phi~(\mathrm{V~vs~SHE})",
         ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-#3limits = ((-1.3, 0.9), (-15.5, 1.8)),
+		#limits = ((-1.25, -0.6), (10e-7, 10e2)),
         xlabelsize = 25, ylabelsize = 25,
         xgridvisible = false,
         ygridvisible = false,
@@ -517,12 +565,13 @@ let
         xtickwidth = 4.5,
         ytickwidth = 4.5,
         xticklabelsize = 25, yticklabelsize = 25,
+		#yscale = log10
     )
 
     # --------------------------------------------------
     # extracted CSV 읽기
     # --------------------------------------------------
-    df = CSV.read("../data/output/L_varied_iohminus_σ_1000.0000000000001Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df = CSV.read("../data/output/L_compensated_V_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
 
     # pressure
     plist = sort(unique(df.BoundaryLayerThickness
@@ -536,7 +585,7 @@ let
 
     for (j, p) in enumerate(plist)
         subdf = df[df.BoundaryLayerThickness .== p, :]
-        label = @sprintf("%.1f μm ", p)
+        label = @sprintf("%.1f μm ", p * 10e-7)
         push!(labels1, label)
 
         line = lines!(
@@ -544,7 +593,129 @@ let
             subdf.Voltage,
             subdf.Value./2;
             color = cols1[j],
-            linewidth = 4
+            linewidth = 2
+        )
+        push!(plot_objs1, line)
+    end
+    #ax.xticks = -1.5:0.3:1.0
+    #ax.yticks = 1:-3:-15
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ dbd04dda-d96a-4266-88eb-bc914f608224
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+		limits = ((-1.25, -0.6), (10e-7, 10e2)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+		yscale = log10
+    )
+
+    # --------------------------------------------------
+    # extracted CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/L_compensated_V_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+
+    # pressure
+    plist = sort(unique(df.BoundaryLayerThickness
+))
+
+
+    cols1 = resample_cmap(:summer, length(plist))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.BoundaryLayerThickness .== p, :]
+        label = @sprintf("%.1f μm ", p * 10e-7)
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            abs.(subdf.Value./2);
+            (color = cols1[j]),
+            linewidth = 2
+        )
+        push!(plot_objs1, line)
+    end
+    #ax.xticks = -1.5:0.3:1.0
+    #ax.yticks = 1:-3:-15
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Extracted";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ 4fc78f1e-258b-419e-8a16-be1ca5157bcf
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+		limits = ((-1.25, -0.6), (10e-7, 10e2)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+		yscale = log10
+    )
+
+    # --------------------------------------------------
+    # extracted CSV 읽기
+    # --------------------------------------------------
+    df = CSV.read("../data/output/L_varied_iohminus_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only_Scanrate_0.05_Periods_1.csv", DataFrame)
+
+    # pressure
+    plist = sort(unique(df.BoundaryLayerThickness
+))
+
+
+    cols1 = resample_cmap(:summer, length(plist))
+
+    plot_objs1 = Any[]
+    labels1 = String[]
+
+    for (j, p) in enumerate(plist)
+        subdf = df[df.BoundaryLayerThickness .== p, :]
+        label = @sprintf("%.1f μm ", p)
+        push!(labels1, label)
+
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            abs.(subdf.Value./2);
+            color = cols1[j],
+            linewidth = 2
         )
         push!(plot_objs1, line)
     end
@@ -1578,10 +1749,13 @@ end
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
 # ╠═f3c5d715-ea62-4f4c-bdea-90dcfde23a26
+# ╠═b3f44506-52eb-491c-bc44-76c9c49a43cd
 # ╠═8545d818-d255-4e8a-af8f-72fdaf9d4bdd
 # ╠═4a68d318-ab6f-45b3-ad63-33d4a77c534d
 # ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
-# ╠═dbd04dda-d96a-4266-88eb-bc914f608224
+# ╟─9d8dfbc4-952a-422c-9dc9-467f98ef9771
+# ╟─dbd04dda-d96a-4266-88eb-bc914f608224
+# ╠═4fc78f1e-258b-419e-8a16-be1ca5157bcf
 # ╠═4911ad1e-e75a-4d41-83dc-675b3f26ce39
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb
