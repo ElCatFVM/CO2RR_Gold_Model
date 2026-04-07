@@ -107,8 +107,8 @@ Plot electrode-adjacent concentrations `result.tsol[i, 1, t] / scale` versus tim
 """
 function plot_conc_time_electrode(result, bulk;
                                   nspecies=7,
-                                  fig_size=(650, 400),
-                                  scale=(mol/dm^3))
+                                  fig_size=(800, 500),
+                                  scale=(mol/dm^3)) # 단위가 불확실하면 1.0으로 먼저 테스트
 
     names  = getproperty.(bulk, :name)
     colors = getproperty.(bulk, :color)
@@ -122,13 +122,18 @@ function plot_conc_time_electrode(result, bulk;
     ax  = Axis(fig[1, 1],
                xlabel = L"time / s",
                ylabel = L"c_{i,\,\mathrm{electrode}} / (\mathrm{mol/dm^3})",
+               limits = ((times[1]-(times[end] / 200), times[end] + (times[end] / 100)), (1e-12, 1e4)),
                yscale = log10)
 
+    #ax.yscale = (1e-12, 1e2)  
     for i in 1:nspecies
         y = conc[i, :]
-        y = map(c -> (c > 0 ? c : NaN), y)
-        lines!(ax, times, y; color=colors[i], label=string(names[i]))
+        
+        y_fixed = map(c -> (c > 1e-128 ? c : 1e-128), y)
+        
+        lines!(ax, times, y_fixed; color=colors[i], label=string(names[i]))
     end
+
 
     Legend(fig[1, 2], ax; labelsize=10, backgroundcolor=RGBA(1, 1, 1, 0.5))
     return fig
@@ -149,11 +154,11 @@ Returns `fig`.
 function plot_conc_profile_logx(result, bulk, X, t_index;
                                 fig_size=(650, 400),
                                 x_limits=(1e-12, 1e-3),
-                                y_limits=(-14, 1),
+                                y_limits=(-14, 4), # log10(c) 기준 범위
                                 x_offset=1e-14,
-                                scale=(mol/dm^3))
+                                scale=1.0)
 
-    tsol = result.tsol ./ scale
+    tsol = result.tsol
     nvar, nx, nt = size(tsol)
 
     names  = getproperty.(bulk, :name)
@@ -166,21 +171,26 @@ function plot_conc_profile_logx(result, bulk, X, t_index;
     xx = X[1:nplot] .+ x_offset
 
     fig = Figure(size = fig_size)
-    ax  = Axis(fig[1, 1],
+    
+    phi_val = hasproperty(result, :voltages) ? round(result.voltages[ti], digits=2) : "N/A"
+    
+    ax = Axis(fig[1, 1],
         xlabel = "Distance from electrode [m]",
-        ylabel = "log10(c)",
+        ylabel = L"\log_{10}(c)",
         xscale = log10,
         limits = (x_limits, y_limits),
-        title  = "t = $(round(result.tsol.t[ti], digits=4)) s | ϕ = $(round(result.voltages[ti], digits=2)) V",
+        title  = "t = $(round(result.tsol.t[ti], digits=4)) s | ϕ = $phi_val V",
     )
 
     for i in 1:nspecies
-        conc = tsol[i, 1:nplot, ti]
-        y = map(c -> (c > 0 ? log10(c) : NaN), conc)
-        lines!(ax, xx, y; color=colors[i], label=string(names[i]))
+        conc = tsol[i, 1:nplot, ti] ./ scale
+        
+        y_log = map(c -> log10(max(c, 1e-25)), conc)
+        
+        lines!(ax, xx, y_log; color=colors[i], label=string(names[i]))
     end
 
-    axislegend(ax; position=:rt)
+    axislegend(ax; position=:rt, labelsize=10)
     return fig
 end
 
@@ -203,13 +213,15 @@ function cv_conc_gif(
     file="concentrations_cv.gif",
     framerate=10,
     step=5,
-    scale=(mol/dm^3),
+    scale=(mol/dm^3), 
     x_offset=1e-14,
     x_limits=(1e-12, 1e-3),
     y_limits=(-14, 2),
     legend=true,
 )
-    tsol = pnpresult.tsol ./ scale
+
+    raw_data = pnpresult.tsol
+    tsol = raw_data ./ scale
     nvar, nx, nt = size(tsol)
 
     names  = getproperty.(bulk, :name)
@@ -229,6 +241,8 @@ function cv_conc_gif(
         limits = (x_limits, y_limits),
     )
 
+    println("Plotting $nspecies species, $nt time steps.")
+
     ys = [Observable(fill(NaN, nplot)) for _ in 1:nspecies]
     for i in 1:nspecies
         lines!(ax, xx, ys[i]; color=colors[i], label=string(names[i]))
@@ -236,13 +250,18 @@ function cv_conc_gif(
     legend && axislegend(ax)
 
     record(fig, file, t_indices; framerate=framerate) do ti
-        tval = pnpresult.tsol.t[ti]
-        ϕval = (hasproperty(pnpresult, :voltages) && ti <= length(pnpresult.voltages)) ? pnpresult.voltages[ti] : NaN
-        ax.title = "t = $(round(tval, digits=4)) s | ϕ = $(round(ϕval, digits=2)) V"
+        tval = try pnpresult.tsol.t[ti] catch; ti end
+        
+        phi_str = "N/A"
+        if hasproperty(pnpresult, :voltages) && ti <= length(pnpresult.voltages)
+            phi_str = "$(round(pnpresult.voltages[ti], digits=2))"
+        end
+        ax.title = "t = $(round(tval, digits=4)) s | ϕ = $phi_str V"
 
         for i in 1:nspecies
             conc = tsol[i, 1:nplot, ti]
-            ys[i][] = map(c -> (c > 0 ? log10(c) : NaN), conc)
+            # 3. 로그 처리 개선: 0 이하의 값은 아주 작은 값(1e-20)으로 치환하여 그래프 끊김 방지
+            ys[i][] = map(c -> (c > 1e-20 ? log10(c) : -20.0), conc)
         end
     end
 
@@ -298,15 +317,20 @@ function plot_cv_model_vs_koper_facets(pnpresult; species=iohminus,
 end
 
 
-function plot_pH_varied_sweep(pH_recs;
-                              species=iohminus,
-                              fig_size=(1600, 900),
-                              scale=cm^2/mA)
+function plot_pH_varied_sweep(
+    pH_recs;
+    species = iohminus,
+    fig_size = (1600, 900),
+    scale = cm^2 / mA,
+    legend_title = "Theoretical",
+)
 
     fig = Figure(size = fig_size)
-    ax = Axis(fig[1, 1],
-              xlabel = L"\phi (V \; \mathrm{vs}\; SHE)",
-              ylabel = L"I (mA/cm^2)")
+    ax = Axis(
+        fig[1, 1],
+        xlabel = L"\phi \; (\mathrm{V\ vs\ SHE})",
+        ylabel = L"I \; (\mathrm{mA/cm^2})",
+    )
 
     n = length(pH_recs)
     cols = [RGB(1 - t, 0, t) for t in LinRange(0, 1, n)]
@@ -314,18 +338,37 @@ function plot_pH_varied_sweep(pH_recs;
     plots  = Any[]
     labels = String[]
 
-    for j in 1:n
-        pH, rec = pH_recs[j]
-        label = "pH = $(pH)"
-        push!(labels, label)
+    for (j, item) in pairs(pH_recs)
+
+        # ---- support both:
+        # 1) old format: (pH, rec)
+        # 2) new format: (pH=..., cH=..., cOH=..., c_bulk=..., record=...)
+        pH, rec = if item isa NamedTuple
+            if haskey(item, :record) && haskey(item, :pH)
+                (item.pH, item.record)
+            else
+                error("NamedTuple input must contain at least :pH and :record")
+            end
+        elseif item isa Tuple
+            if length(item) >= 2
+                (item[1], item[2])
+            else
+                error("Tuple input must have at least 2 elements: (pH, rec)")
+            end
+        else
+            error("Unsupported element type in pH_recs: $(typeof(item))")
+        end
 
         ivres = hasproperty(rec, :ivresult) ? getproperty(rec, :ivresult) : rec
-
         I = currents(ivres, species) .* scale
-        push!(plots, lines!(ax, ivres.voltages, I; color = cols[j]))
+
+        plt = lines!(ax, ivres.voltages, I; color = cols[j], linewidth = 3)
+        push!(plots, plt)
+        push!(labels, "pH = $(pH)")
     end
 
-    Legend(fig[1, 2], plots, labels, "Theoretical"; framevisible=true)
+    Legend(fig[1, 2], plots, labels, legend_title; framevisible = true)
+
     return fig
 end
 
