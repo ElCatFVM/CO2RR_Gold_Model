@@ -6,13 +6,16 @@ using LiquidElectrolytes
 using VoronoiFVM
 using ExtendableGrids, ExtendableGrids
 using LessUnitful
-using DelimitedFiles
+using DelimitedFiles, DataFrames, CSV
 using DrWatson
 using CairoMakie, Colors
 
 
 include("goldmodel.jl")
 export GoldModel
+
+include("sweeps_csv.jl")
+export ivsweep_csv, sweepcomparedir
 
 @unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
 

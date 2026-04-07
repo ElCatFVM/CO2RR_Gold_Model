@@ -152,6 +152,8 @@ function Potassium_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
     γ .= 1 # ????
+    ikplus = 1 # need to find a way to provide this otherwise.
+    # Probably it will suffice to pass v=0 for all species except of K+
     γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus]) # / (mol/dm^3))
     return γ
 end
