@@ -611,6 +611,9 @@ begin
 end
   ╠═╡ =#
 
+# ╔═╡ 4d4f4ad2-2ca2-420a-91f7-37f49d5b5f1b
+
+
 # ╔═╡ ba20b8f6-dfad-4560-b438-6082197e45d4
 function calc_kappa(data)
     (; z, D, RT, c_bulk) = data
@@ -850,13 +853,89 @@ Click the button below to save the Profile data as CSV files.
 $(@bind export_button PlutoUI.Button("Export to CSV"))
 """
 
+# ╔═╡ c68691f1-502a-4aee-b56c-7169e007270d
+function plot_cv_current(result, model;
+                         species=nothing,
+                         fig_size=(650, 400),
+                         scale=cm^2/mA,
+                         color_gradient=true)
+
+    sp = (species === nothing) ? model.cspecies[1] : species
+
+    fig = Figure(size = fig_size)
+    ax = Axis(fig[1, 1],
+              ylabel = L"I (mA/cm^2)",
+              xlabel = L"time / s")
+
+    I = currents(result, sp) .* scale
+
+    if color_gradient
+        cols = RGBf.(range(0, 1, length(result.voltages)), 0.0, 0.0)
+        lines!(ax, result.times, I./2; color=cols, linewidth = 3)
+    else
+        lines!(ax, result.times, I)
+    end
+
+    return fig
+end
+
+# ╔═╡ cdf52b70-94ad-45db-b82d-f1268cead86e
+function plot_conc_time_electrode(result, bulk;
+                                  nspecies=7,
+                                  fig_size=(850, 500), 
+                                  scale=(mol/dm^3))
+
+    names  = getproperty.(bulk, :name)
+    colors = getproperty.(bulk, :color)
+
+    times = result.tsol.t
+    nt    = length(times)
+
+    conc = [result.tsol[i, 1, t] / scale for i in 1:nspecies, t in 1:nt]
+
+    fig = Figure(size = fig_size)
+    
+    ax_conc = Axis(fig[1, 1],
+                   xlabel = L"time / s",
+                   ylabel = L"\text{Electrode Concentration}\;\;c_{i}^\ddagger / (\mathrm{mol/dm^3})",
+                   limits = ((times[1]-(times[end] / 200), times[end] + (times[end] / 100)), (1e-12, 1e4)),
+                   yscale = log10,
+                   rightspinevisible = false) 
+	cols 	= 	RGBf.(0.5, 0.5, 1)
+    I 		= currents(result, iohminus) .* cm^2/mA
+	ax_conc.xlabelsize = 25
+    ax_current = Axis(fig[1, 1],
+				ylabel = L"\text{Current density} / (\mathrm{mA/cm^{2}})",                      yaxisposition = :right,
+                      ygridvisible = false, 
+                      rightspinecolor = cols, 
+                      ylabelcolor = cols,
+                      yticklabelcolor = cols)
+
+    linkxaxes!(ax_conc, ax_current)
+	#ax_conc.xlabelsize = 25
+	#ax_conc.ylabelsize = 25
+	#ax_current.ylabelsize = 25
+
+    for i in 1:nspecies
+        y = conc[i, :]
+        y_fixed = map(c -> (c > 1e-128 ? c : 1e-128), y)
+        lines!(ax_conc, times, y_fixed; color=colors[i], label=string(names[i]))
+    end
+
+    lines!(ax_current, result.times, I ./ 2; color=cols, linewidth = 4, label="Current")
+
+    Legend(fig[1, 2], ax_conc; labelsize=10, backgroundcolor=RGBA(1, 1, 1, 0.5))
+    
+    return fig
+end
+
 # ╔═╡ e6f43f01-15d8-4265-ae15-3673fb3cf7e3
 function plot_activity_time_electrode(result, bulk, electrolyte;
     model_type="DGML_γ", # "DGML_γ" 또는 "Stefan_γ"
     nspecies=7,
     fig_size=(800, 500),
     scale=(mol/dm^3),
-    ipressure=nothing # 압력 변수 인덱스 (필요 시)
+    ipressure=nothing 
 )
     names  = getproperty.(bulk, :name)
     colors = getproperty.(bulk, :color)
@@ -894,7 +973,7 @@ function plot_activity_time_electrode(result, bulk, electrolyte;
             elseif model_type == "Stefan_γ"
                 a_thermo    = term_conc * (solvent_frac^(-1.0))
             else
-                a_thermo    = term_conc # 기본은 이상 용액
+                a_thermo    = term_conc
             end
             
             activity_electrode[i, t] = a_thermo * (bar_c * c_scale)
@@ -910,14 +989,13 @@ function plot_activity_time_electrode(result, bulk, electrolyte;
 
     for i in 1:nspecies
         y = activity_electrode[i, :]
-        # log10 축에서 에러 방지를 위한 하한선 처리
         y_fixed = map(val -> (isnan(val) || val <= 1e-128 ? 1e-128 : val), y)
         
         lines!(ax, times, y_fixed; color=colors[i], linewidth=2, label=string(names[i]))
     end
 
     Legend(fig[1, 2], ax; labelsize=10, backgroundcolor=RGBA(1, 1, 1, 0.5))
-    return fig, activity_electrode
+    return fig
 end
 
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
@@ -3037,7 +3115,7 @@ end
 
 # ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 if CV
-	AuCO2RR_plots.plot_conc_time_electrode(pnpresult, bulk)
+	plot_conc_time_electrode(pnpresult, bulk)
 end
 
 # ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
@@ -3065,6 +3143,12 @@ end
 if CV
 	AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
 end
+
+# ╔═╡ e6de6e89-5dc6-4fac-a7fc-8346175283a3
+AuCO2RR_plots.plot_cv_current(pnpresult, model; species = ico)
+
+# ╔═╡ df1cd76c-343a-490b-a2f5-3249e3dca1cc
+plot_cv_current(pnpresult, model; species = iohminus)
 
 # ╔═╡ d242507d-d1bb-461f-b4fe-ab3f597d9c40
 plot_activity_time_electrode(pnpresult, bulk, model)
@@ -3382,7 +3466,7 @@ end
 # ╔═╡ a34cdba3-38f6-4bc0-b26e-72c956599109
 function filename(function_name) 
 	σ = round(L / μm)
-	base_cvname = string(function_name, "_σ_", σ , user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize, "_Scanrate_", user_input_cv.scanrate, "_Periods_", user_input_cv.nperiods)
+	base_cvname = string(function_name, "_σ_", σ , "_", user_input_model.BC_Select, "_", user_input_model.mode, "_pnp_", ionsize, "_Scanrate_", user_input_cv.scanrate, "_Periods_", user_input_cv.nperiods, "_sweep_range_", user_input_cv.vmin,"-",user_input_cv.vmax, "_cv")
 
 	return base_cvname
 end
@@ -3864,13 +3948,14 @@ floataside(
 # ╠═02d12ba4-4ab3-48f6-b084-edb06cb413b1
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 # ╠═9e8cf58d-3a85-4e89-8679-94901e3081f9
+# ╠═4d4f4ad2-2ca2-420a-91f7-37f49d5b5f1b
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
 # ╠═ba20b8f6-dfad-4560-b438-6082197e45d4
 # ╠═a274c939-31a5-4281-84bc-d621c1f9b117
 # ╠═5b036ef1-fe25-4afb-8ac9-0bd7c525f885
 # ╠═463e0a4a-5631-460f-a4c8-3c21da2f0066
 # ╠═afbb2386-871a-4858-964a-3d2ee212a614
-# ╠═910b8908-c58f-4e9c-97af-d441073bfb21
+# ╟─910b8908-c58f-4e9c-97af-d441073bfb21
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╠═bd212319-f17a-46ea-bdb5-badec33eb127
 # ╠═7d420bbc-912a-4e7b-aa31-040ed8bdf7e6
@@ -3880,8 +3965,12 @@ floataside(
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
 # ╠═7da046bf-d3b1-43a0-bdba-89b4da2f6be3
 # ╠═a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
+# ╠═cdf52b70-94ad-45db-b82d-f1268cead86e
+# ╠═e6de6e89-5dc6-4fac-a7fc-8346175283a3
+# ╟─df1cd76c-343a-490b-a2f5-3249e3dca1cc
+# ╠═c68691f1-502a-4aee-b56c-7169e007270d
 # ╠═d242507d-d1bb-461f-b4fe-ab3f597d9c40
-# ╟─e6f43f01-15d8-4265-ae15-3673fb3cf7e3
+# ╠═e6f43f01-15d8-4265-ae15-3673fb3cf7e3
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╠═2420382d-227a-4063-9450-1f1726df018e
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
