@@ -240,7 +240,6 @@ function surface_reaction(specieslayout)
 end
 
 
-
 function calc_QBL_local(u, data; tolϕ = 1.0e-12)
     (; ip, iϕ, ε_0, pscale, ε) = data
 
@@ -289,15 +288,14 @@ function create_model(;
         κ_K = 6.0     #   (MD)
     elseif use_md_hydrated == true && γ == Stefan_γ!
         println("hydrated_Stefan")
-        fac = 0.3
         # Stefan's Model / Consider all effective size
-        a_HCO3 = 8.5 * fac
-        a_CO3 = 9.9 * fac
-        a_CO2 = 3.4 * fac
-        a_OH = 7.6 * fac
-        a_H = 7.3 * fac
-        a_CO = 2.8 * fac
-        a_K = 8.2 * fac
+        a_HCO3 = 8.5
+        a_CO3 = 9.9
+        a_CO2 = 3.4
+        a_OH = 7.6
+        a_H = 7.3
+        a_CO = 2.8
+        a_K = 8.2
 
         κ_HCO3 = 0
         κ_CO3 = 0
@@ -308,15 +306,14 @@ function create_model(;
         κ_K = 0
     elseif use_md_hydrated == false && γ == DGML_γ!
         println("nonhydrated_DGML")
-        fac = 1.5 # xxx
         # --- hydrated radii [nm] (aqueous effective radii) ---
-        a_HCO3 = 3.33 * fac   #  (Å)
-        a_CO3 = 3.94 * fac   #  (Å)
-        a_CO2 = 1.7 * fac   #  (Å) (often treated as vdW/effective in water)
-        a_OH = 3.0 * fac   #  (Å)
-        a_H = 2.8 * fac   #  (Å) (H3O+ effective hydrated)
-        a_CO = 1.4 * fac   #  (Å)
-        a_K = 3.31 * fac   #  (Å)
+        a_HCO3 = 3.33   #  (Å)
+        a_CO3 = 3.94   #  (Å)
+        a_CO2 = 1.7   #  (Å) (often treated as vdW/effective in water)
+        a_OH = 3.0   #  (Å)
+        a_H = 2.8   #  (Å) (H3O+ effective hydrated)
+        a_CO = 1.4   #  (Å)
+        a_K = 3.31   #  (Å)
 
         # a_HCO3 = 8.5
         # a_CO3 = 9.9
@@ -343,7 +340,7 @@ function create_model(;
         a_OH = 0;  κ_OH = 0
         a_H = 0;  κ_H = 0
         a_CO = 0;  κ_CO = 0
-        a_K = 8.2 * fac;  κ_K = 0
+        a_K = 8.2;  κ_K = 0
     else
         error("undefined case:  use_md_hydrated = $(use_md_hydrated), γ=$(γ)")
     end
