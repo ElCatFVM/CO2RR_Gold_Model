@@ -124,7 +124,7 @@ let
     )
 
 
-    df = CSV.read("../data/output/cv_profile_σ_80.0Robin_DMGL_γ_pnp_All_species_Scanrate_1_Periods_1.csv", DataFrame)
+    df = CSV.read("../data/output/cv_profile_comp__σ_1000.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.2_cv.csv", DataFrame)
 
     cols1 = :red
 
@@ -219,6 +219,151 @@ let
 	translate!(leg.blockscene,  -40, 40, 0)
 	fig
 end
+
+# ╔═╡ b0a4b942-5654-4b22-8849-90bf6c7f957f
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        # limits = ((-1.3, 0.9), (-15.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+        # yscale = log10
+    )
+
+    csv_filename = "../data/output/L_varied_compensated_timestep__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.6_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+
+    # Extract unique values of Boundary Layer Thickness (L)
+    L_list = sort(unique(df.BoundaryLayerThickness))
+
+    # Generate a colormap to differentiate the lines
+    cols = resample_cmap(:viridis, length(L_list))
+
+    plot_objs = Any[]
+    labels = String[]
+    
+    for (j, L_val) in enumerate(L_list)
+        # Filter the dataframe for the current thickness
+        subdf = df[df.BoundaryLayerThickness .== L_val, :]
+        
+        # Format the legend label (e.g., " 100.0 μm")
+        label = @sprintf(" %.1f μm", L_val)
+        push!(labels, label)
+        
+        # Plot Voltage vs. Current Density
+        # Note: (subdf.Value ./ 2) is kept as per your original logic
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            (subdf.Value ./ 2);
+            color = cols[j],
+            linewidth = 3
+        )
+        push!(plot_objs, line)
+    end
+
+    # Set axis ticks manually if needed
+    # ax.xticks = -1.5:0.3:1.0
+    # ax.yticks = 1:-3:-15
+    
+    # Configure the legend
+    # Changed title from "Scan Rate" to "Thickness (L)" to match the plotted data
+    leg = Legend(fig[1, 1], plot_objs, labels, "Thickness (L)";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelhalign = :right,
+        labeljustification = :right,
+        titlehalign = :right,
+        width = 220,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ caa05490-0c7d-44ec-9be8-73f7a4473d8a
+let
+    fig = Figure(size = (1050, 500))
+    ax = Axis(fig[1, 1];
+        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        # limits = ((-1.3, 0.9), (-15.5, 1.8)),
+        xlabelsize = 25, ylabelsize = 25,
+        xgridvisible = false,
+        ygridvisible = false,
+        spinewidth = 4.5,
+        xtickwidth = 4.5,
+        ytickwidth = 4.5,
+        xticklabelsize = 25, yticklabelsize = 25,
+        # yscale = log10
+    )
+
+    csv_filename = "../data/output/L_varied_uncompensated__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.6_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+
+    # Extract unique values of Boundary Layer Thickness (L)
+    L_list = sort(unique(df.BoundaryLayerThickness))
+
+    # Generate a colormap to differentiate the lines
+    cols = resample_cmap(:viridis, length(L_list))
+
+    plot_objs = Any[]
+    labels = String[]
+    
+    for (j, L_val) in enumerate(L_list)
+        # Filter the dataframe for the current thickness
+        subdf = df[df.BoundaryLayerThickness .== L_val, :]
+        
+        # Format the legend label (e.g., " 100.0 μm")
+        label = @sprintf(" %.1f μm", L_val)
+        push!(labels, label)
+        
+        # Plot Voltage vs. Current Density
+        # Note: (subdf.Value ./ 2) is kept as per your original logic
+        line = lines!(
+            ax,
+            subdf.Voltage,
+            (subdf.Value ./ 2);
+            color = cols[j],
+            linewidth = 3.7
+        )
+        push!(plot_objs, line)
+    end
+
+    # Set axis ticks manually if needed
+    # ax.xticks = -1.5:0.3:1.0
+    # ax.yticks = 1:-3:-15
+    
+    # Configure the legend
+    # Changed title from "Scan Rate" to "Thickness (L)" to match the plotted data
+    leg = Legend(fig[1, 1], plot_objs, labels, "Thickness (L)";
+        framevisible = false,
+        halign = :right, valign = :bottom,
+        labelhalign = :right,
+        labeljustification = :right,
+        titlehalign = :right,
+        width = 220,
+        labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false
+    )
+    translate!(leg.blockscene, -40, 40, 0)
+
+    fig
+end
+
+# ╔═╡ 2b10e19b-c099-4e4e-9cc1-5be1255d03bd
+1023
 
 # ╔═╡ 4a68d318-ab6f-45b3-ad63-33d4a77c534d
 let
@@ -422,70 +567,6 @@ let
 	ax.yticks = 1:-1:-5 		;	ax_ex.yticks = 1:-1:-5
 
 	
-    fig
-end
-
-# ╔═╡ b0a4b942-5654-4b22-8849-90bf6c7f957f
-let
-    fig = Figure(size = (1050, 500))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
-        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-#3limits = ((-1.3, 0.9), (-15.5, 1.8)),
-        xlabelsize = 25, ylabelsize = 25,
-        xgridvisible = false,
-        ygridvisible = false,
-        spinewidth = 4.5,
-        xtickwidth = 4.5,
-        ytickwidth = 4.5,
-        xticklabelsize = 25, yticklabelsize = 25,
-		#yscale = log10
-    )
-
-    # --------------------------------------------------
-    # extracted CSV 읽기
-    # --------------------------------------------------
-    df = CSV.read("../data/output/scanrate_varied_iohminus_σ_1000.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.2_cv.csv", DataFrame)
-
-    # pressure
-    plist = sort(unique(df.ScanRate))
-
-
-    cols1 = resample_cmap(:linear_blue_5_95_c73_n256, length(plist))
-
-    plot_objs1 = Any[]
-    labels1 = String[]
-	for (j, p) in enumerate(plist[1:7])
-	    subdf = df[df.ScanRate .== p, :]
-	
-	    p *= 1000
-	    label = @sprintf("%.1fmV/s ", p)
-	    push!(labels1, label)
-	
-	    line = lines!(
-	        ax,
-	        subdf.Voltage,
-	        (subdf.Value ./ 2);
-	        color = cols1[j],
-	        linewidth = 3.7
-	    )
-	    push!(plot_objs1, line)
-	end
-    #ax.xticks = -1.5:0.3:1.0
-    #ax.yticks = 1:-3:-15
-	leg = Legend(fig[1, 1], plot_objs1, labels1, "Scan Rate";
-	    framevisible = false,
-	    halign = :right, valign = :bottom,
-	    labelhalign = :right,
-	    labeljustification = :right,
-	    titlehalign = :right,
-	    width = 220,
-	    labelsize = 20, titlesize = 23,
-	    padding = (0, 0, 0, 0),
-	    tellwidth = false, tellheight = false
-	)
-    translate!(leg.blockscene, -40, 40, 0)
-
     fig
 end
 
@@ -1700,11 +1781,13 @@ end
 # ╠═9e7ebac4-b131-4362-9c2e-a07070715df6
 # ╠═270509a2-433d-42af-886b-983f226f3229
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
-# ╟─b3f44506-52eb-491c-bc44-76c9c49a43cd
+# ╠═b3f44506-52eb-491c-bc44-76c9c49a43cd
 # ╟─40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╟─b0a4b942-5654-4b22-8849-90bf6c7f957f
+# ╠═caa05490-0c7d-44ec-9be8-73f7a4473d8a
+# ╠═2b10e19b-c099-4e4e-9cc1-5be1255d03bd
 # ╟─4a68d318-ab6f-45b3-ad63-33d4a77c534d
 # ╟─8545d818-d255-4e8a-af8f-72fdaf9d4bdd
-# ╟─b0a4b942-5654-4b22-8849-90bf6c7f957f
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb
 # ╟─4b02a8c0-a854-436a-9fdc-99ecf637e858
