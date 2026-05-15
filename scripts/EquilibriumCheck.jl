@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.13
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -23,7 +23,7 @@ begin
 	using Revise
     using LiquidElectrolytes
 	using CatmapInterface
-	using Catalyst: unknowns
+	using Catalyst#: unknowns
 	using VoronoiFVM
 	using LessUnitful
 	using ExtendableGrids, GridVisualize
@@ -53,6 +53,9 @@ begin
 	using .AuCO2RR_plots
 end
 
+# ╔═╡ 5a27d95a-21d2-4e8a-a2fd-895eed32b113
+using IRCompProject
+
 # ╔═╡ 3ac837b8-559b-41c2-8f83-1331839dcf7e
 begin
     using HypertextLiteral: @htl_str, @htl
@@ -67,9 +70,6 @@ isdefined(AuCO2RR, :AuCO2RR_plots)
 
 # ╔═╡ f7d13047-4007-47ac-a3bb-a0b788dcd141
 pkgdir(LiquidElectrolytes)
-
-# ╔═╡ dc90b463-7574-46e1-a7fe-d60074403747
-names(AuCO2RR_plots; all=true)
 
 # ╔═╡ beae1479-1c0f-4a55-86e1-ad2b50174c83
 md"""
@@ -97,10 +97,6 @@ begin
 	const voltages = (-1.15:0.1:-0.0) * V
 	const vmin = -1.0
 	const vmax = 1.1
-	
-	# geometrical constants
-	const Γ_we 		= 1
-	const Γ_bulk 	= 2
 	
 	# bulk constants
 	const pH 		= 6.8
@@ -215,6 +211,67 @@ begin
 		BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 	end
 end;
+
+# ╔═╡ a4b1300f-7e8a-46ab-9efd-dba82315a966
+md"""
+### FVM geometry generation
+"""
+
+# ╔═╡ 13e0b9ee-ab7a-4e6a-ad61-16f3de7fc135
+# ╠═╡ disabled = true
+#=╠═╡
+function makegrid_previous_geomspace(celldata)
+    (; x_BP1, x_BP2, x_BP3, L, Domain1, Domain2, Domain3, BP1, BP2, BP3, BP4) = celldata
+    
+    hmin = 1.0e-6 * μm
+    hmax = 1.0 * μm
+
+    X_raw = ExtendableGrids.geomspace(0.0, L, hmin, hmax)
+    
+    X = sort(unique([X_raw; x_BP1; x_BP2; x_BP3; L]))
+
+    grd = simplexgrid(X)
+    
+    safe_tol = 1.0e-12 
+
+    cellmask!(grd, [x_BP1], [x_BP2], Domain1, tol = safe_tol)
+    cellmask!(grd, [x_BP2], [x_BP3], Domain2, tol = safe_tol)
+    cellmask!(grd, [x_BP3], [L], Domain3, tol = safe_tol)
+
+    bfacemask!(grd, [x_BP1], [x_BP1], BP1, tol = safe_tol)
+    bfacemask!(grd, [x_BP2], [x_BP2], BP2, tol = safe_tol)
+    bfacemask!(grd, [x_BP3], [x_BP3], BP3, tol = safe_tol)
+    bfacemask!(grd, [L], [L], BP4, tol = safe_tol)
+    
+    return X, grd
+end
+  ╠═╡ =#
+
+# ╔═╡ 2d3e4cc2-7823-4fd3-b512-4d042f15cc68
+function makegrid(celldata; nref = 0, hmin = 0.01 * ufac"nm", hmax = celldata.L / 50)
+    (; x_BP1, x_BP2, x_BP3, x_DL, L, Domain1, Domain2, Domain3, BP1, BP2, BP3, BP4) = celldata
+    X1 = range(x_BP1, x_BP2, length = 200)
+    X2 = range(x_BP2, x_BP3, length = 200)
+    X3 = geomspace(x_BP3, L, hmin, hmax)
+    X = glue(glue(X1, X2), X3)
+    ix1 = findfirst(x -> x ≈ x_BP2, X)
+    grd = simplexgrid(X)
+    cellmask!(grd, [x_BP1], [x_BP2], Domain1, tol = 1.0e-12)
+    cellmask!(grd, [x_BP2], [x_BP3], Domain2, tol = 1.0e-12)
+    cellmask!(grd, [x_BP3], [L], Domain3, tol = 1.0e-12)
+
+
+    bfacemask!(grd, [0.0], [0.0], BP1, tol = 1.0e-12)
+    bfacemask!(grd, [x_BP2], [x_BP2], BP2, tol = 1.0e-12)
+    bfacemask!(grd, [x_BP3], [x_BP3], BP3, tol = 1.0e-12)
+    bfacemask!(grd, [L], [L], BP4, tol = 1.0e-12)
+    return grd
+
+end
+
+
+# ╔═╡ aded19f7-379a-4a69-b86e-cdf0c66168bd
+
 
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
@@ -354,23 +411,22 @@ md"""
 ### Electrolyte Data
 """
 
+# ╔═╡ dabb7ca0-ce88-47d6-9315-9192d87c244e
+md"""
+#### Electrolyte and Cell Data Gold model
+"""
+
+# ╔═╡ 20324e33-26d0-4a95-bda3-5cb5d0fd8975
+md"""
+#### Electrolyte and Cell Data NaClO₄ model
+"""
+
 # ╔═╡ 848b7aeb-968f-4116-8038-b61276f02b6c
 elydata_NaClO₄ = ElectrolyteData(
  		z = [-1, 1],
 		κ = [15.0, 25.0],
 		c_bulk = [1.0, 1.0],
 		ε = 26.0,
-)
-
-# ╔═╡ f18dc873-1c9d-46d3-9596-92d28705e894
-elydata_NaF = ElectrolyteData(
- 		z = [-1, 1],
-		κ = [25.0, 25.0],
-		#v = [25.0, 25.0],
-		c_bulk = [0.5, 0.5],
-		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
-		#vrel = [1.7973*10e-5*46, 1.7973*10e-5*46]
-		v0 = 18.048 * ufac"cm^3" / ufac"mol",		
 )
 
 # ╔═╡ 53f12821-7d8d-4971-87fd-ad4689ec62a5
@@ -406,13 +462,6 @@ function DGML_γ!(γ, c, p, electrolyte)
     for ic in cspecies
         γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc))
     end
-
-	#for ic in cspecies
-    #    γ[ic] = rexp(tildev[ic] * p / RT) * (barc)^(Mrel[ic]-1) 
-    #end
-    #for ic in cspecies
-    #    γ[ic] = v0 * ( 1.0 / (1 - sum(c_bulk[i] * v[i] for i in 1:nc) / (mol/dm^3)))
-    #end
     return γ
 end
 
@@ -443,17 +492,6 @@ function Stefan_γ!(γ, c, p, electrolyte)
     for ic in cspecies
         γ[ic] = (1.0 / (1 - sum(c[i] * v[i] for i in 1:nc))) # (mol/dm^3)))
     end
-    return γ
-end
-
-# ╔═╡ 161a810d-c05e-42ad-97ab-131059d6784a
-function Potassium_γ!(γ, c, p, electrolyte)
-	
-    (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
-    c0, barc = c0_barc(c, electrolyte)
-	γ .= 1
-    γ[ikplus] = 1.0 / (1 - v[ikplus] * c[ikplus]) # / (mol/dm^3))
-    
     return γ
 end
 
@@ -503,11 +541,6 @@ function dlcapsweep(system; nsweep = 100, δ = 1.0e-6)
     end
     return voltages, dlcaps, TransientSolution(solutions, voltages)
 end
-
-# ╔═╡ 291df771-1607-4fe3-8667-3f1614312e8f
-md"""
-##### **DLCap_Dirichlet BC:** $(@bind DLCap_Dirichlet PlutoUI.CheckBox())
-"""
 
 # ╔═╡ dc5b1cfc-9221-45e9-a4f3-69ec4f7ebb70
 md"""
@@ -642,7 +675,7 @@ end
             verbose = "",
             handle_exceptions = true,
             damp_initial = 1,
-            Δu_opt = 0.05,
+            Δu_opt = 0.01,
             Δt_min = 1.0e-4 * period(voltages),
             Δt_max = 1.0e-2 * period(voltages),
             Δt = 1.0e-3 * period(voltages),
@@ -684,7 +717,11 @@ end
                 V_target = voltages(t)
                 V_eff = V_target + (curr_tot * R_comp)
                 
-                # Store the corrected voltage as the primary voltage for the CV curve
+				if V_target < -0.8
+				        println("t: $(round(t, digits=3)), V_app: $(round(V_target, digits=4)), I: $curr_tot, V_eff: $(round(V_eff, digits=4)), Drop: $(V_target - V_eff)")
+				    end
+                
+				# Store the corrected voltage as the primary voltage for the CV curve
                 push!(result.times, t)
                 push!(result.voltages, V_eff)   
                 push!(result.j_reaction, I_react)
@@ -881,6 +918,12 @@ function plot_conc_time_electrode(result, bulk;
     return fig
 end
 
+# ╔═╡ 239abbd9-928d-4f33-a9a1-517c986d4202
+figscale=0.6
+
+# ╔═╡ 6027ad72-7d72-47c2-9025-f00af8380c7f
+cmax=0.005
+
 # ╔═╡ c68691f1-502a-4aee-b56c-7169e007270d
 function plot_cv_current(result, model;
                          species=nothing,
@@ -975,6 +1018,12 @@ function plot_activity_time_electrode(result, bulk, electrolyte;
     Legend(fig[1, 2], ax; labelsize=10, backgroundcolor=RGBA(1, 1, 1, 0.5))
     return fig
 end
+
+# ╔═╡ 9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
+
+
+# ╔═╡ f1035efd-3e58-4c62-8799-a8750bdf137e
+
 
 # ╔═╡ 25eb8aa3-697e-4538-9472-ceea45fbfbd9
 md"""
@@ -1152,18 +1201,14 @@ Run boundary layer thickness varied cyclic voltammetry $(@bind L_varied_checkbox
 # ╔═╡ 0db921e1-80ab-4d79-9035-df2dc33c0c3c
 function sweep_COMP_single(L_val, pnpdata, grid, model, pnp_bcondition, sawtooth, reaction; f_comp = 1.0, eneutral = true, tunnel = false, bikerman = true, nperiods = 1)
     
-    # Grid area is strictly fixed to 1 mm^2 (1.0 * 10^-6 m^2)
-    Area = 1e-6 
+    Area = 3.14e-6
     celldata = deepcopy(model)
     
-    # Initialize the PNP system for the given grid and cell data
     pnpcell = PNPSystem(grid, celldata; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
     
-    # Calculate the total resistance for the specific L_val and apply 85% compensation
     R_total = calc_R_comp(L_val, celldata; f_comp = f_comp, A = Area)
-    R_comp = f_comp * R_total 
+    R_comp = f_comp * R_total
 
-    # Execute the custom CV sweep with real-time internal compensation
     result = LiquidElectrolytes.cvsweep_COMP(
         pnpcell;
         Area = Area,
@@ -1175,10 +1220,38 @@ function sweep_COMP_single(L_val, pnpdata, grid, model, pnp_bcondition, sawtooth
     return result
 end
 
-# ╔═╡ da609ee8-1c00-4c7c-ac09-d91d9ac868c7
-L_values = [100, 200, 300, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 20000].* μm
+# ╔═╡ d7e28d5f-16ba-4664-ba63-ec85fb29fe87
+begin
+	grid_dict = Dict()
+    X_coords_dict = Dict()
+	
+	L_values = [100, 500, 1000].* μm
+	
+    for L_val in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L_val, hmin, hmax)
+        g = ExtendableGrids.simplexgrid(X)
+        
+        grid_dict[L_val] = g
+        X_coords_dict[L_val] = g[Coordinates][1, :] .+ 1e-12 # offset 포함
+    end
+	grid_dict
+end
 
-# ╔═╡ a83f9e2e-28f8-4ced-a56c-5ce70b26e0ec
+# ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
+if L_varied_checkbox
+#	resL = sweep_over_L_cv(
+#		elydata_Gold,
+#		L_values,
+#		pnp_bcondition,
+#		sawtooth,
+#		reaction; 
+#		nperiods = user_input_cv.nperiods
+#	)
+end
+
+# ╔═╡ 68e2cd9e-e8c0-491a-91c5-b30b16ed3f20
 
 
 # ╔═╡ fbe4aca2-6a47-4457-98bb-588a5cde0ed5
@@ -2031,11 +2104,13 @@ floataside(
 			- ``z_R``: $(Child("zR", NumberField(-2:2; default = -1)))   
 			  ``n``: $(Child("n", NumberField(0:2; default = 2)))
 			
-			- Scan rate ``(V/s)``: $(Child("scanrate", TextField(6; default = "0.05")))  
+			- Scan rate ``(V/s)``: $(Child("scanrate", NumberField(1e-6:1e-6:1e3; default = 0.05)))  
 			- Periods: $(Child("nperiods", NumberField(1:10; default = 1)))
 			- `Double64`: $(Child("double64", CheckBox()))  
 			- `tunnel`: $(Child("tunnel", CheckBox()))
-			- `scanup`: $(Child("scanup", CheckBox()))
+			- `scanup`: $(Child("scanup", CheckBox()))			
+			- ``f_{comp}`` : $(Child("ircomp", NumberField(0.0:0.01:1.0; default = 0.95)))
+			
 			"""
 		end;
 	        label = "Submit"
@@ -2046,7 +2121,7 @@ floataside(
 # ╔═╡ b4aaf070-d4ab-409a-b1e8-f5469b9f398b
 begin 
 	sawtooth = SawTooth(
-        scanrate = parse(Float64, user_input_cv.scanrate),
+        scanrate = user_input_cv.scanrate,
         vmin = user_input_cv.vmin , vmax = user_input_cv.vmax,
 		scanup = user_input_cv.scanup
     )
@@ -2055,6 +2130,39 @@ end
 
 # ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
 sawtooth
+
+# ╔═╡ 585d2e85-dfdf-4885-835d-1bb2ba0b523f
+function simulate(grid, celldata; 
+   Δu_opt = 2.0e-2,
+    damp_initial = 0.5,
+    Δt_min = 1.0e-11,
+    max_round = 3,
+    tol_round = 1.0e-8,
+    verbose = "",
+    handle_exceptions = true,
+		vmin=-0.5ufac"V",
+		vmax=0.1ufac"V",
+				  
+				  
+				  kwargs...)
+    sys = PNPRedoxSystem(grid, celldata)
+	inisol = solve(sys; inival = VoronoiFVM.unknowns(sys, celldata), 				   damp_initial = 0.1, time = 0.0)
+	tsol, cvresult = IRCompProject.cvsweep(
+    sys; inival = inisol, user_input_cv.nperiods, user_input_cv.scanrate,
+	Δu_opt,
+    damp_initial,
+    Δt_min,
+    max_round,
+    tol_round,
+    verbose,
+    handle_exceptions,
+		user_input_cv.vmin,
+		user_input_cv.vmax,
+ 		kwargs...
+		
+)
+	return tsol, cvresult
+end
 
 # ╔═╡ 0a1054c5-cee7-4202-9d32-9eee6ec55265
 user_input_cv.nperiods
@@ -2099,42 +2207,19 @@ floataside(
 	top = 600
 )
 
-# ╔═╡ 2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
+# ╔═╡ 2c061d99-da09-4ccf-a4ec-73a3c9a908fe
 begin
-    Vmax = 2 * V
-
-    L = user_input_model.L * μm
-
-    hmin = 1.0e-6 	* μm
-
-    hmax = 1.0	* μm 
-
-    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
-
-    grid = ExtendableGrids.simplexgrid(X)
-
-	const nv = ones(num_nodes(grid))
-end;
-
-# ╔═╡ d5c6769d-35f9-461a-aae2-00122ccddd63
-gridplot(grid, size = (600, 200))
-
-# ╔═╡ 1520e1df-99a1-4f98-89e7-972cf3f10a12
-function pb_generic(y0, u0, sys, data)
-    y = reshape(y0, sys)
-    u = reshape(u0, sys)
-    y[iQ, 1] = u[iQ, 1] - dot(u[iq, :], nv) # implements Q=\int_\Omega q
-    return
+	#geometry function constant
+	#Γ_we = BP1
+	const Γ_we 		= 1
+	const Γ_bulk 	= 4
+	const L = user_input_model.L * μm
 end
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
 	γ_key = user_input_model.mode 
 	γ_mode = γ_key == "Stefan_γ" ? Stefan_γ! : DGML_γ!
-"""
-	Nγ_key = user_input_model.Nmode
-	Nγ_mode = Nγ_key == "Stefan_γ" ? Stefan_γ! : Nγ_key == "DMGL_γ" ? DGML_γ! : Potassium_γ! 
-	"""
 end;
 
 # ╔═╡ ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
@@ -2612,6 +2697,173 @@ elydata_Gold = ElectrolyteData(;
 							   	actcoeff! = γ_mode,
 							   )
 
+# ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
+celldata_Gold_irc = CellData(; L, ircompensation=:pseudopotentiostat,
+						    #nIon  = 7,
+							z     = getproperty.(bulk, :z),
+						  	D     = getproperty.(bulk, :D),
+	                        cbulk = getproperty.(bulk, :c_bulk),
+							iϕ    = elydata_Gold.iϕ,
+							iO = ico2,
+							C_elec = getproperty.(bulk, :c_bulk)[ico2],
+							iR = iohminus,
+							ircompfactor = user_input_cv.ircomp
+							)
+
+# ╔═╡ de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
+celldata_Gold_odr = CellData(; L, ircompensation=:ohmicdrop,
+						    #nIon  = 7,
+							z     = getproperty.(bulk, :z),
+						  	D     = getproperty.(bulk, :D),
+	                        cbulk= getproperty.(bulk, :c_bulk),
+							iϕ    = elydata_Gold.iϕ,
+							iO = ico2,
+							iR = iohminus,
+							C_elec = getproperty.(bulk, :c_bulk)[ico2],		 
+							ircompfactor = user_input_cv.ircomp
+							)
+
+# ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
+celldata_Gold_unc = CellData(; L, ircompensation=:ohmicdrop,
+						    #nIon  = 7,
+							z     = getproperty.(bulk, :z),
+						  	D     = getproperty.(bulk, :D),
+	                        cbulk= getproperty.(bulk, :c_bulk),
+							iϕ    = elydata_Gold.iϕ,
+							iO = ico2,
+							iR = iohminus,	
+							C_elec = getproperty.(bulk, :c_bulk)[ico2],				
+							ircompfactor = user_input_cv.ircomp
+							)
+
+# ╔═╡ 05ebcce5-6904-451f-bbd6-ea4588ca05e3
+begin
+    #Vmax = 2 * V
+    #L = user_input_model.L * μm
+    #hmin = 1.0e-6 	* μm
+    #hmax = 1.0	* μm 
+    #X = ExtendableGrids.geomspace(0, L, hmin, hmax)
+    #grid = ExtendableGrids.simplexgrid(X)
+
+	grid = makegrid(celldata_Gold_unc)
+	
+end;
+
+# ╔═╡ d5c6769d-35f9-461a-aae2-00122ccddd63
+gridplot(grid, size = (600, 200))
+
+# ╔═╡ 5c5f9b67-3808-4443-94eb-c3bb5d653a55
+tsol_irc, cvresult_irc = simulate(grid, celldata_Gold_irc)
+
+# ╔═╡ 2d421be5-9287-4e8d-9a7e-d63c95d9f370
+md"""
+t/s: $@bind time PlutoUI.Slider(range(tsol_irc.t[begin], tsol_irc.t[end], length = 101), show_value = true)
+"""
+
+# ╔═╡ a43ec777-d41f-4169-897f-a0812aea4436
+tsol_odr, cvresult_odr = simulate(grid, celldata_Gold_odr)
+
+# ╔═╡ d9539ae9-d73f-452d-b6b8-2287268ce204
+plotsol(grid, tsol_irc(time), celldata_Gold_irc)
+
+# ╔═╡ 1d7db684-efc6-4388-907b-69867511f581
+plotsol(grid, tsol_odr(time), celldata_Gold_odr)
+
+# ╔═╡ b6adaa42-39ed-497c-b3d8-55512af1388b
+plotresult(cvresult_irc, tsol_irc, celldata_Gold_irc.mutables.sawtooth.scanrate, grid, celldata_Gold_irc)
+
+# ╔═╡ c035db31-cb1c-4409-a18f-c520e2754c5e
+plotresult(cvresult_odr, tsol_odr, celldata_Gold_odr.mutables.sawtooth.scanrate, grid, celldata_Gold_odr)
+
+# ╔═╡ 089843dc-e9b0-4d43-afb7-d3477af39587
+plottsol(
+    grid, celldata_Gold_irc, tsol_irc; species = celldata_Gold_irc.iO,
+	limits=(0,0.035)
+)
+
+# ╔═╡ cdffb77b-89de-4aba-87b6-21e29bac0ae0
+plottsol(
+    grid, celldata_Gold_odr, tsol_odr; species = celldata_Gold_irc.iO,
+	limits=(0,0.035)
+)
+
+# ╔═╡ 4af2a551-3e68-4184-9d90-52b86d944aa7
+tsol_unc, cvresult_unc = simulate(grid, celldata_Gold_unc)
+
+# ╔═╡ e2194300-5e84-481f-81c0-3e733937ed4b
+plotsol(grid, tsol_unc(time), celldata_Gold_unc)
+
+# ╔═╡ 7bb87bfb-2fac-4b93-868f-885e0dcd72be
+plotresult(cvresult_unc, tsol_unc, celldata_Gold_unc.mutables.sawtooth.scanrate, grid, celldata_Gold_unc)
+
+# ╔═╡ c62b2553-e42f-4002-b206-9af0d8655c3d
+plottsol(
+    grid, celldata_Gold_unc, tsol_unc; species = celldata_Gold_unc.iO,
+	limits=(0,0.035)
+)
+
+# ╔═╡ b65575ce-7c5e-4a70-bb50-3bd8054516aa
+function run(; ircompensation = :pseudopotentiostat)
+    tsols = []
+    cvresults = []
+	grids = []
+	celldatas = []
+    for L in L_values
+		if ircompensation == :pseudopotentiostat
+			celldata = celldata_Gold_irc
+		elseif ircompensation == :none
+			celldata = celldata_Gold_unc
+		else
+			celldata = celldata_Gold_odr
+		end
+			
+        #celldata = CellData(; L, ircompensation, C_elec = model.c_bulk[1])
+        grd = makegrid(celldata)
+        sys = PNPRedoxSystem(grd, celldata)
+        inisol = solve(sys; inival = IRCompProject.unknowns(sys, celldata), damp_initial = 0.01, time = 0.0)
+
+        tsol, cvresult = IRCompProject.cvsweep(
+            sys; inival = inisol, 
+			user_input_cv.nperiods, user_input_cv.scanrate,
+            Δu_opt = 2.0e-2,
+            damp_initial = 1,
+            Δt_min = 1.0e-11,
+            max_round = 3,
+			tol_round = 1.0e-9,
+            handle_exceptions = true
+        )
+        push!(cvresults, cvresult)
+        push!(tsols, tsol)
+		push!(grids,grd)
+		push!(celldatas,celldata)
+    end
+    return cvresults, tsols, grids, celldatas
+end
+
+# ╔═╡ 1efbe0ce-699f-4b6a-ab82-7b12d88e150b
+cvr_irc, tsols_irc, grids_irc, celldatas_irc = run(; ircompensation = :pseudopotentiostat);
+
+# ╔═╡ 8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
+plots_irc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_irc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_irc, celldatas_irc, tsols_irc)];
+
+# ╔═╡ 6d3dc6b1-82ea-448a-af86-ed6001ed5446
+cvr_unc, tsols_unc, grids_unc, celldatas_unc = run(; ircompensation = :none);
+
+# ╔═╡ 924d98c3-9f21-4322-802d-8d883aee28c6
+plots_unc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_unc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_unc, celldatas_unc, tsols_unc)];
+
+# ╔═╡ adfc0c3b-10d0-4f99-8b42-6da9a26de219
+cvr_odr, tsols_odr, grids_odr, celldatas_odr = run(; ircompensation = :ohmicdrop);
+
+# ╔═╡ f34bca99-5847-4253-9c02-b72a0899727d
+plots_odr= [plottsol(grd,celldata,tsol; figscale, species=celldatas_odr[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_odr, celldatas_odr, tsols_odr)];
+
+# ╔═╡ 7e3c2514-94eb-436a-8473-9d9755b24b2e
+plots=hcat(plots_irc,plots_unc, plots_odr)
+
+# ╔═╡ 44300564-d572-4fa1-afb8-d74e7277342d
+PlutoUI.ExperimentalLayout.grid(plots)
+
 # ╔═╡ 12235c3c-18f2-4fc7-95ef-800f71783036
 elydata_toy = elydata_Gold
 
@@ -2629,11 +2881,7 @@ function activity_coefficient!(
     	for ic in cspecies
         	γ[ic] = (1.0 / (1 - sum(u[i] * v[i] for i in 1:nc)))# / (mol/dm^3)))
     	end
-		 #.= 1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))
     elseif γ_mode == DGML_γ!
-		##for ic in cspecies
-		##    @show ic, u[ic]
-		#end	
         # Dreyer et al. approach
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
@@ -2817,20 +3065,20 @@ function pnp_bcondition(
 		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - ϕ_pzc))
 
 	elseif user_input_model.BC_Select == "Robin"
-		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
-
-
+		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+		#boundary_robin!(f, u, bnode, iϕ, BP2, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+		#boundary_robin!(f, u, bnode, iϕ, BP3, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
 	else
 		#continue
-	#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
- 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
- 	#for ic in cspecies 
-		#if ic == ico2 || ic == ico
-       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
-		#else
-		#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
-		#end
-   #end
+		#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
+	 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+	 	#for ic in cspecies 
+			#if ic == ico2 || ic == ico
+	       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
+			#else
+			#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
+			#end
+	   #end
 	end
 		
 		
@@ -2852,44 +3100,183 @@ end
 
 # ╔═╡ d91c32c8-ac55-4f77-93cb-6c5d97bcbbb2
 if L_varied_checkbox
+    @info "Starting COMP CV sweeps for $(length(L_values)) cases..."
     
-    # Define the array of boundary layer thicknesses (100 to 8000 μm)
-    
-    # Dictionary to store the results mapped by their L values
-    resL_COMP = Dict{Float64, Any}()
-    
-    for L_val in L_values
-        @info "Running COMP CV sweep for L = $(L_val * 1e6) μm..."
+    resL_COMP = Dict(L_val => begin
+        @info "Running for L = $(round(L_val/μm)) μm..."
         
-        hmin = 1.0e-4 * μm
-        hmax = 1.0    * μm
-        X    = ExtendableGrids.geomspace(0, L_val, hmin, hmax)
+        X = ExtendableGrids.geomspace(0, L_val, 1e-6*μm, 1.0*μm)
         grid = ExtendableGrids.simplexgrid(X)
-		
-        model = elydata_Gold # Replace with your actual model function
         
-        res = sweep_COMP_single(
-            L_val, elydata_Gold, grid, model, pnp_bcondition, sawtooth, reaction; 
+        sweep_COMP_single(
+            L_val, elydata_Gold, grid, elydata_Gold, 
+            pnp_bcondition, sawtooth, reaction; 
             nperiods = user_input_cv.nperiods
         )
-        
-        # Store the result in the dictionary
-        resL_COMP[L_val] = res
-    end
-    
-    @info "All L-varied sweeps completed successfully with internal iR compensation!"
+    end for L_val in L_values)
+
+    @info "All sweeps completed!"
 end
 
-# ╔═╡ 6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
-if L_varied_checkbox
-	resL = sweep_over_L_cv(
-		elydata_Gold,
-		#L_values,
-		pnp_bcondition,
-		sawtooth,
-		reaction; 
-		nperiods = user_input_cv.nperiods
-	)
+# ╔═╡ ee83fb10-b4a1-4084-a644-0541500fc9cb
+let
+    co2_idx = findfirst(s -> s.name == "CO₂" || s.name == "CO2", bulk)
+    selected_Ls = L_values[1:end]
+    num_panels = length(selected_Ls)
+
+    # 1. Figure Setup
+    fig = Figure(size = (1100, 380 * num_panels))
+    
+    # View limits (Interface focus)
+    max_L_view = 1e-2 
+    x_limits = (1e-12, max_L_view)
+    y_limits = (-6, 0.5) 
+
+	colors = :Pastel1_7
+	
+    for (idx, L_val) in enumerate(selected_Ls)
+        if !haskey(resL_COMP, L_val) continue end
+        
+        res = resL_COMP[L_val]
+        tsol = res.tsol
+        times = res.times
+        nt = length(times)
+        # --- GRID HANDLING ---
+		X_coords = X_coords_dict[L_val]
+
+        # --- Axis Setup ---
+        ax = Axis(fig[idx, 1],
+            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})",
+            xscale = log10,
+            limits = (x_limits, y_limits),
+            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
+            xgridvisible = false, ygridvisible = false
+        )
+
+        # 2. Time-step selection (e.g., 15 lines per panel)
+		num_points = 100 
+        t_indices = round.(Int, range(1, nt, length=num_points))
+        
+        # --- Color setup using your idea ---
+        time_cols = resample_cmap(colors, length(t_indices))
+        
+        local line_obj
+        
+        for (i, ti) in enumerate(t_indices)
+            c_profile = [log10(max(tsol[co2_idx, ix, ti] / (mol / dm^3), 1e-25)) for ix in 1:size(tsol, 2)]
+            
+            line_obj = lines!(ax, X_coords, c_profile; 
+                color = time_cols[i], 
+                linewidth = 2.5
+            )
+        end
+
+        # 3. Add Colorbar to the right [idx, 2]
+		Colorbar(fig[idx, 2], 
+		    limits = ((times[1]), (times[end])), # Use first and last elements
+            colormap = colors,
+            label = "Time [s]",
+            # Ensure ticks is also a range of numbers, not vectors
+            ticks = range(times[1], times[end], length=5) 
+        )
+
+        # Bulk Boundary & Reference
+        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+        hlines!(ax, [log10(max(tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
+                color = :black, linestyle = :dot, alpha = 0.5)
+    end
+
+    rowgap!(fig.layout, 35)
+    colgap!(fig.layout, 25) 
+    fig
+end
+
+# ╔═╡ 65e8592d-a3f8-4f38-9c7e-8085a5c28b73
+let
+    # 1. CO2 Index 확인
+    co2_idx = findfirst(s ->  s.name == "CO₂", bulk)
+    selected_Ls = L_values[1:end]
+    num_panels = length(selected_Ls)
+
+    max_L = 1e-2
+
+    fig = Figure(size = (1100, 380 * num_panels))
+    
+    # --- COLOR RANGE 조절 ---
+    c_min = log10(0.00001)
+    c_max = log10(0.33)
+    color_range = (c_min, c_max)
+
+    for (idx, L_val) in enumerate(selected_Ls)
+        if !haskey(resL_COMP, L_val) continue end
+		num_levels = 4 
+		discrete_cmap = resample_cmap(:Pastel1_7, num_levels)        
+        res = resL_COMP[L_val]
+        tsol = res.tsol
+        times = res.times
+        # Grid Handling: Consistent with each L's specific mesh
+        # --- GRID HANDLING ---
+		X_coords = X_coords_dict[L_val]
+        
+        conc_matrix = [log10(max(tsol[co2_idx, ix, it] / (mol / dm^3), 1e-25)) 
+                       for ix in 1:length(X_coords), it in 1:length(times)]
+
+        # --- Axis Setup ---
+        ax = Axis(fig[idx, 1],
+            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+            ylabel = "Time [s]",
+            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
+            xscale = log10,
+            # 모든 패널의 X축 범위를 max_L로 고정하여 스케일 통일
+            limits = ((1e-10, max_L), (0, 80)),
+            xminorticksvisible = true, xminorticks = IntervalsBetween(9)
+        )
+		time_cols = 
+        # Heatmap
+        hm = heatmap!(ax, X_coords .+ 1e-12, times, conc_matrix; 
+            #limits = ((1e-10, max_L), (nothing, nothing)),
+            colorrange = color_range, 
+            colormap = Reverse(discrete_cmap),
+            interpolate = false
+        )
+
+        # 물리적 경계(Bulk Boundary)를 시각적으로 표시 (선택 사항)
+        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+
+        Colorbar(fig[idx, 2], hm, label = L"\log_{10}(c_{\mathrm{CO_2}})")
+    end
+
+    rowgap!(fig.layout, 35)
+    display(fig)
+end
+
+# ╔═╡ 48bfb18c-d8af-453e-b93a-e0fc5748d293
+begin
+	for L_val in L_values
+	    if haskey(resL_COMP, L_val)
+	        res_data = resL_COMP[L_val]
+	        
+	        num_steps = size(res_data.tsol)
+	        
+	        time_points = res_data.times[1:size(res_data.voltages)]
+	        oh_surface  = [res_data.tsol[iohminus, 1, w] / (mol / dm^3) for w in 1:num_steps]
+	        applied_V   = res_data.voltages[1:num_steps]
+	        df = DataFrame(
+	            Time_s = time_points,
+	            Voltage_V = applied_V,
+	            OH_Surface_M = oh_surface
+	        )
+	        
+	        L_int = Int(L_val / μm)
+	        filename = "concentration_L_$(L_int)um.csv"
+	        
+	        CSV.write(filename, df)
+	        @info "Saved: $filename"
+	    else
+	        @warn "Key L = $(L_val) not found in resL_COMP"
+	    end
+	end
 end
 
 # ╔═╡ 012b426e-3550-4678-a666-eeb4bd32d20e
@@ -2926,51 +3313,6 @@ function pb_flux(y, u, edge, data)
     #(; Γ_we, Γ_bulk, ϕ_we, iϕ, ip, ε) = data
 	return y[model.iϕ] = elydata_NaF.ε * ε_0 * (u[model.iϕ, 1] - u[model.iϕ, 2])
 end
-
-# ╔═╡ 21e0a094-2674-4670-96b0-9659d3bb6c88
-function pb_bc(y, u, bnode, data)
-  #  (; ϕ_we, iϕ, ip) = data
-    boundary_dirichlet!(y, u, bnode, species = model.iϕ, region = Γ_bulk, value = bcvals[2])
-    boundary_dirichlet!(y, u, bnode, species = model.iϕ, region = Γ_we, value = bcvals[1])
-    return
-end
-
-# ╔═╡ 53d6779f-5262-47bc-9f21-a04db2b96866
-pbo_molfrac(ϕ, i) = (model.c_bulk[i] / c̄) * exp(model.z[i] * ϕ * F / (R * T))
-
-# ╔═╡ dc42bfb0-5fd6-4769-b21a-1e81aac41a07
-function pbo_spacechargedensity(ϕ, data)
-	#(; z) = data
-    sumyz = zero(ϕ)
-    for i in 1:length(model.z)
-        sumyz += model.z[i] * pbo_molfrac(ϕ, i)
-    end
-    return F * c̄ * sumyz
-end
-
-# ╔═╡ 866eff08-4ec6-4ba4-b4cc-112a6902c80f
-function pbo_reaction(y, u, node, data)
-    y[model.iϕ] = u[iq] # implements the  `-q` part of of the lhs of the poission equation
-    y[iq] = u[iq] - pbo_spacechargedensity(u[model.iϕ], data) # implements q=F\sum z_i c_i
-    return
-end
-
-# ╔═╡ 3e3c38a5-85bc-4a7a-867b-a706b7bdb2d0
-begin
-    pbo_system = VoronoiFVM.System(
-        grid;
-        reaction = pbo_reaction,
-        flux = pb_flux,
-        bcondition = pb_bc,
-        generic = pb_generic,
-        unknown_storage = :sparse # use sparse storage of the unknown vector
-    )
-
-    enable_species!(pbo_system, species = [model.iϕ, iq], regions = [1])
-    # add the double layer charge as additional species at boundary 1:
-    enable_boundary_species!(pbo_system, iQ, [1])
-    nv .= nodevolumes(pbo_system)
-end;
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
 is_Landstorfer = model != elydata_Gold
@@ -3071,8 +3413,11 @@ end
 
 # ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
 if CV
-	AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+	c_b = AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
 end
+
+# ╔═╡ bf991ac4-8ff2-4a49-9f1e-16ff60b12493
+c_b[1]
 
 # ╔═╡ e6de6e89-5dc6-4fac-a7fc-8346175283a3
 AuCO2RR_plots.plot_cv_current(pnpresult, model; species = ico)
@@ -3102,6 +3447,420 @@ export_L_varied_species_csv_long(
 	species = iohminus,
 	function_name = "L_drop_V"
 )
+
+# ╔═╡ 7d1bd699-e398-484d-abab-37f86884f0ed
+let
+    # 1. Selection of L values
+    selected_Ls = L_values[1:end]
+
+    # Meta-data
+    species_names = getproperty.(bulk, :name)
+    species_colors = getproperty.(bulk, :color)  
+    nspecies = length(model.cspecies)
+
+    num_panels = length(selected_Ls)
+    fig = Figure(size = (800, 450 * num_panels)) 
+    
+    # Global Plotting Limits
+    x_limits = (-1e-4, 6e-3) 
+    y_limits_conc = (-12, 4) 
+    y_limits_curr = (-1, 1) 
+    
+    axes_conc = []
+    
+    for (idx, L_val) in enumerate(selected_Ls)
+        if !haskey(resL_COMP, L_val)
+            @warn "Data for L = $(L_val/μm) μm not found. Skipping."
+            continue
+        end
+
+        res = resL_COMP[L_val]
+        tsol = res.tsol
+
+        # --- FIX: GET ONLY THE INTEGER INDEX ---
+		
+        #target_V = -0.7
+		#ti = findmin(abs.(res.voltages .- target_V))[2]
+		target_time = 60
+		ti = findmin(abs.(res.times .- target_time))[2]
+		
+		
+        # Adding at the end is mandatory to get the Integer index
+        
+        L_label = round(L_val / μm, digits=0)
+        actual_V = round(res.voltages[ti], digits=2)
+		actual_T = round(res.times[ti], digits=2) 
+
+		
+        # --- GRID HANDLING ---
+		
+        # Ensure X_coords is extracted from the solution's system to match nx_current
+		X_coords = X_coords_dict[L_val]
+		nx_current = size(tsol, 2)
+        
+        # --- Axis 1: Concentration (Left Y-Axis) ---
+        ax_conc = Axis(fig[idx, 1],
+            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+            ylabel = L"\log_{10}(c_i)",
+            #xscale = log10,
+            limits = (x_limits, y_limits_conc),
+			title  = "L = $L_label μm | t ≈ $actual_T s (ϕ_eff ≈ $actual_V V)",      
+			xgridvisible = false,
+			ygridvisible = false,
+            spinewidth = 4,
+            ylabelcolor = :blue, yticklabelcolor = :blue
+        )
+        push!(axes_conc, ax_conc)
+        
+        # --- Axis 2: Current Density (Right Y-Axis) ---
+        ax_curr = Axis(fig[idx, 1],
+            ylabel = L"j~(\mathrm{mA/cm^2})",
+            #xscale = log10,
+            yaxisposition = :right,
+            limits = (x_limits, y_limits_curr),
+            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+            ygridvisible = false,
+            spinewidth = 4
+        )
+        hidespines!(ax_curr, :l, :t, :b)
+        hidexdecorations!(ax_curr)
+
+        # 2. Plotting Concentration Profiles
+        for i in 1:nspecies
+            # ti is now a single Integer, indexing will work
+            c_profile = tsol[i, 1:nx_current, ti]
+            y_log = map(c -> log10(max(c, 1e-25)), c_profile)
+            
+            lines!(ax_conc, X_coords[1:nx_current] .+ 1e-12, y_log; 
+                   color = species_colors[i], linewidth = 3.5, label = species_names[i])
+        end
+        
+        # 3. Current Reference
+		phi_profile = tsol[model.iϕ, 1:nx_current, ti]
+        lines!(ax_curr, X_coords[1:nx_current] .+ 1e-12, (phi_profile); 
+               color = :skyblue, linewidth = 5, label = "Potential")
+        
+        hlines!(ax_curr, 0, color = (:black, 0.4), linestyle = :dash, linewidth = 2)
+        
+        #text!(ax_curr, 1e-6, j_val; text = "j = $(round(j_val, digits=2)) mA/cm²", 
+		#	  align = (:left, :bottom), color = :red, fontsize = 20, font = :bold)
+
+        if idx == 1
+            axislegend(ax_conc; position = :lb, labelsize = 16, framevisible = false)
+        end
+    end
+    
+    rowgap!(fig.layout, 20)
+    
+    fig
+end
+
+# ╔═╡ 001209ff-074c-4bf4-bbd5-d8c2e88bfe8f
+let
+    # 1. Selection of L values
+    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+    selected_Ls = L_values[1:end]
+
+    # Meta-data
+    species_names = getproperty.(bulk, :name)
+    species_colors = getproperty.(bulk, :color)  
+    nspecies = length(model.cspecies)
+
+    num_panels = length(selected_Ls)
+    fig = Figure(size = (800, 450 * num_panels)) 
+    
+    # Global Plotting Limits
+    x_limits = (1e-12, 1e-2) 
+    y_limits_conc = (-12, 4) 
+    y_limits_curr = (-1, 1) 
+    
+    axes_conc = []
+    
+    for (idx, L_val) in enumerate(selected_Ls)
+        if !haskey(resL_COMP, L_val)
+            @warn "Data for L = $(L_val/μm) μm not found. Skipping."
+            continue
+        end
+
+        res = resL_COMP[L_val]
+        tsol = res.tsol
+
+        # --- FIX: GET ONLY THE INTEGER INDEX ---
+		
+        #target_V = -0.9
+		#ti = findmin(abs.(res.voltages .- target_V))[2]
+		target_time = 25
+		ti = findmin(abs.(res.times .- target_time))[2]
+		
+		
+        # Adding at the end is mandatory to get the Integer index
+        
+        L_label = round(L_val / μm, digits=0)
+        actual_V = round(res.voltages[ti], digits=2)
+		actual_T = round(res.times[ti], digits=2) 
+		
+        # Ensure X_coords is extracted from the solution's system to match nx_current
+		X_coords = X_coords_dict[L_val]
+        nx_current = size(tsol, 2)
+        
+        # --- Axis 1: Concentration (Left Y-Axis) ---
+        ax_conc = Axis(fig[idx, 1],
+            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+            ylabel = L"\log_{10}(c_i)",
+            xscale = log10,
+            limits = (x_limits, y_limits_conc),
+			title  = "L = $L_label μm | t ≈ $actual_T s (ϕ_eff ≈ $actual_V V)",      
+			xgridvisible = false,
+			ygridvisible = false,
+            spinewidth = 4,
+            ylabelcolor = :blue, yticklabelcolor = :blue
+        )
+        push!(axes_conc, ax_conc)
+        
+        # --- Axis 2: Current Density (Right Y-Axis) ---
+        ax_curr = Axis(fig[idx, 1],
+            ylabel = L"j~(\mathrm{mA/cm^2})",
+            xscale = log10,
+            yaxisposition = :right,
+            limits = (x_limits, y_limits_curr),
+            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+            ygridvisible = false,
+            spinewidth = 4
+        )
+        hidespines!(ax_curr, :l, :t, :b)
+        hidexdecorations!(ax_curr)
+
+        # 2. Plotting Concentration Profiles
+        for i in 1:nspecies
+            # ti is now a single Integer, indexing will work
+            c_profile = tsol[i, 1:nx_current, ti]
+            y_log = map(c -> log10(max(c, 1e-25)), c_profile)
+            
+            lines!(ax_conc, X_coords[1:nx_current] .+ 1e-12, y_log; 
+                   color = species_colors[i], linewidth = 3.5, label = species_names[i])
+        end
+        
+        # 3. Current Reference
+		phi_profile = tsol[model.iϕ, 1:nx_current, ti]
+        lines!(ax_curr, X_coords[1:nx_current] .+ 1e-12, (phi_profile); 
+               color = :skyblue, linewidth = 6, label = "Potential")
+        
+        hlines!(ax_curr, 0, color = (:black, 0.4), linestyle = :dash, linewidth = 2)
+        
+        #text!(ax_curr, 1e-6, j_val; text = "j = $(round(j_val, digits=2)) mA/cm²", 
+		#	  align = (:left, :bottom), color = :red, fontsize = 20, font = :bold)
+
+        if idx == 1
+            axislegend(ax_conc; position = :lb, labelsize = 16, framevisible = false)
+        end
+    end
+    
+    rowgap!(fig.layout, 20)
+    
+    fig
+end
+
+# ╔═╡ d0bcf4f4-00d0-4408-8007-2d04933f7a0b
+let
+    # 1. Selection of L values (Keep the same order)
+    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+    selected_Ls = L_values[1:end]
+    num_panels = length(selected_Ls)
+
+    # 2. Meta-data
+    species_names = getproperty.(bulk, :name)
+    species_colors = getproperty.(bulk, :color)  
+    nspecies = length(model.cspecies)
+    
+    fig = Figure(size = (1000, 380 * num_panels))
+    
+    # --- CRITICAL: FIXED X-AXIS BASED ON THE LARGEST L ---
+    # Setting limits to the largest L in the set (the last one)
+    max_L = selected_Ls[end]
+    x_limits = (1e-12, max_L)
+    
+    y_limits_conc = (-12, 4)
+    y_limits_phi = (-1.5, 0.5)
+
+    panels_data = []
+
+    for (idx, L_val) in enumerate(selected_Ls)
+        res = resL_COMP[L_val]
+        nx_local = size(res.tsol, 2)
+        
+        # Grid Handling: Consistent with each L's specific mesh
+		X_coords = X_coords_dict[L_val]
+
+        # --- Axis Setup ---
+        ax_conc = Axis(fig[idx, 1],
+            ylabel = L"\log_{10}(c_i)", xscale = log10,
+            limits = (x_limits, y_limits_conc), # Fixed X-axis for all
+            xgridvisible = false, ygridvisible = false, spinewidth = 3,
+            ylabelcolor = :blue, yticklabelcolor = :blue
+        )
+        ax_phi = Axis(fig[idx, 1],
+            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10, yaxisposition = :right,
+            limits = (x_limits, y_limits_phi),
+            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+            ygridvisible = false, spinewidth = 3
+        )
+        hidespines!(ax_phi, :l, :t, :b)
+        hidexdecorations!(ax_phi)
+
+        # Observables
+        obs_concs = [Observable(fill(NaN, nx_local)) for _ in 1:nspecies]
+        obs_phi = Observable(fill(NaN, nx_local))
+        
+        # Plotting
+        for i in 1:nspecies
+            lines!(ax_conc, X_coords, obs_concs[i] ; 
+                   color = species_colors[i], linewidth = 3, label = species_names[i])
+        end
+        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5)
+        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
+
+        if idx == 1
+            axislegend(ax_conc; position = :lb, framevisible = false, labelsize = 14)
+        end
+        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+
+        push!(panels_data, (concs=obs_concs, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
+    end
+
+    # 3. GIF Recording (Slower framerate and synced steps)
+    # Finding the shortest common time steps
+    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
+    t_indices = 1:5:min_nt 
+
+    println("Recording GIF... Slower speed set via framerate=8.")
+
+    record(fig, "__L_varied_dynamic_profiles_EN.gif", t_indices; framerate = 8) do ti
+        for (idx, L_val) in enumerate(selected_Ls)
+            res = resL_COMP[L_val]
+            tsol = res.tsol
+            nx_local = size(tsol, 2)
+            
+            # Update Concentrations
+            for i in 1:nspecies
+                c_raw = tsol[i, 1:nx_local, ti] / (mol / dm^3) 
+                panels_data[idx].concs[i][] = map(c -> log10(max(c, 1e-25)), c_raw)
+            end
+            
+            # Update Potential
+            p_raw = tsol[model.iϕ, 1:nx_local, ti]
+            panels_data[idx].phi[] = p_raw
+
+
+			
+            # Update Titles (English)
+            V_now = round(res.voltages[ti-1], digits=2)
+            T_now = round(res.times[ti], digits=2)
+            panels_data[idx].axis.title = "Thickness (L) = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
+        end
+    end
+end
+
+# ╔═╡ 8932c3d0-e103-4173-8d85-aa281ef58f53
+let
+    # 1. Identify CO2 Index
+    # Replace "CO2" with the exact string name used in your 'bulk' species setup
+    co2_idx = findfirst(s -> s.name == "CO₂", bulk)
+    if isnothing(co2_idx)
+        error("CO2 species not found in bulk model. Please check the name.")
+    end
+    co2_color = bulk[co2_idx].color
+    co2_name = bulk[co2_idx].name
+
+    # 2. Selection of L values
+    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+    selected_Ls = L_values[1:end]
+    num_panels = length(selected_Ls)
+
+    fig = Figure(size = (1000, 380 * num_panels))
+    
+    # Fixed X-axis based on the largest L for comparison
+    max_L = selected_Ls[end]
+    x_limits = (1e-12, max_L)
+    
+    # Specific Y-limits for CO2 (Adjust based on your bulk concentration)
+    y_limits_conc = (-8, 2) 
+    y_limits_phi = (-1.5, 0.5)
+
+    panels_data = []
+
+    for (idx, L_val) in enumerate(selected_Ls)
+        res = resL_COMP[L_val]
+        nx_local = size(res.tsol, 2)
+
+		# Grid Handling: Consistent with each L's specific mesh
+        # --- GRID HANDLING ---
+		X_coords = X_coords_dict[L_val]
+
+        # --- Axis Setup ---
+        ax_conc = Axis(fig[idx, 1],
+            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})", xscale = log10,
+            limits = (x_limits, y_limits_conc),
+            xgridvisible = false, ygridvisible = false, spinewidth = 3,
+            ylabelcolor = co2_color, yticklabelcolor = co2_color
+        )
+        ax_phi = Axis(fig[idx, 1],
+            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10,
+			yaxisposition = :right,
+            limits = (x_limits, y_limits_phi),
+            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+            ygridvisible = false, spinewidth = 3
+        )
+        hidespines!(ax_phi, :l, :t, :b)
+        hidexdecorations!(ax_phi)
+
+        # Observables for CO2 and Potential
+        obs_co2 = Observable(fill(NaN, nx_local))
+        obs_phi = Observable(fill(NaN, nx_local))
+        
+        # Plotting
+        # Dash line for initial bulk concentration reference
+        hlines!(ax_conc, [log10(max(res.tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
+                color = co2_color, linestyle = :dot, alpha = 0.5)
+        
+        lines!(ax_conc, X_coords, obs_co2; color = co2_color, linewidth = 4, label = co2_name)
+        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5, label = "Potential")
+        
+        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
+
+        if idx == 1
+            axislegend(ax_conc; position = :lb, framevisible = false)
+        end
+
+        push!(panels_data, (co2=obs_co2, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
+        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+
+    end
+
+    # 3. Slower GIF Recording
+    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
+    t_indices = 1:5:min_nt 
+
+    record(fig, "CO2_Evolution_L_Varied.gif", t_indices; framerate = 8) do ti
+        for (idx, L_val) in enumerate(selected_Ls)
+            res = resL_COMP[L_val]
+            tsol = res.tsol
+            nx_local = size(tsol, 2)
+            
+            # Update CO2 only
+            c_raw = tsol[co2_idx, 1:nx_local, ti] / (mol / dm^3)
+            panels_data[idx].co2[] = map(c -> log10(max(c, 1e-25)), c_raw)
+            
+            # Update Potential
+            p_raw = tsol[model.iϕ, 1:nx_local, ti]
+            panels_data[idx].phi[] = p_raw
+            
+            # English Title
+            V_now = round(res.voltages[ti], digits=2)
+            T_now = round(res.times[ti], digits=2)
+            panels_data[idx].axis.title = "Thickness L = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
+        end
+    end
+end
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
 if IV 
@@ -3549,13 +4308,13 @@ if pressure_varied_checkbox
 	)
 end
 
-# ╔═╡ 2266c928-276f-4cec-8fee-eca23cc0e1fd
-function export_L_varied_COMPENSATED_csv(
-    res_dict;                     # Dictionary of results from the combined sweep loop
-    species_list = [iohminus],    # 💡 단일 화학종 대신 배열(Array) 형태로 받습니다. (추출 시 입력 필요)
+# ╔═╡ 5cb3fb17-6ce9-4230-9a3f-4df9f49293da
+function export_L_varied_COMPENSATED_conc_csv(
+    res_dict;                 
+    species_list = [iohminus],    
     outdir::AbstractString = "../data/output",
     function_name::AbstractString = "L_varied_compensated_total",
-    current_scale = cm^2 / mA,    # Unit conversion for plotting (A/m^2 -> mA/cm^2)
+    current_scale = cm^2 / mA,    
     L_scale = 1e6                 # Unit conversion for L (m -> μm)
 )
     Ls       = Float64[]
@@ -3565,13 +4324,9 @@ function export_L_varied_COMPENSATED_csv(
     for L in sort(collect(keys(res_dict)))
         res = res_dict[L]
         
-        # 1. Voltage: The internal sweep has already applied the 85% iR compensation.
-        V_eff = res.voltages 
-        
-        # 2. Current: 💡 리스트에 있는 모든 화학종(species)의 전류 밀도를 계산하고 합산합니다 (A/m^2)
         I_sim = sum(currents(res, sp) for sp in species_list)
         
-        # 3. Scaling: Convert the total current density to the desired unit for plotting
+        
         Y_scaled = I_sim .* current_scale 
         
         @assert length(V_eff) == length(I_sim)
@@ -3586,7 +4341,6 @@ function export_L_varied_COMPENSATED_csv(
         Voltage = voltages, 
         Value   = values,
     )
-
     # Generate the file path and save the DataFrame as a CSV file
     fname = filename(function_name)
     outfile = joinpath(outdir, fname * ".csv")
@@ -3597,17 +4351,66 @@ function export_L_varied_COMPENSATED_csv(
     return df
 end
 
+# ╔═╡ 2266c928-276f-4cec-8fee-eca23cc0e1fd
+function export_L_varied_COMPENSATED_csv(
+    res_dict;                     
+    species_list,                 # Array of species indices, e.g., [iohminus, ihplus]
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "L_varied_compensated_total",
+    current_scale = cm^2 / mA,    
+    L_scale = 1e6                 
+)
+    # Initialize a DataFrame to hold everything
+    final_df = DataFrame()
+
+    # Sort L values to ensure the CSV is ordered
+    sorted_keys = sort(collect(keys(res_dict)))
+
+    for L in sorted_keys
+        res = res_dict[L]
+        num_steps = length(res.voltages)
+        # 1. Basic Columns
+        current_L_df = DataFrame(
+            L_um = fill(Float64(L) * L_scale, num_steps),
+            Voltage_V = res.voltages,
+            Current_mAcm2 = sum(currents(res, sp) for sp in species_list) .* current_scale,
+			Times_s = res.times
+        )
+		species = getproperty.(bulk, :name)        
+        # 2. Dynamic Concentration Columns
+        # This creates a column for each species provided in species_list
+        for sp in species_list
+            # We use the species index/name as part of the column header
+            col_name = "$(species[sp])_Surface_M" 
+            current_L_df[!, col_name] = [res.tsol[sp, 1, w] / (mol / dm^3) for w in 1:num_steps]
+        end
+
+        # Append this L's data to the master DataFrame
+        append!(final_df, current_L_df)
+    end
+
+    # File Export Logic
+	#function_name = 
+    outfile = joinpath(outdir, filename(function_name) * ".csv")
+    mkpath(dirname(outfile))
+    
+    CSV.write(outfile, final_df)
+
+    @info "Combined Data Exported to: $outfile"
+    return final_df
+end
+
 # ╔═╡ 6035d86f-c7f0-4fd8-b79b-83e405665f59
 if L_varied_checkbox
 	df_L_comp = export_L_varied_COMPENSATED_csv(
-	    resL_COMP; function_name = "L_varied_compensated_timestep_"
+	    resL_COMP; function_name = "L_varied_compensated_timestep_", species_list = model.cspecies
 	)
 end
 
 # ╔═╡ e3cb8c7c-ec7e-4848-8e41-21bcc106d4e1
 if L_varied_checkbox
 	df_L_uncomp = export_L_varied_COMPENSATED_csv(
-	    resL; function_name = "L_varied_uncompensated_"
+	    resL; function_name = "L_varied_uncompensated_", species_list = model.cspecies
 	)
 end
 
@@ -3733,10 +4536,10 @@ floataside(
 # ╔═╡ Cell order:
 # ╠═91ac9e35-71eb-4570-bef7-f63c67ce3881
 # ╠═aecc5e8f-1e78-4965-8f9f-4b52d850f490
+# ╠═5a27d95a-21d2-4e8a-a2fd-895eed32b113
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╠═2176bc34-fc74-4532-912e-e73441b37245
 # ╠═f7d13047-4007-47ac-a3bb-a0b788dcd141
-# ╠═dc90b463-7574-46e1-a7fe-d60074403747
 # ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
@@ -3744,6 +4547,13 @@ floataside(
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═165446a0-da6c-4ecc-a5ba-c96eb300af12
+# ╠═a4b1300f-7e8a-46ab-9efd-dba82315a966
+# ╠═13e0b9ee-ab7a-4e6a-ad61-16f3de7fc135
+# ╠═2d3e4cc2-7823-4fd3-b512-4d042f15cc68
+# ╠═05ebcce5-6904-451f-bbd6-ea4588ca05e3
+# ╠═2c061d99-da09-4ccf-a4ec-73a3c9a908fe
+# ╠═aded19f7-379a-4a69-b86e-cdf0c66168bd
+# ╠═d5c6769d-35f9-461a-aae2-00122ccddd63
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
 # ╟─4b64e168-5fe9-4202-9657-0d4afc237ddc
@@ -3757,19 +4567,21 @@ floataside(
 # ╠═a4928999-96c7-4145-af2d-485ff13d7109
 # ╠═6b5cf93c-0df3-4a18-8786-502361736838
 # ╟─d2c0642d-dfa5-4a76-bd36-ac4a735a3299
-# ╠═06d45088-ab8b-4e5d-931d-b58701bf8464
+# ╟─06d45088-ab8b-4e5d-931d-b58701bf8464
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
 # ╠═960b1e96-da59-44c1-9828-929ece1a2955
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
 # ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
-# ╠═2b9d9bfd-d660-4b4d-8f0b-b6b5bcc0dbfa
-# ╠═d5c6769d-35f9-461a-aae2-00122ccddd63
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
+# ╟─dabb7ca0-ce88-47d6-9315-9192d87c244e
 # ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
+# ╠═2947efab-e67e-41fa-ab91-7e3c1c09df2d
+# ╠═de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
+# ╠═8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
+# ╠═20324e33-26d0-4a95-bda3-5cb5d0fd8975
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
-# ╠═f18dc873-1c9d-46d3-9596-92d28705e894
 # ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
 # ╠═9d814b85-a5b6-42e5-abf4-15500bbdb717
@@ -3777,7 +4589,6 @@ floataside(
 # ╠═0db74a70-af86-492c-affb-9de62ffe4455
 # ╟─4f388fe0-6bc8-4a29-bccc-fa725e62c6a7
 # ╠═5d179c52-43d7-4bcb-a2df-93c5806876fa
-# ╠═161a810d-c05e-42ad-97ab-131059d6784a
 # ╠═5f17b4f7-54d6-4ad0-9886-252854840a80
 # ╠═53b4dc3e-95f0-4eee-ba1c-68c222638acd
 # ╠═dc203e95-7763-4b13-8408-038b933c5c9c
@@ -3786,14 +4597,7 @@ floataside(
 # ╠═69ed6449-5caa-441b-9d8b-e38a9fce1f1f
 # ╠═95e72a20-a621-48a6-947e-0dcf9375facf
 # ╟─5b900250-56a4-4e0b-bbc7-37bd39456312
-# ╠═21e0a094-2674-4670-96b0-9659d3bb6c88
-# ╠═53d6779f-5262-47bc-9f21-a04db2b96866
-# ╠═dc42bfb0-5fd6-4769-b21a-1e81aac41a07
-# ╠═866eff08-4ec6-4ba4-b4cc-112a6902c80f
-# ╠═1520e1df-99a1-4f98-89e7-972cf3f10a12
-# ╠═3e3c38a5-85bc-4a7a-867b-a706b7bdb2d0
 # ╠═83ea329a-5d40-401d-8db1-59618c909f33
-# ╠═291df771-1607-4fe3-8667-3f1614312e8f
 # ╟─dc5b1cfc-9221-45e9-a4f3-69ec4f7ebb70
 # ╠═fb8a9a17-ed12-4f87-9957-06e5e265fcb2
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
@@ -3818,7 +4622,8 @@ floataside(
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
 # ╠═ba20b8f6-dfad-4560-b438-6082197e45d4
 # ╠═a274c939-31a5-4281-84bc-d621c1f9b117
-# ╠═afbb2386-871a-4858-964a-3d2ee212a614
+# ╟─afbb2386-871a-4858-964a-3d2ee212a614
+# ╠═585d2e85-dfdf-4885-835d-1bb2ba0b523f
 # ╟─910b8908-c58f-4e9c-97af-d441073bfb21
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╠═a72db110-37c3-4f4d-b37e-fe613c1ae827
@@ -3829,17 +4634,43 @@ floataside(
 # ╠═7da046bf-d3b1-43a0-bdba-89b4da2f6be3
 # ╠═a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 # ╠═cdf52b70-94ad-45db-b82d-f1268cead86e
+# ╠═5c5f9b67-3808-4443-94eb-c3bb5d653a55
+# ╠═4af2a551-3e68-4184-9d90-52b86d944aa7
+# ╠═a43ec777-d41f-4169-897f-a0812aea4436
+# ╟─2d421be5-9287-4e8d-9a7e-d63c95d9f370
+# ╠═d9539ae9-d73f-452d-b6b8-2287268ce204
+# ╠═e2194300-5e84-481f-81c0-3e733937ed4b
+# ╠═1d7db684-efc6-4388-907b-69867511f581
+# ╠═b6adaa42-39ed-497c-b3d8-55512af1388b
+# ╠═7bb87bfb-2fac-4b93-868f-885e0dcd72be
+# ╠═c035db31-cb1c-4409-a18f-c520e2754c5e
+# ╠═c62b2553-e42f-4002-b206-9af0d8655c3d
+# ╠═089843dc-e9b0-4d43-afb7-d3477af39587
+# ╠═cdffb77b-89de-4aba-87b6-21e29bac0ae0
+# ╠═b65575ce-7c5e-4a70-bb50-3bd8054516aa
+# ╠═1efbe0ce-699f-4b6a-ab82-7b12d88e150b
+# ╠═6d3dc6b1-82ea-448a-af86-ed6001ed5446
+# ╠═adfc0c3b-10d0-4f99-8b42-6da9a26de219
+# ╠═239abbd9-928d-4f33-a9a1-517c986d4202
+# ╠═6027ad72-7d72-47c2-9025-f00af8380c7f
+# ╠═8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
+# ╠═924d98c3-9f21-4322-802d-8d883aee28c6
+# ╠═f34bca99-5847-4253-9c02-b72a0899727d
+# ╠═7e3c2514-94eb-436a-8473-9d9755b24b2e
+# ╠═44300564-d572-4fa1-afb8-d74e7277342d
 # ╠═e6de6e89-5dc6-4fac-a7fc-8346175283a3
 # ╟─df1cd76c-343a-490b-a2f5-3249e3dca1cc
 # ╠═c68691f1-502a-4aee-b56c-7169e007270d
 # ╠═d242507d-d1bb-461f-b4fe-ab3f597d9c40
 # ╠═e6f43f01-15d8-4265-ae15-3673fb3cf7e3
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
+# ╠═9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
 # ╠═2420382d-227a-4063-9450-1f1726df018e
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
 # ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
 # ╠═fd2fe768-020c-4751-bde0-8f75843580f7
 # ╠═9e44f14b-a799-4ca5-8641-a3726780a4fe
+# ╠═f1035efd-3e58-4c62-8799-a8750bdf137e
 # ╟─25eb8aa3-697e-4538-9472-ceea45fbfbd9
 # ╟─11892724-1851-46f2-802d-4da45127b0af
 # ╠═8cd25c0c-e260-4401-af12-a1def38bb7c2
@@ -3868,16 +4699,25 @@ floataside(
 # ╠═c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─a2c7c4da-77cd-493f-8f98-0c86fecf271a
-# ╠═0db921e1-80ab-4d79-9035-df2dc33c0c3c
-# ╠═da609ee8-1c00-4c7c-ac09-d91d9ac868c7
-# ╠═a83f9e2e-28f8-4ced-a56c-5ce70b26e0ec
+# ╟─0db921e1-80ab-4d79-9035-df2dc33c0c3c
+# ╠═d7e28d5f-16ba-4664-ba63-ec85fb29fe87
+# ╠═7d1bd699-e398-484d-abab-37f86884f0ed
+# ╠═001209ff-074c-4bf4-bbd5-d8c2e88bfe8f
+# ╠═d0bcf4f4-00d0-4408-8007-2d04933f7a0b
+# ╠═ee83fb10-b4a1-4084-a644-0541500fc9cb
+# ╠═65e8592d-a3f8-4f38-9c7e-8085a5c28b73
+# ╠═8932c3d0-e103-4173-8d85-aa281ef58f53
 # ╠═d91c32c8-ac55-4f77-93cb-6c5d97bcbbb2
+# ╠═48bfb18c-d8af-453e-b93a-e0fc5748d293
+# ╠═5cb3fb17-6ce9-4230-9a3f-4df9f49293da
 # ╠═6e88e1d8-1f4b-4813-8890-0cfcdc5fb967
 # ╠═6035d86f-c7f0-4fd8-b79b-83e405665f59
 # ╠═e3cb8c7c-ec7e-4848-8e41-21bcc106d4e1
+# ╠═68e2cd9e-e8c0-491a-91c5-b30b16ed3f20
 # ╠═2266c928-276f-4cec-8fee-eca23cc0e1fd
 # ╟─fbe4aca2-6a47-4457-98bb-588a5cde0ed5
 # ╠═b25f2246-0182-4d50-a606-0d81776d414f
+# ╠═bf991ac4-8ff2-4a49-9f1e-16ff60b12493
 # ╠═b1e64332-95a4-46a5-a45d-457c26e3fc67
 # ╠═48029647-f162-459b-8824-fbf652d127f7
 # ╠═4116166d-5f82-4d9b-80fb-c8035b9b6ade

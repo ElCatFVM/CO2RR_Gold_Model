@@ -1,6 +1,7 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -16,6 +17,8 @@ ExtendableGrids = "cfc395e8-590f-11e8-1f13-43a2532b2fa8"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GridVisualize = "5eed8a63-0fb0-45eb-886d-8d5a387d12b8"
 HypertextLiteral = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
+IRCompProject = "2b1bf4bf-ad4f-45ed-b064-04a900baa755"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 LessUnitful = "f29f6376-6e90-4d80-80c9-fb8ec61203d5"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -33,6 +36,6 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"
 
 [compat]
-CairoMakie = "0.12, 0.13, 0.14"
-CatmapInterface = "0.3.1"
-LiquidElectrolytes = "2.3"
+IRCompProject = "0.1.0"
+Interpolations = "0.16.2"
+LinearAlgebra = "1.12.0"

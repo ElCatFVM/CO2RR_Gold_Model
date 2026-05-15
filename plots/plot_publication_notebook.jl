@@ -222,143 +222,484 @@ end
 
 # ╔═╡ b0a4b942-5654-4b22-8849-90bf6c7f957f
 let
-    fig = Figure(size = (1050, 500))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
-        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-        # limits = ((-1.3, 0.9), (-15.5, 1.8)),
-        xlabelsize = 25, ylabelsize = 25,
-        xgridvisible = false,
-        ygridvisible = false,
-        spinewidth = 4.5,
-        xtickwidth = 4.5,
-        ytickwidth = 4.5,
-        xticklabelsize = 25, yticklabelsize = 25,
-        # yscale = log10
+    # 1. Figure & Axis Setup
+    fig = Figure(size = (1100, 700))
+    
+    # Primary Axis: Concentrations (Log Scale)
+    ax1 = Axis(fig[1, 1];
+        yscale = log10, # Log scale is essential for multiple species
+        xlabel = L"L~(\mu\mathrm{m})",
+        ylabel = L"c_{i}^{\mathrm{surface}}~(\mathrm{M})",
+        xlabelsize = 26, ylabelsize = 26,
+        xticklabelsize = 22, yticklabelsize = 22,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 3
     )
 
-    csv_filename = "../data/output/L_varied_compensated_timestep__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.6_cv.csv"
-    df = CSV.read(csv_filename, DataFrame)
-
-    # Extract unique values of Boundary Layer Thickness (L)
-    L_list = sort(unique(df.BoundaryLayerThickness))
-
-    # Generate a colormap to differentiate the lines
-    cols = resample_cmap(:viridis, length(L_list))
-
-    plot_objs = Any[]
-    labels = String[]
+    # Secondary Axis: Current Density (Linear Scale)
+    ax2 = Axis(fig[1, 1];
+        ylabel = L"|j_{\mathrm{peak}}|~(\mathrm{mA\,cm^{-2}})",
+        ylabelsize = 26, yticklabelsize = 22,
+        ygridvisible = false,
+        yaxisposition = :right,
+        yticklabelcolor = :black,
+        ylabelcolor = :black,
+        spinewidth = 3
+    )
     
-    for (j, L_val) in enumerate(L_list)
-        # Filter the dataframe for the current thickness
-        subdf = df[df.BoundaryLayerThickness .== L_val, :]
+    hidespines!(ax2, :l, :t, :b)
+    hidexdecorations!(ax2)
+
+    # 2. Data Loading & Extraction
+    csv_filename = "../data/output/L_varied_uncompensated_.csv"
+    df = CSV.read(csv_filename, DataFrame)
+    L_list = sort(unique(df.L_um))
+    
+    # Identify all concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    
+    # Prepare colormap for species
+    species_colors = resample_cmap(:tab10, length(conc_cols))
+
+    # 3. Processing and Plotting
+    # A. Plot Each Species Concentration
+    for (idx, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
         
-        # Format the legend label (e.g., " 100.0 μm")
-        label = @sprintf(" %.1f μm", L_val)
-        push!(labels, label)
+        # Extract peak/representative value for each L
+        vals = [maximum(df[df.L_um .== l, col]) for l in L_list]
         
-        # Plot Voltage vs. Current Density
-        # Note: (subdf.Value ./ 2) is kept as per your original logic
-        line = lines!(
-            ax,
-            subdf.Voltage,
-            (subdf.Value ./ 2);
-            color = cols[j],
-            linewidth = 3
-        )
-        push!(plot_objs, line)
+        # Apply clamping for log scale safety
+        vals_safe = map(v -> (v > 1e-15 ? v : 1e-15), vals)
+        
+        scatterlines!(ax1, L_list, vals_safe; 
+            color = species_colors[idx], 
+            linewidth = 3, 
+            markersize = 10,
+            label = clean_name)
     end
 
-    # Set axis ticks manually if needed
-    # ax.xticks = -1.5:0.3:1.0
-    # ax.yticks = 1:-3:-15
+    # B. Plot Peak Current (as a reference)
+    peak_currents = [maximum(abs.(df[df.L_um .== l, :Current_mAcm2])) for l in L_list]
     
-    # Configure the legend
-    # Changed title from "Scan Rate" to "Thickness (L)" to match the plotted data
-    leg = Legend(fig[1, 1], plot_objs, labels, "Thickness (L)";
-        framevisible = false,
-        halign = :right, valign = :bottom,
-        labelhalign = :right,
-        labeljustification = :right,
-        titlehalign = :right,
-        width = 220,
-        labelsize = 20, titlesize = 23,
-        padding = (0, 0, 0, 0),
-        tellwidth = false, tellheight = false
-    )
-    translate!(leg.blockscene, -40, 40, 0)
+    # Plot current with a distinct bold black dashed line
+    p_current = scatterlines!(ax2, L_list, peak_currents; 
+        color = (:black, 0.5), 
+        linewidth = 5, 
+        markersize = 14, 
+        marker = :diamond,
+        linestyle = :dash, 
+        label = "Current")
 
+    # 4. Final Styling & Legend
+    # Adjust limits for log scale visibility
+    ylims!(ax1, 1e-12, 10.0) 
+    
+    # Combined Legend
+    Legend(fig[1, 2], ax1, "Species"; 
+        framevisible = true, 
+        labelsize = 18, 
+        titlesize = 20)
+    
+    # Add a separate label for current if needed or include in legend
+    Label(fig[0, 1], "Surface Concentration & Peak Current vs. Boundary Layer Thickness", 
+          fontsize = 24, font = :bold)
+
+    fig
+end
+
+# ╔═╡ fc8096e4-01ca-451a-87cd-7e2e0171a531
+let
+    # 1. Data Loading
+    csv_filename = "../data/output/L_varied_compensated_timestep__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-0.8_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+    L_list = sort(unique(df.L_um))
+    
+    # Identify concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    num_species = length(conc_cols)
+    
+    # 2. Figure Setup
+    fig = Figure(size = (1000, 300 * (1 + num_species)))
+    cols = resample_cmap(:viridis, length(L_list))
+    
+    axes = []
+
+    # --- TOP PANEL: Current Density (Linear Scale) ---
+    ax_current = Axis(fig[1, 1];
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        xticklabelsvisible = false,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+        ylabelsize = 24, yticklabelsize = 20
+    )
+    push!(axes, ax_current)
+
+    # --- DYNAMIC PANELS: Concentrations (Safe Log Scale) ---
+    for (i, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
+        
+        ax_conc = Axis(fig[i + 1, 1];
+            yscale = log10,        
+            ylabel = "[$clean_name] (M)", 
+			limits = ((-1.3, 0.9), (1e-12, 1e4)),
+			xlabel = i == num_species ? L"V_{\mathrm{eff}}~(\mathrm{V})" : "",
+            xticklabelsvisible = i == num_species,
+            xgridvisible = false, ygridvisible = false,
+            spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+            ylabelsize = 22, yticklabelsize = 20
+        )
+        # Set limits to avoid log(0) errors if data is empty or all clamped
+        # limits!(ax_conc, nothing, (1e-12, 1.0)) 
+        push!(axes, ax_conc)
+    end
+
+    # 3. Plotting Loop
+    plot_elements = []
+    for (j, L_val) in enumerate(L_list)
+        subdf = df[df.L_um .== L_val, :]
+        
+        # Plot Current (Linear)
+        ln = lines!(axes[1], subdf.Voltage_V, subdf.Current_mAcm2; 
+            color = cols[j], linewidth = 4)
+        push!(plot_elements, ln)
+
+        # Plot Concentrations (Log with Clamping)
+        for (i, col) in enumerate(conc_cols)
+            y_raw = subdf[!, col]
+            # Apply the clamping method to handle negative/zero values for log scale
+            y_safe = map(c -> (c > 1e-12 ? c : 1e-12), y_raw)
+            
+            lines!(axes[i + 1], subdf.Voltage_V, y_safe; 
+                color = cols[j], linewidth = 4)
+        end
+    end
+
+    # 4. Global Styling
+    linkxaxes!(axes...)
+    
+    Legend(fig[1, 1], plot_elements, ["L = $(round(l)) μm" for l in L_list], "Thickness";
+        framevisible = false, halign = :right, valign = :top,
+        tellwidth = false, tellheight = false, labelsize = 18, titlesize = 20)
+
+    rowgap!(fig.layout, 10) 
+    
+    fig
+end
+
+# ╔═╡ 05eb8a6f-d7b5-4f37-a905-2209323afe2d
+let
+    # 1. Data Loading
+    csv_filename = "../data/output/L_varied_compensated_timestep__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-0.8_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+    L_list = sort(unique(df.L_um))
+    
+    # Identify concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    num_species = length(conc_cols)
+    
+    # 2. Figure Setup
+    fig = Figure(size = (1000, 300 * (1 + num_species)))
+    cols = resample_cmap(:viridis, length(L_list))
+    
+    axes = []
+
+    # --- TOP PANEL: Current Density (Linear Scale) ---
+    ax_current = Axis(fig[1, 1];
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        xticklabelsvisible = false,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+        ylabelsize = 24, yticklabelsize = 20
+    )
+    push!(axes, ax_current)
+
+    # --- DYNAMIC PANELS: Concentrations (Safe Log Scale) ---
+    for (i, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
+        
+        ax_conc = Axis(fig[i + 1, 1];
+            yscale = log10,        
+            ylabel = "[$clean_name] (M)", 
+			limits = ((-1, 81), (1e-12, 1e4)),
+            xlabel = i == num_species ? L"\text{Time}\;(s)" : "",
+            xticklabelsvisible = i == num_species,
+            xgridvisible = false, ygridvisible = false,
+            spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+            ylabelsize = 22, yticklabelsize = 20
+        )
+        # Set limits to avoid log(0) errors if data is empty or all clamped
+        # limits!(ax_conc, nothing, (1e-12, 1.0)) 
+        push!(axes, ax_conc)
+    end
+
+    # 3. Plotting Loop
+    plot_elements = []
+    for (j, L_val) in enumerate(L_list)
+        subdf = df[df.L_um .== L_val, :]
+        
+        # Plot Current (Linear)
+        ln = lines!(axes[1], subdf.Times_s, subdf.Current_mAcm2; 
+            color = cols[j], linewidth = 4)
+        push!(plot_elements, ln)
+
+        # Plot Concentrations (Log with Clamping)
+        for (i, col) in enumerate(conc_cols)
+            y_raw = subdf[!, col]
+            # Apply the clamping method to handle negative/zero values for log scale
+            y_safe = map(c -> (c > 1e-128 ? c : 1e-128), y_raw)
+            
+            lines!(axes[i + 1], subdf.Times_s, y_safe; 
+                color = cols[j], linewidth = 4)
+        end
+    end
+
+    # 4. Global Styling
+    linkxaxes!(axes...)
+    
+    Legend(fig[1, 1], plot_elements, ["L = $(round(l)) μm" for l in L_list], "Thickness";
+        framevisible = false, halign = :right, valign = :top,
+        tellwidth = false, tellheight = false, labelsize = 18, titlesize = 20)
+
+    rowgap!(fig.layout, 10) 
+    
+    fig
+end
+
+# ╔═╡ 5bb2da63-cc7d-4fcf-98b0-d2f4fa1dc1ef
+let
+    # 1. Data Loading
+    csv_filename = "../data/output/L_varied_uncompensated__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-0.8_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+    L_list = sort(unique(df.L_um))
+    
+    # Identify concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    num_species = length(conc_cols)
+    
+    # 2. Figure Setup
+    fig = Figure(size = (1000, 300 * (1 + num_species)))
+    cols = resample_cmap(:viridis, length(L_list))
+    
+    axes = []
+
+    # --- TOP PANEL: Current Density (Linear Scale) ---
+    ax_current = Axis(fig[1, 1];
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        xticklabelsvisible = false,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+        ylabelsize = 24, yticklabelsize = 20
+    )
+    push!(axes, ax_current)
+
+    # --- DYNAMIC PANELS: Concentrations (Safe Log Scale) ---
+    for (i, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
+        
+        ax_conc = Axis(fig[i + 1, 1];
+            yscale = log10,        
+            ylabel = "[$clean_name] (M)", 
+			limits = ((-1.3, 0.9), (1e-12, 1e4)),
+            xlabel = i == num_species ? L"V_{\mathrm{eff}}~(\mathrm{V})" : "",
+            xticklabelsvisible = i == num_species,
+            xgridvisible = false, ygridvisible = false,
+            spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+            ylabelsize = 22, yticklabelsize = 20
+        )
+        # Set limits to avoid log(0) errors if data is empty or all clamped
+        # limits!(ax_conc, nothing, (1e-12, 1.0)) 
+        push!(axes, ax_conc)
+    end
+
+    # 3. Plotting Loop
+    plot_elements = []
+    for (j, L_val) in enumerate(L_list)
+        subdf = df[df.L_um .== L_val, :]
+        
+        # Plot Current (Linear)
+        ln = lines!(axes[1], subdf.Voltage_V, subdf.Current_mAcm2; 
+            color = cols[j], linewidth = 4)
+        push!(plot_elements, ln)
+
+        # Plot Concentrations (Log with Clamping)
+        for (i, col) in enumerate(conc_cols)
+            y_raw = subdf[!, col]
+            # Apply the clamping method to handle negative/zero values for log scale
+            y_safe = map(c -> (c > 1e-128 ? c : 1e-128), y_raw)
+            
+            lines!(axes[i + 1], subdf.Voltage_V, y_safe; 
+                color = cols[j], linewidth = 4)
+        end
+    end
+
+    # 4. Global Styling
+    linkxaxes!(axes...)
+    
+    Legend(fig[1, 1], plot_elements, ["L = $(round(l)) μm" for l in L_list], "Thickness";
+        framevisible = false, halign = :right, valign = :top,
+        tellwidth = false, tellheight = false, labelsize = 18, titlesize = 20)
+
+    rowgap!(fig.layout, 10) 
+    
+    fig
+end
+
+# ╔═╡ 2ddeace6-663d-4fd1-8494-f1c88c19e628
+let
+    # 1. Data Loading
+    csv_filename = "../data/output/L_varied_uncompensated__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-0.8_cv.csv"
+    df = CSV.read(csv_filename, DataFrame)
+    L_list = sort(unique(df.L_um))
+    
+    # Identify concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    num_species = length(conc_cols)
+    
+    # 2. Figure Setup
+    fig = Figure(size = (1000, 300 * (1 + num_species)))
+    cols = resample_cmap(:viridis, length(L_list))
+    
+    axes = []
+
+    # --- TOP PANEL: Current Density (Linear Scale) ---
+    ax_current = Axis(fig[1, 1];
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        xticklabelsvisible = false,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+        ylabelsize = 24, yticklabelsize = 20
+    )
+    push!(axes, ax_current)
+
+    # --- DYNAMIC PANELS: Concentrations (Safe Log Scale) ---
+    for (i, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
+        
+        ax_conc = Axis(fig[i + 1, 1];
+            yscale = log10,        
+            ylabel = "[$clean_name] (M)", 
+			limits = ((-1, 81), (1e-12, 1e4)),
+            xlabel = i == num_species ? L"\text{Time}\;(s)" : "",
+            xticklabelsvisible = i == num_species,
+            xgridvisible = false, ygridvisible = false,
+            spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+            ylabelsize = 22, yticklabelsize = 20, xlabelsize = 28
+        )
+        # Set limits to avoid log(0) errors if data is empty or all clamped
+        # limits!(ax_conc, nothing, (1e-12, 1.0)) 
+        push!(axes, ax_conc)
+    end
+
+    # 3. Plotting Loop
+    plot_elements = []
+    for (j, L_val) in enumerate(L_list)
+        subdf = df[df.L_um .== L_val, :]
+        
+        # Plot Current (Linear)
+        ln = lines!(axes[1], subdf.Times_s, subdf.Current_mAcm2; 
+            color = cols[j], linewidth = 4)
+        push!(plot_elements, ln)
+
+        # Plot Concentrations (Log with Clamping)
+        for (i, col) in enumerate(conc_cols)
+            y_raw = subdf[!, col]
+            # Apply the clamping method to handle negative/zero values for log scale
+            y_safe = map(c -> (c > 1e-128 ? c : 1e-128), y_raw)
+            
+            lines!(axes[i + 1], subdf.Times_s, y_safe; 
+                color = cols[j], linewidth = 4)
+        end
+    end
+
+    # 4. Global Styling
+    linkxaxes!(axes...)
+    
+    Legend(fig[1, 1], plot_elements, ["L = $(round(l)) μm" for l in L_list], "Thickness";
+        framevisible = false, halign = :right, valign = :top,
+        tellwidth = false, tellheight = false, labelsize = 18, titlesize = 20)
+
+    rowgap!(fig.layout, 10) 
+    
     fig
 end
 
 # ╔═╡ caa05490-0c7d-44ec-9be8-73f7a4473d8a
 let
-    fig = Figure(size = (1050, 500))
-    ax = Axis(fig[1, 1];
-        xlabel = L"\phi~(\mathrm{V~vs~SHE})",
-        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
-        # limits = ((-1.3, 0.9), (-15.5, 1.8)),
-        xlabelsize = 25, ylabelsize = 25,
-        xgridvisible = false,
-        ygridvisible = false,
-        spinewidth = 4.5,
-        xtickwidth = 4.5,
-        ytickwidth = 4.5,
-        xticklabelsize = 25, yticklabelsize = 25,
-        # yscale = log10
-    )
-
-    csv_filename = "../data/output/L_varied_uncompensated__σ_80.0_Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1_sweep_range_-1.2-1.6_cv.csv"
+    # 1. Data Loading
+    csv_filename = "../data/output/L_varied_uncompensated_.csv"
     df = CSV.read(csv_filename, DataFrame)
-
-    # Extract unique values of Boundary Layer Thickness (L)
-    L_list = sort(unique(df.BoundaryLayerThickness))
-
-    # Generate a colormap to differentiate the lines
-    cols = resample_cmap(:viridis, length(L_list))
-
-    plot_objs = Any[]
-    labels = String[]
+    L_list = sort(unique(df.L_um))
     
-    for (j, L_val) in enumerate(L_list)
-        # Filter the dataframe for the current thickness
-        subdf = df[df.BoundaryLayerThickness .== L_val, :]
+    # Identify concentration columns
+    conc_cols = filter(name -> occursin("_Surface_M", String(name)), names(df))
+    num_species = length(conc_cols)
+    
+    # 2. Figure Setup
+    fig = Figure(size = (1000, 300 * (1 + num_species)))
+    cols = resample_cmap(:viridis, length(L_list))
+    
+    axes = []
+
+    # --- TOP PANEL: Current Density (Linear Scale) ---
+    ax_current = Axis(fig[1, 1];
+        ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+        xticklabelsvisible = false,
+        xgridvisible = false, ygridvisible = false,
+        spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+        ylabelsize = 24, yticklabelsize = 20
+    )
+    push!(axes, ax_current)
+
+    # --- DYNAMIC PANELS: Concentrations (Safe Log Scale) ---
+    for (i, col) in enumerate(conc_cols)
+        clean_name = replace(String(col), "_Surface_M" => "")
         
-        # Format the legend label (e.g., " 100.0 μm")
-        label = @sprintf(" %.1f μm", L_val)
-        push!(labels, label)
-        
-        # Plot Voltage vs. Current Density
-        # Note: (subdf.Value ./ 2) is kept as per your original logic
-        line = lines!(
-            ax,
-            subdf.Voltage,
-            (subdf.Value ./ 2);
-            color = cols[j],
-            linewidth = 3.7
+        ax_conc = Axis(fig[i + 1, 1];
+            yscale = log10,        
+            ylabel = "[$clean_name] (M)", 
+			limits = ((-1, 81), (1e-12, 1e4)),
+            xlabel = i == num_species ? L"V_{\mathrm{eff}}~(\mathrm{V})" : "",
+            xticklabelsvisible = i == num_species,
+            xgridvisible = false, ygridvisible = false,
+            spinewidth = 4, xtickwidth = 4, ytickwidth = 4,
+            ylabelsize = 22, yticklabelsize = 20
         )
-        push!(plot_objs, line)
+        # Set limits to avoid log(0) errors if data is empty or all clamped
+        # limits!(ax_conc, nothing, (1e-12, 1.0)) 
+        push!(axes, ax_conc)
     end
 
-    # Set axis ticks manually if needed
-    # ax.xticks = -1.5:0.3:1.0
-    # ax.yticks = 1:-3:-15
-    
-    # Configure the legend
-    # Changed title from "Scan Rate" to "Thickness (L)" to match the plotted data
-    leg = Legend(fig[1, 1], plot_objs, labels, "Thickness (L)";
-        framevisible = false,
-        halign = :right, valign = :bottom,
-        labelhalign = :right,
-        labeljustification = :right,
-        titlehalign = :right,
-        width = 220,
-        labelsize = 20, titlesize = 23,
-        padding = (0, 0, 0, 0),
-        tellwidth = false, tellheight = false
-    )
-    translate!(leg.blockscene, -40, 40, 0)
+    # 3. Plotting Loop
+    plot_elements = []
+    for (j, L_val) in enumerate(L_list)
+        subdf = df[df.L_um .== L_val, :]
+        
+        # Plot Current (Linear)
+        ln = lines!(axes[1], subdf.Times_s, subdf.Current_mAcm2; 
+            color = cols[j], linewidth = 4)
+        push!(plot_elements, ln)
 
+        # Plot Concentrations (Log with Clamping)
+        for (i, col) in enumerate(conc_cols)
+            y_raw = subdf[!, col]
+            # Apply the clamping method to handle negative/zero values for log scale
+            y_safe = map(c -> (c > 1e-128 ? c : 1e-128), y_raw)
+            
+            lines!(axes[i + 1], subdf.Times_s, y_safe; 
+                color = cols[j], linewidth = 4)
+        end
+    end
+
+    # 4. Global Styling
+    linkxaxes!(axes...)
+    
+    Legend(fig[1, 1], plot_elements, ["L = $(round(l)) μm" for l in L_list], "Thickness";
+        framevisible = false, halign = :right, valign = :top,
+        tellwidth = false, tellheight = false, labelsize = 18, titlesize = 20)
+
+    rowgap!(fig.layout, 10) 
+    
     fig
 end
 
@@ -1783,7 +2124,11 @@ end
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═b3f44506-52eb-491c-bc44-76c9c49a43cd
 # ╟─40b4e182-7aa2-4518-842a-e70dd9dced0d
-# ╟─b0a4b942-5654-4b22-8849-90bf6c7f957f
+# ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
+# ╠═fc8096e4-01ca-451a-87cd-7e2e0171a531
+# ╠═05eb8a6f-d7b5-4f37-a905-2209323afe2d
+# ╠═5bb2da63-cc7d-4fcf-98b0-d2f4fa1dc1ef
+# ╠═2ddeace6-663d-4fd1-8494-f1c88c19e628
 # ╠═caa05490-0c7d-44ec-9be8-73f7a4473d8a
 # ╠═2b10e19b-c099-4e4e-9cc1-5be1255d03bd
 # ╟─4a68d318-ab6f-45b3-ad63-33d4a77c534d
