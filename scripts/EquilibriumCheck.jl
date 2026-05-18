@@ -754,98 +754,6 @@ end
     end
 end
 
-# ╔═╡ 910b8908-c58f-4e9c-97af-d441073bfb21
-@eval LiquidElectrolytes begin
-	
-function cvsweep_bl(
-        esys::AbstractElectrochemicalSystem;
-        cdata = celldata(esys),
-        voltages = SawTooth(),
-        nperiods = 1,
-        store_solutions = false,
-        solver_kwargs...
-    )
-    update_derived!(cdata)
-    sys = esys.vfvmsys
-    F = ph"N_A" * ph"e"
-    factory = VoronoiFVM.TestFunctionFactory(sys)
-    tf_we = testfunction(factory, [bulk_electrode(cdata)], [working_electrode(cdata)])
-    tf_bulk = testfunction(factory, [working_electrode(cdata)], [bulk_electrode(cdata)])
-
-    working_electrode_voltage!(cdata, voltages(0))
-    control = SolverControl(;
-        verbose = "",
-        handle_exceptions = true,
-        damp_initial = 1,
-        Δu_opt = 0.05,
-        Δt_min = 1.0e-4 * period(voltages),
-        Δt_max = 1.0e-2 * period(voltages),
-        Δt = 1.0e-3 * period(voltages),
-        Δt_grow = 1.2,
-        unorm = u -> wnorm(u, norm_weights(cdata), Inf),
-        rnorm = u -> wnorm(u, norm_weights(cdata), 1),
-        solver_kwargs...
-    )
-
-    times = [i * period(voltages) for i in 0:nperiods]
-    @info "Solving for $(voltages(0))V..."
-    inival = solve(sys; inival = unknowns(esys), control = deepcopy(control), damp_initial = 0.1)
-
-    result = CVSweepResult()
-	sigma_arg = Float64[]
-    allprogress = times[end] - times[begin]
-    tprogress = 0
-
-    @withprogress begin
-        function pre(sol, t)
-            working_electrode_voltage!(cdata, voltages(t))
-        end
-
-        function post(sol, oldsol, t, Δt)
-            I = -VoronoiFVM.integrate(sys, sys.physics.breaction, sol; boundary = true)
-            I_react = I[:, working_electrode(cdata)]
-            I_we = -VoronoiFVM.integrate(sys, tf_we, sol, oldsol, Δt)
-            I_bulk = -VoronoiFVM.integrate(sys, tf_bulk, sol, oldsol, Δt)
-
-            push!(result.times, t)
-            push!(result.voltages, voltages(t))
-            push!(result.j_reaction, I_react)
-            push!(result.j_we, I_we)
-            push!(result.j_bulk, I_bulk)
-			for i in cdata.cspecies
-	            Dref = cdata.D[i]  
-	            sigma = sqrt(Dref * max(t, 0.0))
-	            push!(sigma_arg, sigma)
-			end
-            tprogress += abs(Δt)
-            @logprogress tprogress / allprogress
-        end
-
-        function delta(sys, u, v, t, Δt)
-            n = wnorm(u - v, norm_weights(cdata), Inf)
-        end
-
-        tsol = solve(
-            sys;
-            inival,
-            times,
-            control,
-            pre,
-            post,
-            delta,
-            store_all = store_solutions
-        )
-
-        if store_solutions
-            result.tsol = tsol
-        end
-    end
-
-    return result, sigma_arg
-end
-	
-end
-
 # ╔═╡ ef7212fc-a3d0-4784-b901-219204b79dc0
 md"""
 #### General CV
@@ -917,6 +825,24 @@ function plot_conc_time_electrode(result, bulk;
     
     return fig
 end
+
+# ╔═╡ c62b2553-e42f-4002-b206-9af0d8655c3d
+#plottsol(
+#    grid, celldata_Gold_unc, tsol_unc; species = celldata_Gold_unc.iO,
+#	limits=(0,0.035)
+#)
+
+# ╔═╡ 089843dc-e9b0-4d43-afb7-d3477af39587
+#plottsol(
+#    grid, celldata_Gold_irc, tsol_irc; species = celldata_Gold_irc.iO,#
+#	limits=(0,0.035)
+#)
+
+# ╔═╡ cdffb77b-89de-4aba-87b6-21e29bac0ae0
+#plottsol(
+#    grid, celldata_Gold_odr, tsol_odr; species = celldata_Gold_irc.iO,
+#	limits=(0,0.035)
+#)
 
 # ╔═╡ 239abbd9-928d-4f33-a9a1-517c986d4202
 figscale=0.6
@@ -1752,17 +1678,6 @@ solver_control = (; max_round 	= 4,
               		reltol 		= 1.0e-8,
               		tol_mono 	= 1.0e-10)
 
-# ╔═╡ 541c5ad3-dede-408d-a92a-285f26357c56
-#=╠═╡
-cell_e = PNPSystem(
-    grid,
-    celldata;
-    bcondition = pnp_bcondition,
-    reaction = reaction,
-    add_sigma = true,
-)
-  ╠═╡ =#
-
 # ╔═╡ 57db41d1-57c0-4eee-ba35-6f9b7e1e8263
 md"""
 ##### **Run general polarization curve** $(@bind IV PlutoUI.CheckBox())
@@ -2131,38 +2046,8 @@ end
 # ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
 sawtooth
 
-# ╔═╡ 585d2e85-dfdf-4885-835d-1bb2ba0b523f
-function simulate(grid, celldata; 
-   Δu_opt = 2.0e-2,
-    damp_initial = 0.5,
-    Δt_min = 1.0e-11,
-    max_round = 3,
-    tol_round = 1.0e-8,
-    verbose = "",
-    handle_exceptions = true,
-		vmin=-0.5ufac"V",
-		vmax=0.1ufac"V",
-				  
-				  
-				  kwargs...)
-    sys = PNPRedoxSystem(grid, celldata)
-	inisol = solve(sys; inival = VoronoiFVM.unknowns(sys, celldata), 				   damp_initial = 0.1, time = 0.0)
-	tsol, cvresult = IRCompProject.cvsweep(
-    sys; inival = inisol, user_input_cv.nperiods, user_input_cv.scanrate,
-	Δu_opt,
-    damp_initial,
-    Δt_min,
-    max_round,
-    tol_round,
-    verbose,
-    handle_exceptions,
-		user_input_cv.vmin,
-		user_input_cv.vmax,
- 		kwargs...
-		
-)
-	return tsol, cvresult
-end
+# ╔═╡ 72b30fd2-d5d2-4a23-98e1-a5019841e839
+user_input_cv
 
 # ╔═╡ 0a1054c5-cee7-4202-9d32-9eee6ec55265
 user_input_cv.nperiods
@@ -2215,6 +2100,107 @@ begin
 	const Γ_bulk 	= 4
 	const L = user_input_model.L * μm
 end
+
+# ╔═╡ 41158868-8680-466b-a94b-9ffcd2d0ad8e
+function cvsweep(
+        sys, celldata;
+        inival = 0,
+        scanrate = 1ufac"V / s",
+        vmin = -1.5ufac"V",
+        vmax = 0.5ufac"V",
+        nperiods = 1,
+        Δt_min = 1.0e-11,
+        Δu_opt = 2.0e-2,
+        damp_initial = 0.5,
+        kwargs...
+    )
+    sawtooth = SawTooth(; scanrate, vmin, vmax)
+    times = [0, 2 * (vmax - vmin)] * nperiods / scanrate
+    celldata.mutables.sawtooth = sawtooth
+    grid = sys.vfvmsys.grid
+    X = grid[XCoordinates]
+
+    (; BP1, BP2, BP3, BP4, ε, ε0, iϕ, mutables) = celldata
+    
+    local_iDL = mutables.iDL
+    if local_iDL == 0
+        bfaceregions = grid[BFaceRegions]
+        bfacenodes = grid[BFaceNodes]
+        for ibf in 1:length(bfaceregions)
+            if bfaceregions[ibf] == BP2  # Diffuse Layer 시작 경계 플래그 대조
+                local_iDL = bfacenodes[1, ibf]
+                break
+            end
+        end
+    end
+    if local_iDL == 0
+        local_iDL = 2
+    end
+
+    tff = TestFunctionFactory(sys.vfvmsys)
+    tf = testfunction(tff, [BP1, BP2, BP4], [BP3])
+
+    cvresult = CVResult()
+
+    function pre_callback(sol, t)
+        sys.vfvmsys.physics.data.ϕ_we = sawtooth(t)
+    end
+
+    function j_F(sol, t, celldata)
+        (; F) = celldata
+        I_boundary = VoronoiFVM.integrate(sys.vfvmsys, sys.vfvmsys.physics.breaction, sol; boundary = true)
+        net_co_flux = I_boundary[ico, Γ_we]
+        j_faradaic = -2 * F * net_co_flux
+        return j_faradaic
+    end
+	
+	function calc_local_surface_charge(sol_matrix, t_val)
+        v_we = sawtooth(t_val)
+        v_surface = sol_matrix[iϕ, 1] 
+        return C_gap * (v_we - ϕ_pzc - v_surface)
+    end
+	
+    function post(sol, oldsol, t, Δt)
+
+
+		sigma_current = calc_local_surface_charge(sol, t)
+        sigma_old     = calc_local_surface_charge(oldsol, t - Δt)
+        j_C  		  = (sigma_current - sigma_old) / Δt
+
+		
+        push!(cvresult.i_F, j_F(sol, t, celldata))
+        push!(cvresult.i_C, j_C)
+        push!(cvresult.simtimes, t)
+        push!(cvresult.sawtooth, sawtooth(t))
+        push!(cvresult.volts, sol[iϕ, 1])
+        push!(cvresult.dlvolts, sol[iϕ, 1] - sol[iϕ, local_iDL])
+        push!(cvresult.Ωdrop, sol[iϕ, end] - sol[iϕ, local_iDL])
+        return
+    end
+
+    function delta(sys_fvm, u, uold, t, Δt)
+        return norm(u[iϕ, :] - uold[iϕ, :], Inf)
+    end
+
+    tsol = VoronoiFVM.solve(
+        sys.vfvmsys;
+        inival = inival,
+        times = times,
+        pre = pre_callback,  
+        post = post,
+        delta = delta,
+        Δt_min = Δt_min,                        
+        Δt = 1.0e-4 / scanrate,                 
+        Δt_max = 5.0e-2 / scanrate,             
+        damp_initial = damp_initial,            
+        damp_growth = 1.1,                    
+        kwargs...
+    )
+
+    cvresult.ceflow = VoronoiFVM.integrate(sys.vfvmsys, tf, tsol)
+
+    return tsol, cvresult
+end;
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
@@ -2699,40 +2685,51 @@ elydata_Gold = ElectrolyteData(;
 
 # ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
 celldata_Gold_irc = CellData(; L, ircompensation=:pseudopotentiostat,
-						    #nIon  = 7,
+                            # = size(bulk)[1],
+                        	nIon = size(bulk)[1],
+							na    = na,
 							z     = getproperty.(bulk, :z),
 						  	D     = getproperty.(bulk, :D),
 	                        cbulk = getproperty.(bulk, :c_bulk),
+ 	                        c_bulk = getproperty.(bulk, :c_bulk),
+							#k0 = 1.0e13
 							iϕ    = elydata_Gold.iϕ,
 							iO = ico2,
-							C_elec = getproperty.(bulk, :c_bulk)[ico2],
-							iR = iohminus,
+							iR = ico,
+							C_O = getproperty.(bulk, :c_bulk)[ico2],
+							C_elec = 1,
 							ircompfactor = user_input_cv.ircomp
 							)
 
 # ╔═╡ de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
 celldata_Gold_odr = CellData(; L, ircompensation=:ohmicdrop,
-						    #nIon  = 7,
+                        	nIon = size(bulk)[1],
+							na    = na,
 							z     = getproperty.(bulk, :z),
 						  	D     = getproperty.(bulk, :D),
 	                        cbulk= getproperty.(bulk, :c_bulk),
+ 	                        c_bulk = getproperty.(bulk, :c_bulk),
 							iϕ    = elydata_Gold.iϕ,
 							iO = ico2,
-							iR = iohminus,
-							C_elec = getproperty.(bulk, :c_bulk)[ico2],		 
+							iR = ico,
+							C_O = getproperty.(bulk, :c_bulk)[ico2],
+							C_elec = 1,	 
 							ircompfactor = user_input_cv.ircomp
 							)
 
 # ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
 celldata_Gold_unc = CellData(; L, ircompensation=:ohmicdrop,
-						    #nIon  = 7,
+                        	nIon = size(bulk)[1],
+							na    = na,
 							z     = getproperty.(bulk, :z),
 						  	D     = getproperty.(bulk, :D),
 	                        cbulk= getproperty.(bulk, :c_bulk),
+ 	                        c_bulk = getproperty.(bulk, :c_bulk),
 							iϕ    = elydata_Gold.iϕ,
 							iO = ico2,
-							iR = iohminus,	
-							C_elec = getproperty.(bulk, :c_bulk)[ico2],				
+							iR = ico,	
+							C_O = getproperty.(bulk, :c_bulk)[ico2],
+							C_elec = 1,			
 							ircompfactor = user_input_cv.ircomp
 							)
 
@@ -2751,118 +2748,6 @@ end;
 
 # ╔═╡ d5c6769d-35f9-461a-aae2-00122ccddd63
 gridplot(grid, size = (600, 200))
-
-# ╔═╡ 5c5f9b67-3808-4443-94eb-c3bb5d653a55
-tsol_irc, cvresult_irc = simulate(grid, celldata_Gold_irc)
-
-# ╔═╡ 2d421be5-9287-4e8d-9a7e-d63c95d9f370
-md"""
-t/s: $@bind time PlutoUI.Slider(range(tsol_irc.t[begin], tsol_irc.t[end], length = 101), show_value = true)
-"""
-
-# ╔═╡ a43ec777-d41f-4169-897f-a0812aea4436
-tsol_odr, cvresult_odr = simulate(grid, celldata_Gold_odr)
-
-# ╔═╡ d9539ae9-d73f-452d-b6b8-2287268ce204
-plotsol(grid, tsol_irc(time), celldata_Gold_irc)
-
-# ╔═╡ 1d7db684-efc6-4388-907b-69867511f581
-plotsol(grid, tsol_odr(time), celldata_Gold_odr)
-
-# ╔═╡ b6adaa42-39ed-497c-b3d8-55512af1388b
-plotresult(cvresult_irc, tsol_irc, celldata_Gold_irc.mutables.sawtooth.scanrate, grid, celldata_Gold_irc)
-
-# ╔═╡ c035db31-cb1c-4409-a18f-c520e2754c5e
-plotresult(cvresult_odr, tsol_odr, celldata_Gold_odr.mutables.sawtooth.scanrate, grid, celldata_Gold_odr)
-
-# ╔═╡ 089843dc-e9b0-4d43-afb7-d3477af39587
-plottsol(
-    grid, celldata_Gold_irc, tsol_irc; species = celldata_Gold_irc.iO,
-	limits=(0,0.035)
-)
-
-# ╔═╡ cdffb77b-89de-4aba-87b6-21e29bac0ae0
-plottsol(
-    grid, celldata_Gold_odr, tsol_odr; species = celldata_Gold_irc.iO,
-	limits=(0,0.035)
-)
-
-# ╔═╡ 4af2a551-3e68-4184-9d90-52b86d944aa7
-tsol_unc, cvresult_unc = simulate(grid, celldata_Gold_unc)
-
-# ╔═╡ e2194300-5e84-481f-81c0-3e733937ed4b
-plotsol(grid, tsol_unc(time), celldata_Gold_unc)
-
-# ╔═╡ 7bb87bfb-2fac-4b93-868f-885e0dcd72be
-plotresult(cvresult_unc, tsol_unc, celldata_Gold_unc.mutables.sawtooth.scanrate, grid, celldata_Gold_unc)
-
-# ╔═╡ c62b2553-e42f-4002-b206-9af0d8655c3d
-plottsol(
-    grid, celldata_Gold_unc, tsol_unc; species = celldata_Gold_unc.iO,
-	limits=(0,0.035)
-)
-
-# ╔═╡ b65575ce-7c5e-4a70-bb50-3bd8054516aa
-function run(; ircompensation = :pseudopotentiostat)
-    tsols = []
-    cvresults = []
-	grids = []
-	celldatas = []
-    for L in L_values
-		if ircompensation == :pseudopotentiostat
-			celldata = celldata_Gold_irc
-		elseif ircompensation == :none
-			celldata = celldata_Gold_unc
-		else
-			celldata = celldata_Gold_odr
-		end
-			
-        #celldata = CellData(; L, ircompensation, C_elec = model.c_bulk[1])
-        grd = makegrid(celldata)
-        sys = PNPRedoxSystem(grd, celldata)
-        inisol = solve(sys; inival = IRCompProject.unknowns(sys, celldata), damp_initial = 0.01, time = 0.0)
-
-        tsol, cvresult = IRCompProject.cvsweep(
-            sys; inival = inisol, 
-			user_input_cv.nperiods, user_input_cv.scanrate,
-            Δu_opt = 2.0e-2,
-            damp_initial = 1,
-            Δt_min = 1.0e-11,
-            max_round = 3,
-			tol_round = 1.0e-9,
-            handle_exceptions = true
-        )
-        push!(cvresults, cvresult)
-        push!(tsols, tsol)
-		push!(grids,grd)
-		push!(celldatas,celldata)
-    end
-    return cvresults, tsols, grids, celldatas
-end
-
-# ╔═╡ 1efbe0ce-699f-4b6a-ab82-7b12d88e150b
-cvr_irc, tsols_irc, grids_irc, celldatas_irc = run(; ircompensation = :pseudopotentiostat);
-
-# ╔═╡ 8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
-plots_irc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_irc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_irc, celldatas_irc, tsols_irc)];
-
-# ╔═╡ 6d3dc6b1-82ea-448a-af86-ed6001ed5446
-cvr_unc, tsols_unc, grids_unc, celldatas_unc = run(; ircompensation = :none);
-
-# ╔═╡ 924d98c3-9f21-4322-802d-8d883aee28c6
-plots_unc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_unc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_unc, celldatas_unc, tsols_unc)];
-
-# ╔═╡ adfc0c3b-10d0-4f99-8b42-6da9a26de219
-cvr_odr, tsols_odr, grids_odr, celldatas_odr = run(; ircompensation = :ohmicdrop);
-
-# ╔═╡ f34bca99-5847-4253-9c02-b72a0899727d
-plots_odr= [plottsol(grd,celldata,tsol; figscale, species=celldatas_odr[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_odr, celldatas_odr, tsols_odr)];
-
-# ╔═╡ 7e3c2514-94eb-436a-8473-9d9755b24b2e
-plots=hcat(plots_irc,plots_unc, plots_odr)
-
-# ╔═╡ 44300564-d572-4fa1-afb8-d74e7277342d
-PlutoUI.ExperimentalLayout.grid(plots)
 
 # ╔═╡ 12235c3c-18f2-4fc7-95ef-800f71783036
 elydata_toy = elydata_Gold
@@ -2886,7 +2771,7 @@ function activity_coefficient!(
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
         for ic in cspecies
-            γ[ic] = rexp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc)) #* (1 /barc)
+            γ[ic] = exp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc)) #* (1 /barc)
 		end
 
     else
@@ -2961,15 +2846,11 @@ begin
 		γ = get_tmp(γ_cache, u[ico2])
 		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
 		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
-		#ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
 		σ 			= surface_charge(u, data, user_input_model.BC_Select)
-		local_pH 	= -log10(u[ihplus] * γ[ihplus] / (mol/dm^3))
+		local_pH 	= -log10(abs.(u[ihplus] * γ[ihplus] / (mol/dm^3)))
 
 	
-		#for (p, default_value) in odesys.defaults
-		#	ps[paramsidx[p]] = default_value
-		#	println(default_value)
-		#end
+
 
 		ps = get_tmp(ps_cache, u[iϕ])
 		ps[paramsidx[Symbolics.rename(odesys.σ, :σ)]] = σ
@@ -2980,18 +2861,7 @@ begin
 		ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH 
 		ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co 
 		ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO2_g, :ECO2_g)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO2_t, :ECO2_t)]] = 0.65*e
-		#ps[paramsidx[Symbolics.rename(odesys.ECOOHΔH2OΔele_t, :ECOOHΔH2OΔele_t)]] = 0.95*e
-		#ps[paramsidx[Symbolics.rename(odesys.E_t, :E_t)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.Eele_g, :Eele_g)]] = 0.0 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO_g, :ECO_g)]] = 0.270185*e 
-		#ps[paramsidx[Symbolics.rename(odesys.ECO_t, :ECO_t)]] = -0.02145*e 
-		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_t, :ECOOH_t)]] = 0.1282*e
-		#ps[paramsidx[Symbolics.rename(odesys.EH2O_g, :EH2O_g)]] = 0.0 
 
-	    #println[1.0 / (1 - v[ikplus] * u[ikplus] / (mol/dm^3))]
-		#ps[paramsidx[Symbolics.rename(odesys.ECOOH_g, :ECOOH_g)]] = 0.0 
 
 		
 		@views f_microkinetics!(
@@ -3000,9 +2870,6 @@ begin
 			ps,
 			nothing
 		)
-		#if ϕ_we == -0.9
-		#	println(u[isurfacestart:isurfaceend])
-		#end
 
 		
 		global coeff = u[isurfacestart:isurfaceend]
@@ -3023,13 +2890,12 @@ function pb_bcondition(f, u, bnode, data)
 	if user_input_model.BC_Select == "Dirichlet"
 	    ## Dirichlet ϕ=ϕ_we at Γ_we
 	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
-		#boundary_dirichlet!(f, u, bnode; species = ip, region = Γ_we, value = p_we)
 	elseif user_input_model.BC_Select == "Robin"
 		## Robin ϕ=dϕ₀/dx 
 	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
 	else
 		## neumann ϕ=dϕ₀/dx 
-	    #boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
 	
 	end
 
@@ -3066,19 +2932,16 @@ function pnp_bcondition(
 
 	elseif user_input_model.BC_Select == "Robin"
 		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-		#boundary_robin!(f, u, bnode, iϕ, BP2, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
-		#boundary_robin!(f, u, bnode, iϕ, BP3, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
 	else
-		#continue
-		#boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
-	 	#boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
-	 	#for ic in cspecies 
-			#if ic == ico2 || ic == ico
-	       	#	boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
-			#else
-			#boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
-			#end
-	   #end
+		boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
+	 	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+	 	for ic in cspecies 
+			if ic == ico2 || ic == ico
+	       		boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
+			else
+				boundary_dirichlet!(f, u, bnode; species = ic, region = Γ_we, value = c_bulk[ic])
+			end
+	   end
 	end
 		
 		
@@ -3091,6 +2954,164 @@ function pnp_bcondition(
 	return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
 
 end;
+
+# ╔═╡ 311660ce-0168-47eb-8d23-00a8e750fd84
+function simulate(
+        grid, 
+        elydata, celldata; 
+        Δu_opt = 2.0e-2,
+        damp_initial = 0.5,
+        Δt_min = 1.0e-11,
+        max_round = 3,
+        tol_round = 1.0e-8,
+        verbose = "",
+        handle_exceptions = true,
+        vmin = -0.5ufac"V",
+        vmax = 0.1ufac"V",
+        nperiods = 1,
+        scanrate = 1.0ufac"V / s",
+        reaction = reaction,
+        kwargs...
+    )
+    sys = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata, reaction = reaction)
+    
+    initial_guess_vector = LiquidElectrolytes.unknowns(sys)
+    
+    inisol = VoronoiFVM.solve(
+        sys.vfvmsys; 
+        inival = initial_guess_vector, 
+        damp_initial = 0.1, 
+        time = 0.0
+    )
+    
+    tsol, cvresult = cvsweep(
+        sys, celldata; 
+        inival = inisol, 
+        nperiods = nperiods, 
+        scanrate = scanrate,
+        Δu_opt = Δu_opt,
+        damp_initial = damp_initial,
+        Δt_min = Δt_min,
+        max_round = max_round,
+        tol_round = tol_round,
+        verbose = verbose,
+        handle_exceptions = handle_exceptions,
+        vmin = vmin,
+        vmax = vmax,
+        kwargs...
+    )
+    
+    return tsol, cvresult
+end;
+
+# ╔═╡ 2ebfdd4f-445b-49d6-bcfb-6963ff52df4d
+tsol_irc, cvresult_irc = simulate(grid, elydata_Gold, celldata_Gold_irc; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
+
+# ╔═╡ 2d421be5-9287-4e8d-9a7e-d63c95d9f370
+md"""
+t/s: $@bind time PlutoUI.Slider(range(tsol_irc.t[begin], tsol_irc.t[end], length = 101), show_value = true)
+"""
+
+# ╔═╡ d9539ae9-d73f-452d-b6b8-2287268ce204
+plotsol(grid, tsol_irc(time), celldata_Gold_irc)
+
+# ╔═╡ b6adaa42-39ed-497c-b3d8-55512af1388b
+plotresult(cvresult_irc, tsol_irc, celldata_Gold_irc.mutables.sawtooth.scanrate, grid, celldata_Gold_irc)
+
+# ╔═╡ ea02ccff-20ea-426d-b102-e93a30e8fdb4
+blthickness(grid, celldata_Gold_irc, tsol_irc; species = 1)/ufac"nm"
+
+# ╔═╡ 4af2a551-3e68-4184-9d90-52b86d944aa7
+tsol_unc, cvresult_unc = simulate(grid, elydata_Gold, celldata_Gold_unc ; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
+
+# ╔═╡ e2194300-5e84-481f-81c0-3e733937ed4b
+plotsol(grid, tsol_unc(time), celldata_Gold_unc)
+
+# ╔═╡ 7bb87bfb-2fac-4b93-868f-885e0dcd72be
+plotresult(cvresult_unc, tsol_unc, celldata_Gold_unc.mutables.sawtooth.scanrate, grid, celldata_Gold_unc)
+
+# ╔═╡ 50dc3a93-6eeb-4f6f-ac42-65d8d597614c
+blthickness(grid, celldata_Gold_unc, tsol_unc; species = 1)/ufac"nm"
+
+# ╔═╡ a43ec777-d41f-4169-897f-a0812aea4436
+tsol_odr, cvresult_odr = simulate(grid, elydata_Gold, celldata_Gold_odr; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
+
+# ╔═╡ 1d7db684-efc6-4388-907b-69867511f581
+plotsol(grid, tsol_odr(time), celldata_Gold_odr)
+
+# ╔═╡ c035db31-cb1c-4409-a18f-c520e2754c5e
+plotresult(cvresult_odr, tsol_odr, celldata_Gold_odr.mutables.sawtooth.scanrate, grid, celldata_Gold_odr)
+
+# ╔═╡ ce8dd32b-2ea3-4a42-9436-69b06e751984
+blthickness(grid, celldata_Gold_odr, tsol_odr; species = ico)/ufac"nm"
+
+# ╔═╡ b65575ce-7c5e-4a70-bb50-3bd8054516aa
+function run(L_values; ircompensation = :pseudopotentiostat, elydata = elydata_Gold)
+    tsols = []
+    cvresults = []
+    grids = []
+    celldatas = []
+
+    for L in L_values
+        if ircompensation == :pseudopotentiostat
+            celldata = celldata_Gold_irc
+        elseif ircompensation == :none
+            celldata = celldata_Gold_unc
+        else
+            celldata = celldata_Gold_odr
+        end
+        
+
+        grd = makegrid(celldata)
+        
+        tsol, cvresult = simulate(
+            grd, 
+            elydata, 
+            celldata; 
+            vmin = user_input_cv.vmin,
+            vmax = user_input_cv.vmax,
+            nperiods = user_input_cv.nperiods,
+            scanrate = user_input_cv.scanrate,
+            Δu_opt = 2.0e-2,
+            damp_initial = 0.5,
+            Δt_min = 1.0e-11,
+            max_round = 3,
+            tol_round = 1.0e-9,
+            handle_exceptions = true
+        )
+        
+        push!(cvresults, cvresult)
+        push!(tsols, tsol)
+        push!(grids, grd)
+        push!(celldatas, celldata)
+    end
+    
+    return cvresults, tsols, grids, celldatas
+end;
+
+# ╔═╡ 1efbe0ce-699f-4b6a-ab82-7b12d88e150b
+cvr_irc, tsols_irc, grids_irc, celldatas_irc = run(L_values; ircompensation = :pseudopotentiostat);
+
+# ╔═╡ 8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
+plots_irc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_irc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_irc, celldatas_irc, tsols_irc)];
+
+# ╔═╡ 6d3dc6b1-82ea-448a-af86-ed6001ed5446
+cvr_unc, tsols_unc, grids_unc, celldatas_unc = run(L_values; ircompensation = :none);
+
+# ╔═╡ 924d98c3-9f21-4322-802d-8d883aee28c6
+plots_unc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_unc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_unc, celldatas_unc, tsols_unc)];
+
+# ╔═╡ adfc0c3b-10d0-4f99-8b42-6da9a26de219
+cvr_odr, tsols_odr, grids_odr, celldatas_odr = run(L_values; ircompensation = :ohmicdrop);
+
+# ╔═╡ f34bca99-5847-4253-9c02-b72a0899727d
+plots_odr= [plottsol(grd,celldata,tsol; figscale, species=celldatas_odr[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_odr, celldatas_odr, tsols_odr)];
+
+# ╔═╡ 7e3c2514-94eb-436a-8473-9d9755b24b2e
+plots=hcat(plots_irc,plots_unc, plots_odr)
+
+# ╔═╡ 44300564-d572-4fa1-afb8-d74e7277342d
+PlutoUI.ExperimentalLayout.grid(plots)
 
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
@@ -3120,139 +3141,143 @@ end
 
 # ╔═╡ ee83fb10-b4a1-4084-a644-0541500fc9cb
 let
-    co2_idx = findfirst(s -> s.name == "CO₂" || s.name == "CO2", bulk)
-    selected_Ls = L_values[1:end]
-    num_panels = length(selected_Ls)
-
-    # 1. Figure Setup
-    fig = Figure(size = (1100, 380 * num_panels))
-    
-    # View limits (Interface focus)
-    max_L_view = 1e-2 
-    x_limits = (1e-12, max_L_view)
-    y_limits = (-6, 0.5) 
-
-	colors = :Pastel1_7
+	if L_varied_checkbox
+	    co2_idx = findfirst(s -> s.name == "CO₂" || s.name == "CO2", bulk)
+	    selected_Ls = L_values[1:end]
+	    num_panels = length(selected_Ls)
 	
-    for (idx, L_val) in enumerate(selected_Ls)
-        if !haskey(resL_COMP, L_val) continue end
-        
-        res = resL_COMP[L_val]
-        tsol = res.tsol
-        times = res.times
-        nt = length(times)
-        # --- GRID HANDLING ---
-		X_coords = X_coords_dict[L_val]
-
-        # --- Axis Setup ---
-        ax = Axis(fig[idx, 1],
-            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
-            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})",
-            xscale = log10,
-            limits = (x_limits, y_limits),
-            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
-            xgridvisible = false, ygridvisible = false
-        )
-
-        # 2. Time-step selection (e.g., 15 lines per panel)
-		num_points = 100 
-        t_indices = round.(Int, range(1, nt, length=num_points))
-        
-        # --- Color setup using your idea ---
-        time_cols = resample_cmap(colors, length(t_indices))
-        
-        local line_obj
-        
-        for (i, ti) in enumerate(t_indices)
-            c_profile = [log10(max(tsol[co2_idx, ix, ti] / (mol / dm^3), 1e-25)) for ix in 1:size(tsol, 2)]
-            
-            line_obj = lines!(ax, X_coords, c_profile; 
-                color = time_cols[i], 
-                linewidth = 2.5
-            )
-        end
-
-        # 3. Add Colorbar to the right [idx, 2]
-		Colorbar(fig[idx, 2], 
-		    limits = ((times[1]), (times[end])), # Use first and last elements
-            colormap = colors,
-            label = "Time [s]",
-            # Ensure ticks is also a range of numbers, not vectors
-            ticks = range(times[1], times[end], length=5) 
-        )
-
-        # Bulk Boundary & Reference
-        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
-        hlines!(ax, [log10(max(tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
-                color = :black, linestyle = :dot, alpha = 0.5)
-    end
-
-    rowgap!(fig.layout, 35)
-    colgap!(fig.layout, 25) 
-    fig
+	    # 1. Figure Setup
+	    fig = Figure(size = (1100, 380 * num_panels))
+	    
+	    # View limits (Interface focus)
+	    max_L_view = 1e-2 
+	    x_limits = (1e-12, max_L_view)
+	    y_limits = (-6, 0.5) 
+	
+		colors = :Pastel1_7
+		
+	    for (idx, L_val) in enumerate(selected_Ls)
+	        if !haskey(resL_COMP, L_val) continue end
+	        
+	        res = resL_COMP[L_val]
+	        tsol = res.tsol
+	        times = res.times
+	        nt = length(times)
+	        # --- GRID HANDLING ---
+			X_coords = X_coords_dict[L_val]
+	
+	        # --- Axis Setup ---
+	        ax = Axis(fig[idx, 1],
+	            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+	            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})",
+	            xscale = log10,
+	            limits = (x_limits, y_limits),
+	            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
+	            xgridvisible = false, ygridvisible = false
+	        )
+	
+	        # 2. Time-step selection (e.g., 15 lines per panel)
+			num_points = 100 
+	        t_indices = round.(Int, range(1, nt, length=num_points))
+	        
+	        # --- Color setup using your idea ---
+	        time_cols = resample_cmap(colors, length(t_indices))
+	        
+	        local line_obj
+	        
+	        for (i, ti) in enumerate(t_indices)
+	            c_profile = [log10(max(tsol[co2_idx, ix, ti] / (mol / dm^3), 1e-25)) for ix in 1:size(tsol, 2)]
+	            
+	            line_obj = lines!(ax, X_coords, c_profile; 
+	                color = time_cols[i], 
+	                linewidth = 2.5
+	            )
+	        end
+	
+	        # 3. Add Colorbar to the right [idx, 2]
+			Colorbar(fig[idx, 2], 
+			    limits = ((times[1]), (times[end])), # Use first and last elements
+	            colormap = colors,
+	            label = "Time [s]",
+	            # Ensure ticks is also a range of numbers, not vectors
+	            ticks = range(times[1], times[end], length=5) 
+	        )
+	
+	        # Bulk Boundary & Reference
+	        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+	        hlines!(ax, [log10(max(tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
+	                color = :black, linestyle = :dot, alpha = 0.5)
+	    end
+	
+	    rowgap!(fig.layout, 35)
+	    colgap!(fig.layout, 25) 
+	    fig
+	end
 end
 
 # ╔═╡ 65e8592d-a3f8-4f38-9c7e-8085a5c28b73
 let
-    # 1. CO2 Index 확인
-    co2_idx = findfirst(s ->  s.name == "CO₂", bulk)
-    selected_Ls = L_values[1:end]
-    num_panels = length(selected_Ls)
-
-    max_L = 1e-2
-
-    fig = Figure(size = (1100, 380 * num_panels))
-    
-    # --- COLOR RANGE 조절 ---
-    c_min = log10(0.00001)
-    c_max = log10(0.33)
-    color_range = (c_min, c_max)
-
-    for (idx, L_val) in enumerate(selected_Ls)
-        if !haskey(resL_COMP, L_val) continue end
-		num_levels = 4 
-		discrete_cmap = resample_cmap(:Pastel1_7, num_levels)        
-        res = resL_COMP[L_val]
-        tsol = res.tsol
-        times = res.times
-        # Grid Handling: Consistent with each L's specific mesh
-        # --- GRID HANDLING ---
-		X_coords = X_coords_dict[L_val]
-        
-        conc_matrix = [log10(max(tsol[co2_idx, ix, it] / (mol / dm^3), 1e-25)) 
-                       for ix in 1:length(X_coords), it in 1:length(times)]
-
-        # --- Axis Setup ---
-        ax = Axis(fig[idx, 1],
-            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
-            ylabel = "Time [s]",
-            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
-            xscale = log10,
-            # 모든 패널의 X축 범위를 max_L로 고정하여 스케일 통일
-            limits = ((1e-10, max_L), (0, 80)),
-            xminorticksvisible = true, xminorticks = IntervalsBetween(9)
-        )
-		time_cols = 
-        # Heatmap
-        hm = heatmap!(ax, X_coords .+ 1e-12, times, conc_matrix; 
-            #limits = ((1e-10, max_L), (nothing, nothing)),
-            colorrange = color_range, 
-            colormap = Reverse(discrete_cmap),
-            interpolate = false
-        )
-
-        # 물리적 경계(Bulk Boundary)를 시각적으로 표시 (선택 사항)
-        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
-
-        Colorbar(fig[idx, 2], hm, label = L"\log_{10}(c_{\mathrm{CO_2}})")
-    end
-
-    rowgap!(fig.layout, 35)
-    display(fig)
+	if L_varied_checkbox
+	    # 1. CO2 Index 확인
+	    co2_idx = findfirst(s ->  s.name == "CO₂", bulk)
+	    selected_Ls = L_values[1:end]
+	    num_panels = length(selected_Ls)
+	
+	    max_L = 1e-2
+	
+	    fig = Figure(size = (1100, 380 * num_panels))
+	    
+	    # --- COLOR RANGE 조절 ---
+	    c_min = log10(0.00001)
+	    c_max = log10(0.33)
+	    color_range = (c_min, c_max)
+	
+	    for (idx, L_val) in enumerate(selected_Ls)
+	        if !haskey(resL_COMP, L_val) continue end
+			num_levels = 4 
+			discrete_cmap = resample_cmap(:Pastel1_7, num_levels)        
+	        res = resL_COMP[L_val]
+	        tsol = res.tsol
+	        times = res.times
+	        # Grid Handling: Consistent with each L's specific mesh
+	        # --- GRID HANDLING ---
+			X_coords = X_coords_dict[L_val]
+	        
+	        conc_matrix = [log10(max(tsol[co2_idx, ix, it] / (mol / dm^3), 1e-25)) 
+	                       for ix in 1:length(X_coords), it in 1:length(times)]
+	
+	        # --- Axis Setup ---
+	        ax = Axis(fig[idx, 1],
+	            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+	            ylabel = "Time [s]",
+	            title = "Boundary Layer (L) = $(round(L_val/μm)) μm",
+	            xscale = log10,
+	            # 모든 패널의 X축 범위를 max_L로 고정하여 스케일 통일
+	            limits = ((1e-10, max_L), (0, 80)),
+	            xminorticksvisible = true, xminorticks = IntervalsBetween(9)
+	        )
+			time_cols = 
+	        # Heatmap
+	        hm = heatmap!(ax, X_coords .+ 1e-12, times, conc_matrix; 
+	            #limits = ((1e-10, max_L), (nothing, nothing)),
+	            colorrange = color_range, 
+	            colormap = Reverse(discrete_cmap),
+	            interpolate = false
+	        )
+	
+	        # 물리적 경계(Bulk Boundary)를 시각적으로 표시 (선택 사항)
+	        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+	
+	        Colorbar(fig[idx, 2], hm, label = L"\log_{10}(c_{\mathrm{CO_2}})")
+	    end
+	
+	    rowgap!(fig.layout, 35)
+	    display(fig)
+	end
 end
 
 # ╔═╡ 48bfb18c-d8af-453e-b93a-e0fc5748d293
-begin
+if L_varied_checkbox
 	for L_val in L_values
 	    if haskey(resL_COMP, L_val)
 	        res_data = resL_COMP[L_val]
@@ -3449,7 +3474,7 @@ export_L_varied_species_csv_long(
 )
 
 # ╔═╡ 7d1bd699-e398-484d-abab-37f86884f0ed
-let
+if L_varied_checkbox
     # 1. Selection of L values
     selected_Ls = L_values[1:end]
 
@@ -3557,309 +3582,315 @@ end
 
 # ╔═╡ 001209ff-074c-4bf4-bbd5-d8c2e88bfe8f
 let
-    # 1. Selection of L values
-    target_indices = [1, 5, 6, 7, 8, length(L_values)]
-    selected_Ls = L_values[1:end]
-
-    # Meta-data
-    species_names = getproperty.(bulk, :name)
-    species_colors = getproperty.(bulk, :color)  
-    nspecies = length(model.cspecies)
-
-    num_panels = length(selected_Ls)
-    fig = Figure(size = (800, 450 * num_panels)) 
-    
-    # Global Plotting Limits
-    x_limits = (1e-12, 1e-2) 
-    y_limits_conc = (-12, 4) 
-    y_limits_curr = (-1, 1) 
-    
-    axes_conc = []
-    
-    for (idx, L_val) in enumerate(selected_Ls)
-        if !haskey(resL_COMP, L_val)
-            @warn "Data for L = $(L_val/μm) μm not found. Skipping."
-            continue
-        end
-
-        res = resL_COMP[L_val]
-        tsol = res.tsol
-
-        # --- FIX: GET ONLY THE INTEGER INDEX ---
-		
-        #target_V = -0.9
-		#ti = findmin(abs.(res.voltages .- target_V))[2]
-		target_time = 25
-		ti = findmin(abs.(res.times .- target_time))[2]
-		
-		
-        # Adding at the end is mandatory to get the Integer index
-        
-        L_label = round(L_val / μm, digits=0)
-        actual_V = round(res.voltages[ti], digits=2)
-		actual_T = round(res.times[ti], digits=2) 
-		
-        # Ensure X_coords is extracted from the solution's system to match nx_current
-		X_coords = X_coords_dict[L_val]
-        nx_current = size(tsol, 2)
-        
-        # --- Axis 1: Concentration (Left Y-Axis) ---
-        ax_conc = Axis(fig[idx, 1],
-            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
-            ylabel = L"\log_{10}(c_i)",
-            xscale = log10,
-            limits = (x_limits, y_limits_conc),
-			title  = "L = $L_label μm | t ≈ $actual_T s (ϕ_eff ≈ $actual_V V)",      
-			xgridvisible = false,
-			ygridvisible = false,
-            spinewidth = 4,
-            ylabelcolor = :blue, yticklabelcolor = :blue
-        )
-        push!(axes_conc, ax_conc)
-        
-        # --- Axis 2: Current Density (Right Y-Axis) ---
-        ax_curr = Axis(fig[idx, 1],
-            ylabel = L"j~(\mathrm{mA/cm^2})",
-            xscale = log10,
-            yaxisposition = :right,
-            limits = (x_limits, y_limits_curr),
-            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
-            ygridvisible = false,
-            spinewidth = 4
-        )
-        hidespines!(ax_curr, :l, :t, :b)
-        hidexdecorations!(ax_curr)
-
-        # 2. Plotting Concentration Profiles
-        for i in 1:nspecies
-            # ti is now a single Integer, indexing will work
-            c_profile = tsol[i, 1:nx_current, ti]
-            y_log = map(c -> log10(max(c, 1e-25)), c_profile)
-            
-            lines!(ax_conc, X_coords[1:nx_current] .+ 1e-12, y_log; 
-                   color = species_colors[i], linewidth = 3.5, label = species_names[i])
-        end
-        
-        # 3. Current Reference
-		phi_profile = tsol[model.iϕ, 1:nx_current, ti]
-        lines!(ax_curr, X_coords[1:nx_current] .+ 1e-12, (phi_profile); 
-               color = :skyblue, linewidth = 6, label = "Potential")
-        
-        hlines!(ax_curr, 0, color = (:black, 0.4), linestyle = :dash, linewidth = 2)
-        
-        #text!(ax_curr, 1e-6, j_val; text = "j = $(round(j_val, digits=2)) mA/cm²", 
-		#	  align = (:left, :bottom), color = :red, fontsize = 20, font = :bold)
-
-        if idx == 1
-            axislegend(ax_conc; position = :lb, labelsize = 16, framevisible = false)
-        end
-    end
-    
-    rowgap!(fig.layout, 20)
-    
-    fig
+	if L_varied_checkbox
+	    # 1. Selection of L values
+	    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+	    selected_Ls = L_values[1:end]
+	
+	    # Meta-data
+	    species_names = getproperty.(bulk, :name)
+	    species_colors = getproperty.(bulk, :color)  
+	    nspecies = length(model.cspecies)
+	
+	    num_panels = length(selected_Ls)
+	    fig = Figure(size = (800, 450 * num_panels)) 
+	    
+	    # Global Plotting Limits
+	    x_limits = (1e-12, 1e-2) 
+	    y_limits_conc = (-12, 4) 
+	    y_limits_curr = (-1, 1) 
+	    
+	    axes_conc = []
+	    
+	    for (idx, L_val) in enumerate(selected_Ls)
+	        if !haskey(resL_COMP, L_val)
+	            @warn "Data for L = $(L_val/μm) μm not found. Skipping."
+	            continue
+	        end
+	
+	        res = resL_COMP[L_val]
+	        tsol = res.tsol
+	
+	        # --- FIX: GET ONLY THE INTEGER INDEX ---
+			
+	        #target_V = -0.9
+			#ti = findmin(abs.(res.voltages .- target_V))[2]
+			target_time = 25
+			ti = findmin(abs.(res.times .- target_time))[2]
+			
+			
+	        # Adding at the end is mandatory to get the Integer index
+	        
+	        L_label = round(L_val / μm, digits=0)
+	        actual_V = round(res.voltages[ti], digits=2)
+			actual_T = round(res.times[ti], digits=2) 
+			
+	        # Ensure X_coords is extracted from the solution's system to match nx_current
+			X_coords = X_coords_dict[L_val]
+	        nx_current = size(tsol, 2)
+	        
+	        # --- Axis 1: Concentration (Left Y-Axis) ---
+	        ax_conc = Axis(fig[idx, 1],
+	            xlabel = idx == num_panels ? "Distance from electrode [m]" : "",
+	            ylabel = L"\log_{10}(c_i)",
+	            xscale = log10,
+	            limits = (x_limits, y_limits_conc),
+				title  = "L = $L_label μm | t ≈ $actual_T s (ϕ_eff ≈ $actual_V V)",      
+				xgridvisible = false,
+				ygridvisible = false,
+	            spinewidth = 4,
+	            ylabelcolor = :blue, yticklabelcolor = :blue
+	        )
+	        push!(axes_conc, ax_conc)
+	        
+	        # --- Axis 2: Current Density (Right Y-Axis) ---
+	        ax_curr = Axis(fig[idx, 1],
+	            ylabel = L"j~(\mathrm{mA/cm^2})",
+	            xscale = log10,
+	            yaxisposition = :right,
+	            limits = (x_limits, y_limits_curr),
+	            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+	            ygridvisible = false,
+	            spinewidth = 4
+	        )
+	        hidespines!(ax_curr, :l, :t, :b)
+	        hidexdecorations!(ax_curr)
+	
+	        # 2. Plotting Concentration Profiles
+	        for i in 1:nspecies
+	            # ti is now a single Integer, indexing will work
+	            c_profile = tsol[i, 1:nx_current, ti]
+	            y_log = map(c -> log10(max(c, 1e-25)), c_profile)
+	            
+	            lines!(ax_conc, X_coords[1:nx_current] .+ 1e-12, y_log; 
+	                   color = species_colors[i], linewidth = 3.5, label = species_names[i])
+	        end
+	        
+	        # 3. Current Reference
+			phi_profile = tsol[model.iϕ, 1:nx_current, ti]
+	        lines!(ax_curr, X_coords[1:nx_current] .+ 1e-12, (phi_profile); 
+	               color = :skyblue, linewidth = 6, label = "Potential")
+	        
+	        hlines!(ax_curr, 0, color = (:black, 0.4), linestyle = :dash, linewidth = 2)
+	        
+	        #text!(ax_curr, 1e-6, j_val; text = "j = $(round(j_val, digits=2)) mA/cm²", 
+			#	  align = (:left, :bottom), color = :red, fontsize = 20, font = :bold)
+	
+	        if idx == 1
+	            axislegend(ax_conc; position = :lb, labelsize = 16, framevisible = false)
+	        end
+	    end
+	    
+	    rowgap!(fig.layout, 20)
+	    
+	    fig
+	end
 end
 
 # ╔═╡ d0bcf4f4-00d0-4408-8007-2d04933f7a0b
 let
-    # 1. Selection of L values (Keep the same order)
-    target_indices = [1, 5, 6, 7, 8, length(L_values)]
-    selected_Ls = L_values[1:end]
-    num_panels = length(selected_Ls)
-
-    # 2. Meta-data
-    species_names = getproperty.(bulk, :name)
-    species_colors = getproperty.(bulk, :color)  
-    nspecies = length(model.cspecies)
-    
-    fig = Figure(size = (1000, 380 * num_panels))
-    
-    # --- CRITICAL: FIXED X-AXIS BASED ON THE LARGEST L ---
-    # Setting limits to the largest L in the set (the last one)
-    max_L = selected_Ls[end]
-    x_limits = (1e-12, max_L)
-    
-    y_limits_conc = (-12, 4)
-    y_limits_phi = (-1.5, 0.5)
-
-    panels_data = []
-
-    for (idx, L_val) in enumerate(selected_Ls)
-        res = resL_COMP[L_val]
-        nx_local = size(res.tsol, 2)
-        
-        # Grid Handling: Consistent with each L's specific mesh
-		X_coords = X_coords_dict[L_val]
-
-        # --- Axis Setup ---
-        ax_conc = Axis(fig[idx, 1],
-            ylabel = L"\log_{10}(c_i)", xscale = log10,
-            limits = (x_limits, y_limits_conc), # Fixed X-axis for all
-            xgridvisible = false, ygridvisible = false, spinewidth = 3,
-            ylabelcolor = :blue, yticklabelcolor = :blue
-        )
-        ax_phi = Axis(fig[idx, 1],
-            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10, yaxisposition = :right,
-            limits = (x_limits, y_limits_phi),
-            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
-            ygridvisible = false, spinewidth = 3
-        )
-        hidespines!(ax_phi, :l, :t, :b)
-        hidexdecorations!(ax_phi)
-
-        # Observables
-        obs_concs = [Observable(fill(NaN, nx_local)) for _ in 1:nspecies]
-        obs_phi = Observable(fill(NaN, nx_local))
-        
-        # Plotting
-        for i in 1:nspecies
-            lines!(ax_conc, X_coords, obs_concs[i] ; 
-                   color = species_colors[i], linewidth = 3, label = species_names[i])
-        end
-        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5)
-        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
-
-        if idx == 1
-            axislegend(ax_conc; position = :lb, framevisible = false, labelsize = 14)
-        end
-        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
-
-        push!(panels_data, (concs=obs_concs, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
-    end
-
-    # 3. GIF Recording (Slower framerate and synced steps)
-    # Finding the shortest common time steps
-    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
-    t_indices = 1:5:min_nt 
-
-    println("Recording GIF... Slower speed set via framerate=8.")
-
-    record(fig, "__L_varied_dynamic_profiles_EN.gif", t_indices; framerate = 8) do ti
-        for (idx, L_val) in enumerate(selected_Ls)
-            res = resL_COMP[L_val]
-            tsol = res.tsol
-            nx_local = size(tsol, 2)
-            
-            # Update Concentrations
-            for i in 1:nspecies
-                c_raw = tsol[i, 1:nx_local, ti] / (mol / dm^3) 
-                panels_data[idx].concs[i][] = map(c -> log10(max(c, 1e-25)), c_raw)
-            end
-            
-            # Update Potential
-            p_raw = tsol[model.iϕ, 1:nx_local, ti]
-            panels_data[idx].phi[] = p_raw
-
-
-			
-            # Update Titles (English)
-            V_now = round(res.voltages[ti-1], digits=2)
-            T_now = round(res.times[ti], digits=2)
-            panels_data[idx].axis.title = "Thickness (L) = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
-        end
-    end
+	if L_varied_checkbox
+	    # 1. Selection of L values (Keep the same order)
+	    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+	    selected_Ls = L_values[1:end]
+	    num_panels = length(selected_Ls)
+	
+	    # 2. Meta-data
+	    species_names = getproperty.(bulk, :name)
+	    species_colors = getproperty.(bulk, :color)  
+	    nspecies = length(model.cspecies)
+	    
+	    fig = Figure(size = (1000, 380 * num_panels))
+	    
+	    # --- CRITICAL: FIXED X-AXIS BASED ON THE LARGEST L ---
+	    # Setting limits to the largest L in the set (the last one)
+	    max_L = selected_Ls[end]
+	    x_limits = (1e-12, max_L)
+	    
+	    y_limits_conc = (-12, 4)
+	    y_limits_phi = (-1.5, 0.5)
+	
+	    panels_data = []
+	
+	    for (idx, L_val) in enumerate(selected_Ls)
+	        res = resL_COMP[L_val]
+	        nx_local = size(res.tsol, 2)
+	        
+	        # Grid Handling: Consistent with each L's specific mesh
+			X_coords = X_coords_dict[L_val]
+	
+	        # --- Axis Setup ---
+	        ax_conc = Axis(fig[idx, 1],
+	            ylabel = L"\log_{10}(c_i)", xscale = log10,
+	            limits = (x_limits, y_limits_conc), # Fixed X-axis for all
+	            xgridvisible = false, ygridvisible = false, spinewidth = 3,
+	            ylabelcolor = :blue, yticklabelcolor = :blue
+	        )
+	        ax_phi = Axis(fig[idx, 1],
+	            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10, yaxisposition = :right,
+	            limits = (x_limits, y_limits_phi),
+	            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+	            ygridvisible = false, spinewidth = 3
+	        )
+	        hidespines!(ax_phi, :l, :t, :b)
+	        hidexdecorations!(ax_phi)
+	
+	        # Observables
+	        obs_concs = [Observable(fill(NaN, nx_local)) for _ in 1:nspecies]
+	        obs_phi = Observable(fill(NaN, nx_local))
+	        
+	        # Plotting
+	        for i in 1:nspecies
+	            lines!(ax_conc, X_coords, obs_concs[i] ; 
+	                   color = species_colors[i], linewidth = 3, label = species_names[i])
+	        end
+	        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5)
+	        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
+	
+	        if idx == 1
+	            axislegend(ax_conc; position = :lb, framevisible = false, labelsize = 14)
+	        end
+	        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+	
+	        push!(panels_data, (concs=obs_concs, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
+	    end
+	
+	    # 3. GIF Recording (Slower framerate and synced steps)
+	    # Finding the shortest common time steps
+	    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
+	    t_indices = 1:5:min_nt 
+	
+	    println("Recording GIF... Slower speed set via framerate=8.")
+	
+	    record(fig, "__L_varied_dynamic_profiles_EN.gif", t_indices; framerate = 8) do ti
+	        for (idx, L_val) in enumerate(selected_Ls)
+	            res = resL_COMP[L_val]
+	            tsol = res.tsol
+	            nx_local = size(tsol, 2)
+	            
+	            # Update Concentrations
+	            for i in 1:nspecies
+	                c_raw = tsol[i, 1:nx_local, ti] / (mol / dm^3) 
+	                panels_data[idx].concs[i][] = map(c -> log10(max(c, 1e-25)), c_raw)
+	            end
+	            
+	            # Update Potential
+	            p_raw = tsol[model.iϕ, 1:nx_local, ti]
+	            panels_data[idx].phi[] = p_raw
+	
+	
+				
+	            # Update Titles (English)
+	            V_now = round(res.voltages[ti-1], digits=2)
+	            T_now = round(res.times[ti], digits=2)
+	            panels_data[idx].axis.title = "Thickness (L) = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
+	        end
+	    end
+	end
 end
 
 # ╔═╡ 8932c3d0-e103-4173-8d85-aa281ef58f53
 let
-    # 1. Identify CO2 Index
-    # Replace "CO2" with the exact string name used in your 'bulk' species setup
-    co2_idx = findfirst(s -> s.name == "CO₂", bulk)
-    if isnothing(co2_idx)
-        error("CO2 species not found in bulk model. Please check the name.")
-    end
-    co2_color = bulk[co2_idx].color
-    co2_name = bulk[co2_idx].name
-
-    # 2. Selection of L values
-    target_indices = [1, 5, 6, 7, 8, length(L_values)]
-    selected_Ls = L_values[1:end]
-    num_panels = length(selected_Ls)
-
-    fig = Figure(size = (1000, 380 * num_panels))
-    
-    # Fixed X-axis based on the largest L for comparison
-    max_L = selected_Ls[end]
-    x_limits = (1e-12, max_L)
-    
-    # Specific Y-limits for CO2 (Adjust based on your bulk concentration)
-    y_limits_conc = (-8, 2) 
-    y_limits_phi = (-1.5, 0.5)
-
-    panels_data = []
-
-    for (idx, L_val) in enumerate(selected_Ls)
-        res = resL_COMP[L_val]
-        nx_local = size(res.tsol, 2)
-
-		# Grid Handling: Consistent with each L's specific mesh
-        # --- GRID HANDLING ---
-		X_coords = X_coords_dict[L_val]
-
-        # --- Axis Setup ---
-        ax_conc = Axis(fig[idx, 1],
-            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})", xscale = log10,
-            limits = (x_limits, y_limits_conc),
-            xgridvisible = false, ygridvisible = false, spinewidth = 3,
-            ylabelcolor = co2_color, yticklabelcolor = co2_color
-        )
-        ax_phi = Axis(fig[idx, 1],
-            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10,
-			yaxisposition = :right,
-            limits = (x_limits, y_limits_phi),
-            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
-            ygridvisible = false, spinewidth = 3
-        )
-        hidespines!(ax_phi, :l, :t, :b)
-        hidexdecorations!(ax_phi)
-
-        # Observables for CO2 and Potential
-        obs_co2 = Observable(fill(NaN, nx_local))
-        obs_phi = Observable(fill(NaN, nx_local))
-        
-        # Plotting
-        # Dash line for initial bulk concentration reference
-        hlines!(ax_conc, [log10(max(res.tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
-                color = co2_color, linestyle = :dot, alpha = 0.5)
-        
-        lines!(ax_conc, X_coords, obs_co2; color = co2_color, linewidth = 4, label = co2_name)
-        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5, label = "Potential")
-        
-        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
-
-        if idx == 1
-            axislegend(ax_conc; position = :lb, framevisible = false)
-        end
-
-        push!(panels_data, (co2=obs_co2, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
-        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
-
-    end
-
-    # 3. Slower GIF Recording
-    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
-    t_indices = 1:5:min_nt 
-
-    record(fig, "CO2_Evolution_L_Varied.gif", t_indices; framerate = 8) do ti
-        for (idx, L_val) in enumerate(selected_Ls)
-            res = resL_COMP[L_val]
-            tsol = res.tsol
-            nx_local = size(tsol, 2)
-            
-            # Update CO2 only
-            c_raw = tsol[co2_idx, 1:nx_local, ti] / (mol / dm^3)
-            panels_data[idx].co2[] = map(c -> log10(max(c, 1e-25)), c_raw)
-            
-            # Update Potential
-            p_raw = tsol[model.iϕ, 1:nx_local, ti]
-            panels_data[idx].phi[] = p_raw
-            
-            # English Title
-            V_now = round(res.voltages[ti], digits=2)
-            T_now = round(res.times[ti], digits=2)
-            panels_data[idx].axis.title = "Thickness L = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
-        end
-    end
+	if L_varied_checkbox
+	    # 1. Identify CO2 Index
+	    # Replace "CO2" with the exact string name used in your 'bulk' species setup
+	    co2_idx = findfirst(s -> s.name == "CO₂", bulk)
+	    if isnothing(co2_idx)
+	        error("CO2 species not found in bulk model. Please check the name.")
+	    end
+	    co2_color = bulk[co2_idx].color
+	    co2_name = bulk[co2_idx].name
+	
+	    # 2. Selection of L values
+	    target_indices = [1, 5, 6, 7, 8, length(L_values)]
+	    selected_Ls = L_values[1:end]
+	    num_panels = length(selected_Ls)
+	
+	    fig = Figure(size = (1000, 380 * num_panels))
+	    
+	    # Fixed X-axis based on the largest L for comparison
+	    max_L = selected_Ls[end]
+	    x_limits = (1e-12, max_L)
+	    
+	    # Specific Y-limits for CO2 (Adjust based on your bulk concentration)
+	    y_limits_conc = (-8, 2) 
+	    y_limits_phi = (-1.5, 0.5)
+	
+	    panels_data = []
+	
+	    for (idx, L_val) in enumerate(selected_Ls)
+	        res = resL_COMP[L_val]
+	        nx_local = size(res.tsol, 2)
+	
+			# Grid Handling: Consistent with each L's specific mesh
+	        # --- GRID HANDLING ---
+			X_coords = X_coords_dict[L_val]
+	
+	        # --- Axis Setup ---
+	        ax_conc = Axis(fig[idx, 1],
+	            ylabel = L"\log_{10}(c_{\mathrm{CO_2}})", xscale = log10,
+	            limits = (x_limits, y_limits_conc),
+	            xgridvisible = false, ygridvisible = false, spinewidth = 3,
+	            ylabelcolor = co2_color, yticklabelcolor = co2_color
+	        )
+	        ax_phi = Axis(fig[idx, 1],
+	            ylabel = L"\Phi_{\mathrm{sol}}~(\mathrm{V})", xscale = log10,
+				yaxisposition = :right,
+	            limits = (x_limits, y_limits_phi),
+	            ylabelcolor = :skyblue, yticklabelcolor = :skyblue,
+	            ygridvisible = false, spinewidth = 3
+	        )
+	        hidespines!(ax_phi, :l, :t, :b)
+	        hidexdecorations!(ax_phi)
+	
+	        # Observables for CO2 and Potential
+	        obs_co2 = Observable(fill(NaN, nx_local))
+	        obs_phi = Observable(fill(NaN, nx_local))
+	        
+	        # Plotting
+	        # Dash line for initial bulk concentration reference
+	        hlines!(ax_conc, [log10(max(res.tsol[co2_idx, end, 1] / (mol / dm^3), 1e-25))], 
+	                color = co2_color, linestyle = :dot, alpha = 0.5)
+	        
+	        lines!(ax_conc, X_coords, obs_co2; color = co2_color, linewidth = 4, label = co2_name)
+	        lines!(ax_phi, X_coords, obs_phi; color = :skyblue, linewidth = 5, label = "Potential")
+	        
+	        hlines!(ax_phi, 0, color = (:black, 0.4), linestyle = :dash)
+	
+	        if idx == 1
+	            axislegend(ax_conc; position = :lb, framevisible = false)
+	        end
+	
+	        push!(panels_data, (co2=obs_co2, phi=obs_phi, axis=ax_conc, L=round(L_val/μm)))
+	        vlines!(ax_conc, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+	
+	    end
+	
+	    # 3. Slower GIF Recording
+	    min_nt = minimum([size(resL_COMP[L].tsol, 3) for L in selected_Ls])
+	    t_indices = 1:5:min_nt 
+	
+	    record(fig, "CO2_Evolution_L_Varied.gif", t_indices; framerate = 8) do ti
+	        for (idx, L_val) in enumerate(selected_Ls)
+	            res = resL_COMP[L_val]
+	            tsol = res.tsol
+	            nx_local = size(tsol, 2)
+	            
+	            # Update CO2 only
+	            c_raw = tsol[co2_idx, 1:nx_local, ti] / (mol / dm^3)
+	            panels_data[idx].co2[] = map(c -> log10(max(c, 1e-25)), c_raw)
+	            
+	            # Update Potential
+	            p_raw = tsol[model.iϕ, 1:nx_local, ti]
+	            panels_data[idx].phi[] = p_raw
+	            
+	            # English Title
+	            V_now = round(res.voltages[ti], digits=2)
+	            T_now = round(res.times[ti], digits=2)
+	            panels_data[idx].axis.title = "Thickness L = $(panels_data[idx].L) μm | Time = $T_now s (V_eff = $V_now V)"
+	        end
+	    end
+	end
 end
 
 # ╔═╡ 11b12556-5b61-42c2-a911-4ea98a0a1e85
@@ -4580,7 +4611,7 @@ floataside(
 # ╠═2947efab-e67e-41fa-ab91-7e3c1c09df2d
 # ╠═de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
 # ╠═8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
-# ╠═20324e33-26d0-4a95-bda3-5cb5d0fd8975
+# ╟─20324e33-26d0-4a95-bda3-5cb5d0fd8975
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
 # ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
@@ -4623,8 +4654,6 @@ floataside(
 # ╠═ba20b8f6-dfad-4560-b438-6082197e45d4
 # ╠═a274c939-31a5-4281-84bc-d621c1f9b117
 # ╟─afbb2386-871a-4858-964a-3d2ee212a614
-# ╠═585d2e85-dfdf-4885-835d-1bb2ba0b523f
-# ╟─910b8908-c58f-4e9c-97af-d441073bfb21
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╠═a72db110-37c3-4f4d-b37e-fe613c1ae827
 # ╠═9739f8a5-f97e-4013-997f-d65cbf357ae5
@@ -4634,7 +4663,10 @@ floataside(
 # ╠═7da046bf-d3b1-43a0-bdba-89b4da2f6be3
 # ╠═a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 # ╠═cdf52b70-94ad-45db-b82d-f1268cead86e
-# ╠═5c5f9b67-3808-4443-94eb-c3bb5d653a55
+# ╠═311660ce-0168-47eb-8d23-00a8e750fd84
+# ╠═72b30fd2-d5d2-4a23-98e1-a5019841e839
+# ╠═41158868-8680-466b-a94b-9ffcd2d0ad8e
+# ╠═2ebfdd4f-445b-49d6-bcfb-6963ff52df4d
 # ╠═4af2a551-3e68-4184-9d90-52b86d944aa7
 # ╠═a43ec777-d41f-4169-897f-a0812aea4436
 # ╟─2d421be5-9287-4e8d-9a7e-d63c95d9f370
@@ -4658,6 +4690,9 @@ floataside(
 # ╠═f34bca99-5847-4253-9c02-b72a0899727d
 # ╠═7e3c2514-94eb-436a-8473-9d9755b24b2e
 # ╠═44300564-d572-4fa1-afb8-d74e7277342d
+# ╠═50dc3a93-6eeb-4f6f-ac42-65d8d597614c
+# ╠═ea02ccff-20ea-426d-b102-e93a30e8fdb4
+# ╠═ce8dd32b-2ea3-4a42-9436-69b06e751984
 # ╠═e6de6e89-5dc6-4fac-a7fc-8346175283a3
 # ╟─df1cd76c-343a-490b-a2f5-3249e3dca1cc
 # ╠═c68691f1-502a-4aee-b56c-7169e007270d
@@ -4700,13 +4735,13 @@ floataside(
 # ╟─58ac8edc-2432-4054-88d8-52dafe0a2a61
 # ╟─a2c7c4da-77cd-493f-8f98-0c86fecf271a
 # ╟─0db921e1-80ab-4d79-9035-df2dc33c0c3c
-# ╠═d7e28d5f-16ba-4664-ba63-ec85fb29fe87
-# ╠═7d1bd699-e398-484d-abab-37f86884f0ed
-# ╠═001209ff-074c-4bf4-bbd5-d8c2e88bfe8f
-# ╠═d0bcf4f4-00d0-4408-8007-2d04933f7a0b
-# ╠═ee83fb10-b4a1-4084-a644-0541500fc9cb
-# ╠═65e8592d-a3f8-4f38-9c7e-8085a5c28b73
-# ╠═8932c3d0-e103-4173-8d85-aa281ef58f53
+# ╟─d7e28d5f-16ba-4664-ba63-ec85fb29fe87
+# ╟─7d1bd699-e398-484d-abab-37f86884f0ed
+# ╟─001209ff-074c-4bf4-bbd5-d8c2e88bfe8f
+# ╟─d0bcf4f4-00d0-4408-8007-2d04933f7a0b
+# ╟─ee83fb10-b4a1-4084-a644-0541500fc9cb
+# ╟─65e8592d-a3f8-4f38-9c7e-8085a5c28b73
+# ╟─8932c3d0-e103-4173-8d85-aa281ef58f53
 # ╠═d91c32c8-ac55-4f77-93cb-6c5d97bcbbb2
 # ╠═48bfb18c-d8af-453e-b93a-e0fc5748d293
 # ╠═5cb3fb17-6ce9-4230-9a3f-4df9f49293da
@@ -4746,7 +4781,6 @@ floataside(
 # ╟─842b074b-f808-48d8-8dc5-110ddd907f90
 # ╟─31298257-d35a-4f6f-8a76-ff00d5361ced
 # ╠═72269ec4-a56e-46d9-85c8-0dd8ccaf43e1
-# ╠═541c5ad3-dede-408d-a92a-285f26357c56
 # ╠═012b426e-3550-4678-a666-eeb4bd32d20e
 # ╠═06ca7d68-9c76-4d1c-947a-dd64a0fe9ec3
 # ╟─57db41d1-57c0-4eee-ba35-6f9b7e1e8263
@@ -4772,7 +4806,7 @@ floataside(
 # ╟─e4d93d39-c391-47ce-a248-6f0205761cca
 # ╠═c6f10b66-6d06-4f2e-a7cc-780096d75785
 # ╠═5d0458f3-6564-43df-af01-4a4b829ce262
-# ╟─f8255707-2233-4e28-b542-2f3d81b31c2e
+# ╠═f8255707-2233-4e28-b542-2f3d81b31c2e
 # ╠═47d92164-456a-43a0-8ed2-fed7f9fe31a2
 # ╠═223aa524-b341-49ca-811d-44cc12d39e94
 # ╠═11d6598c-3d6a-472a-8863-9275d5e567c6
