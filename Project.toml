@@ -1,6 +1,7 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -34,6 +35,6 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"
 
 [compat]
-CairoMakie = "0.12, 0.13, 0.14"
-CatmapInterface = "0.3.1"
-LiquidElectrolytes = "2.3"
+IRCompProject = "0.1.0"
+Interpolations = "0.16.2"
+LinearAlgebra = "1.12.0"
