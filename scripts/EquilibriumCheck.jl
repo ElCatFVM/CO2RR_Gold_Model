@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v0.20.23
 
 using Markdown
 using InteractiveUtils
@@ -53,14 +53,14 @@ begin
 	using .AuCO2RR_plots
 end
 
-# ╔═╡ 5a27d95a-21d2-4e8a-a2fd-895eed32b113
-using IRCompProject
-
 # ╔═╡ 3ac837b8-559b-41c2-8f83-1331839dcf7e
 begin
     using HypertextLiteral: @htl_str, @htl
     using UUIDs: uuid1
 end
+
+# ╔═╡ 5a27d95a-21d2-4e8a-a2fd-895eed32b113
+
 
 # ╔═╡ bd8134d8-5a69-486e-8429-7cf810b3ccbe
 Pkg.status()
