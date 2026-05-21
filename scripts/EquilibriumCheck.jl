@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.23
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -75,6 +75,9 @@ pkgdir(LiquidElectrolytes)
 md"""
 ## Setup
 """
+
+# ╔═╡ 9b7350ca-e176-4ebc-8a67-00d6737ab1a2
+
 
 # ╔═╡ ab2184fc-0279-46d9-9ee4-88fe3e732789
 md"""
@@ -217,62 +220,6 @@ md"""
 ### FVM geometry generation
 """
 
-# ╔═╡ 13e0b9ee-ab7a-4e6a-ad61-16f3de7fc135
-# ╠═╡ disabled = true
-#=╠═╡
-function makegrid_previous_geomspace(celldata)
-    (; x_BP1, x_BP2, x_BP3, L, Domain1, Domain2, Domain3, BP1, BP2, BP3, BP4) = celldata
-    
-    hmin = 1.0e-6 * μm
-    hmax = 1.0 * μm
-
-    X_raw = ExtendableGrids.geomspace(0.0, L, hmin, hmax)
-    
-    X = sort(unique([X_raw; x_BP1; x_BP2; x_BP3; L]))
-
-    grd = simplexgrid(X)
-    
-    safe_tol = 1.0e-12 
-
-    cellmask!(grd, [x_BP1], [x_BP2], Domain1, tol = safe_tol)
-    cellmask!(grd, [x_BP2], [x_BP3], Domain2, tol = safe_tol)
-    cellmask!(grd, [x_BP3], [L], Domain3, tol = safe_tol)
-
-    bfacemask!(grd, [x_BP1], [x_BP1], BP1, tol = safe_tol)
-    bfacemask!(grd, [x_BP2], [x_BP2], BP2, tol = safe_tol)
-    bfacemask!(grd, [x_BP3], [x_BP3], BP3, tol = safe_tol)
-    bfacemask!(grd, [L], [L], BP4, tol = safe_tol)
-    
-    return X, grd
-end
-  ╠═╡ =#
-
-# ╔═╡ 2d3e4cc2-7823-4fd3-b512-4d042f15cc68
-function makegrid(celldata; nref = 0, hmin = 0.01 * ufac"nm", hmax = celldata.L / 50)
-    (; x_BP1, x_BP2, x_BP3, x_DL, L, Domain1, Domain2, Domain3, BP1, BP2, BP3, BP4) = celldata
-    X1 = range(x_BP1, x_BP2, length = 200)
-    X2 = range(x_BP2, x_BP3, length = 200)
-    X3 = geomspace(x_BP3, L, hmin, hmax)
-    X = glue(glue(X1, X2), X3)
-    ix1 = findfirst(x -> x ≈ x_BP2, X)
-    grd = simplexgrid(X)
-    cellmask!(grd, [x_BP1], [x_BP2], Domain1, tol = 1.0e-12)
-    cellmask!(grd, [x_BP2], [x_BP3], Domain2, tol = 1.0e-12)
-    cellmask!(grd, [x_BP3], [L], Domain3, tol = 1.0e-12)
-
-
-    bfacemask!(grd, [0.0], [0.0], BP1, tol = 1.0e-12)
-    bfacemask!(grd, [x_BP2], [x_BP2], BP2, tol = 1.0e-12)
-    bfacemask!(grd, [x_BP3], [x_BP3], BP3, tol = 1.0e-12)
-    bfacemask!(grd, [L], [L], BP4, tol = 1.0e-12)
-    return grd
-
-end
-
-
-# ╔═╡ aded19f7-379a-4a69-b86e-cdf0c66168bd
-
-
 # ╔═╡ 4b64e168-5fe9-4202-9657-0d4afc237ddc
 md"""
 ### Reaction Description
@@ -374,6 +321,37 @@ where the gap capacitance between the working electrode and the reaction plane (
 
 __Question is the pH-dependence only in the reaction rate constants (i.e. activity of OH⁻ must be set to 0)?__
 """
+
+# ╔═╡ ee9229f8-2f48-4c1f-88cf-4bcc40f6e5f6
+paramsidx
+
+# ╔═╡ fb8a9a17-ed12-4f87-9957-06e5e265fcb2
+function calc_QBL_local(u, data; tolϕ = 1e-12)
+    (; ip, iϕ, ε_0, pscale, ε) = data
+
+    Δp = u[ip]
+    Δϕ = u[iϕ]
+
+    if abs(Δϕ) < tolϕ
+        return zero(Δϕ)
+    end
+    arg = 2 * (1.0 .+ ε) * ε_0 * Δp * pscale
+
+    if arg < 0
+        error("Invalid local QBL state: Δp=$(Δp), Δϕ=$(Δϕ)")
+    end
+
+    return sign(Δϕ) * sqrt(arg)
+end
+
+# ╔═╡ 960b1e96-da59-44c1-9828-929ece1a2955
+function surface_charge(u, data, boundary)
+	if boundary == "Robin"
+  		return C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
+	else
+		return calc_QBL_local(u, data)
+	end
+end
 
 # ╔═╡ d0093605-0e35-4888-a93c-8456c698e6f0
 md"""
@@ -547,34 +525,6 @@ md"""
 ---
 """
 
-# ╔═╡ fb8a9a17-ed12-4f87-9957-06e5e265fcb2
-function calc_QBL_local(u, data; tolϕ = 1e-12)
-    (; ip, iϕ, ε_0, pscale, ε) = data
-
-    Δp = u[ip]
-    Δϕ = u[iϕ]
-
-    if abs(Δϕ) < tolϕ
-        return zero(Δϕ)
-    end
-    arg = 2 * (1.0 .+ ε) * ε_0 * Δp * pscale
-
-    if arg < 0
-        error("Invalid local QBL state: Δp=$(Δp), Δϕ=$(Δϕ)")
-    end
-
-    return sign(Δϕ) * sqrt(arg)
-end
-
-# ╔═╡ 960b1e96-da59-44c1-9828-929ece1a2955
-function surface_charge(u, data, boundary)
-	if boundary == "Robin"
-  		return C_gap * (data.ϕ_we - ϕ_pzc - u[data.iϕ])
-	else
-		return calc_QBL_local(u, data)
-	end
-end
-
 # ╔═╡ 2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 md"""
 ## Double Layer Capacitance
@@ -637,123 +587,6 @@ begin
 end
   ╠═╡ =#
 
-# ╔═╡ ba20b8f6-dfad-4560-b438-6082197e45d4
-function calc_kappa(data)
-    (; z, D, RT, c_bulk) = data
-    return F^2 / RT * sum(z[i]^2 * D[i] * c_bulk[i] for i in eachindex(c_bulk))
-end
-
-# ╔═╡ a274c939-31a5-4281-84bc-d621c1f9b117
-function calc_R_comp(L, data; f_comp =  1, A::Float64)
-    κ = calc_kappa(data)
-    R_u = L / (κ * A)
-    return f_comp * R_u
-end
-
-# ╔═╡ afbb2386-871a-4858-964a-3d2ee212a614
-@eval LiquidElectrolytes begin
-
-    function cvsweep_COMP(
-            esys::AbstractElectrochemicalSystem;
-            Area::Float64,
-            cdata = celldata(esys),
-            voltages = SawTooth(),
-            nperiods = 1,
-            store_solutions = false,
-            R_comp = 0.0,  # Used as a physical constant for post-run correction
-            solver_kwargs...
-        )
-        update_derived!(cdata)
-        sys = esys.vfvmsys
-        F = ph"N_A" * ph"e"
-        factory = VoronoiFVM.TestFunctionFactory(sys)
-        tf_we = testfunction(factory, [bulk_electrode(cdata)], [working_electrode(cdata)])
-        tf_bulk = testfunction(factory, [working_electrode(cdata)], [bulk_electrode(cdata)])
-    
-        working_electrode_voltage!(cdata, voltages(0))
-        control = SolverControl(;
-            verbose = "",
-            handle_exceptions = true,
-            damp_initial = 1,
-            Δu_opt = 0.01,
-            Δt_min = 1.0e-4 * period(voltages),
-            Δt_max = 1.0e-2 * period(voltages),
-            Δt = 1.0e-3 * period(voltages),
-            Δt_grow = 1.1,
-            unorm = u -> wnorm(u, norm_weights(cdata), Inf),
-            rnorm = u -> wnorm(u, norm_weights(cdata), 1),
-            solver_kwargs...
-        )
-        
-        times = [i * period(voltages) for i in 0:nperiods]
-
-        
-        inival = solve(sys; inival = unknowns(esys), control = deepcopy(control), damp_initial = 0.1)
-        result = CVSweepResult()
-
-        allprogress = times[end] - times[begin]
-        tprogress = 0
-    
-        @withprogress begin
-            # 1. PRE-STEP: Apply the pure target voltage to maintain solver stability
-            function pre(sol, t)
-                V_target = voltages(t)
-                working_electrode_voltage!(cdata, V_target)
-            end
-    
-            # 2. POST-STEP: Calculate actual interfacial potential (V_eff) using the solved current
-            function post(sol, oldsol, t, Δt)
-                # Integrate to find reaction and total currents
-                I = -VoronoiFVM.integrate(sys, sys.physics.breaction, sol; boundary = true)
-                I_react = I[:, working_electrode(cdata)]
-                I_we = -VoronoiFVM.integrate(sys, tf_we, sol, oldsol, Δt)
-                I_bulk = -VoronoiFVM.integrate(sys, tf_bulk, sol, oldsol, Δt)
-                
-                # Total current in Amperes
-                curr_tot = Area * F * sum(cdata.z[i] * I_we[i] for i in eachindex(cdata.z))
-                
-                # [CORE LOGIC] Calculate the effective potential at the interface
-                # V_eff = V_applied - (I_total * R_bulk)
-                V_target = voltages(t)
-                V_eff = V_target + (curr_tot * R_comp)
-                
-				if V_target < -0.8
-				        println("t: $(round(t, digits=3)), V_app: $(round(V_target, digits=4)), I: $curr_tot, V_eff: $(round(V_eff, digits=4)), Drop: $(V_target - V_eff)")
-				    end
-                
-				# Store the corrected voltage as the primary voltage for the CV curve
-                push!(result.times, t)
-                push!(result.voltages, V_eff)   
-                push!(result.j_reaction, I_react)
-                push!(result.j_we, I_we)
-                push!(result.j_bulk, I_bulk)
-                
-                tprogress += abs(Δt)
-                @logprogress tprogress / allprogress
-            end
-    
-            function delta(sys, u, v, t, Δt)
-                n = wnorm(u - v, norm_weights(cdata), Inf)
-            end
-    
-            tsol = solve(
-                sys;
-                inival,
-                times,
-                control,
-                pre,
-                post,
-                delta,
-                store_all = store_solutions
-            )
-            if store_solutions
-                result.tsol = tsol
-            end
-        end
-        return result
-    end
-end
-
 # ╔═╡ ef7212fc-a3d0-4784-b901-219204b79dc0
 md"""
 #### General CV
@@ -775,6 +608,16 @@ Click the button below to save the Profile data as CSV files.
 
 $(@bind export_button PlutoUI.Button("Export to CSV"))
 """
+
+# ╔═╡ f6f26f7e-b97e-4f83-8b02-d3ff8b8ad14d
+cv_sol_control = (; damp_initial = 0.1,    
+				    damp_growth  = 1.1,    
+			        Δu_opt = 0.03,
+			        Δt_min = 3.0e-3,
+			        Δt_max = 3.0e-2,
+			        Δt = 3.0e-3,
+			        Δt_grow = 1.2,
+				 )
 
 # ╔═╡ cdf52b70-94ad-45db-b82d-f1268cead86e
 function plot_conc_time_electrode(result, bulk;
@@ -826,6 +669,115 @@ function plot_conc_time_electrode(result, bulk;
     return fig
 end
 
+# ╔═╡ 41158868-8680-466b-a94b-9ffcd2d0ad8e
+# ╠═╡ disabled = true
+#=╠═╡
+function cvsweep_backup_v2(
+        sys, celldata;
+        inival = 0,
+        scanrate = 1ufac"V / s",
+        vmin = -1.5ufac"V",
+        vmax = 0.5ufac"V",
+        nperiods = 1,
+        Δt_min = 1.0e-11,
+        Δu_opt = 2.0e-2,
+        damp_initial = 0.5,
+        kwargs...
+    )
+    sawtooth = SawTooth(; scanrate, vmin, vmax)
+    times = [0, 2 * (vmax - vmin)] * nperiods / scanrate
+    celldata.mutables.sawtooth = sawtooth
+    grid = sys.vfvmsys.grid
+    X = grid[XCoordinates]
+
+    (; BP1, BP2, BP3, BP4, ε, ε0, iϕ, mutables) = celldata
+    
+    local_iDL = mutables.iDL
+    if local_iDL == 0
+        bfaceregions = grid[BFaceRegions]
+        bfacenodes = grid[BFaceNodes]
+        for ibf in 1:length(bfaceregions)
+            if bfaceregions[ibf] == BP2  # Diffuse Layer 시작 경계 플래그 대조
+                local_iDL = bfacenodes[1, ibf]
+                break
+            end
+        end
+    end
+    if local_iDL == 0
+        local_iDL = 2
+    end
+
+    tff = TestFunctionFactory(sys.vfvmsys)
+    tf = testfunction(tff, [BP1, BP2, BP4], [BP3])
+
+    cvresult = CVResult()
+
+    function pre_callback(sol, t)
+        sys.vfvmsys.physics.data.ϕ_we = sawtooth(t)
+    end
+
+    function j_F(sol, t, celldata)
+        (; F) = celldata
+        I_boundary = VoronoiFVM.integrate(sys.vfvmsys, sys.vfvmsys.physics.breaction, sol; boundary = true)
+        net_co_flux = I_boundary[ico, Γ_we]
+        j_faradaic = -2 * F * net_co_flux
+        return j_faradaic
+    end
+	
+	function calc_local_surface_charge(sol_matrix, t_val)
+        v_we = sawtooth(t_val)
+        v_surface = sol_matrix[iϕ, 1] 
+        return C_gap * (v_we - ϕ_pzc - v_surface)
+    end
+	
+    function post(sol, oldsol, t, Δt)
+
+
+		sigma_current = calc_local_surface_charge(sol, t)
+        sigma_old     = calc_local_surface_charge(oldsol, t - Δt)
+        j_C  		  = (sigma_current - sigma_old) / Δt
+
+		
+        push!(cvresult.i_F, j_F(sol, t, celldata))
+        push!(cvresult.i_C, j_C)
+        push!(cvresult.simtimes, t)
+        push!(cvresult.sawtooth, sawtooth(t))
+        push!(cvresult.volts, sol[iϕ, 1])
+        push!(cvresult.dlvolts, sol[iϕ, 1] - sol[iϕ, local_iDL])
+        push!(cvresult.Ωdrop, sol[iϕ, end] - sol[iϕ, local_iDL])
+        return
+    end
+
+    function delta(sys_fvm, u, uold, t, Δt)
+        return norm(u[iϕ, :] - uold[iϕ, :], Inf)
+    end
+
+    tsol = VoronoiFVM.solve(
+        sys.vfvmsys;
+        inival = inival,
+        times = times,
+        pre = pre_callback,  
+        post = post,
+        delta = delta,
+        Δt_min = Δt_min,                        
+        Δt = 1.0e-4 / scanrate,                 
+        Δt_max = 5.0e-2 / scanrate,             
+        damp_initial = damp_initial,            
+        damp_growth = 1.1,                    
+        kwargs...
+    )
+
+    cvresult.ceflow = VoronoiFVM.integrate(sys.vfvmsys, tf, tsol)
+
+    return tsol, cvresult
+end;
+  ╠═╡ =#
+
+# ╔═╡ 2d421be5-9287-4e8d-9a7e-d63c95d9f370
+md"""
+t/s: $@bind time PlutoUI.Slider(range(tsol_irc.t[begin], tsol_irc.t[end], length = 101), show_value = true)
+"""
+
 # ╔═╡ c62b2553-e42f-4002-b206-9af0d8655c3d
 #plottsol(
 #    grid, celldata_Gold_unc, tsol_unc; species = celldata_Gold_unc.iO,
@@ -844,37 +796,40 @@ end
 #	limits=(0,0.035)
 #)
 
+# ╔═╡ 1efbe0ce-699f-4b6a-ab82-7b12d88e150b
+
+
+# ╔═╡ 6d3dc6b1-82ea-448a-af86-ed6001ed5446
+
+
+# ╔═╡ adfc0c3b-10d0-4f99-8b42-6da9a26de219
+
+
 # ╔═╡ 239abbd9-928d-4f33-a9a1-517c986d4202
 figscale=0.6
 
 # ╔═╡ 6027ad72-7d72-47c2-9025-f00af8380c7f
 cmax=0.005
 
-# ╔═╡ c68691f1-502a-4aee-b56c-7169e007270d
-function plot_cv_current(result, model;
-                         species=nothing,
-                         fig_size=(650, 400),
-                         scale=cm^2/mA,
-                         color_gradient=true)
+# ╔═╡ 8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
 
-    sp = (species === nothing) ? model.cspecies[1] : species
 
-    fig = Figure(size = fig_size)
-    ax = Axis(fig[1, 1],
-              ylabel = L"I (mA/cm^2)",
-              xlabel = L"time / s")
+# ╔═╡ 924d98c3-9f21-4322-802d-8d883aee28c6
 
-    I = currents(result, sp) .* scale
 
-    if color_gradient
-        cols = RGBf.(range(0, 1, length(result.voltages)), 0.0, 0.0)
-        lines!(ax, result.times, I./2; color=cols, linewidth = 3)
-    else
-        lines!(ax, result.times, I)
-    end
+# ╔═╡ f34bca99-5847-4253-9c02-b72a0899727d
 
-    return fig
-end
+
+# ╔═╡ 7e3c2514-94eb-436a-8473-9d9755b24b2e
+
+
+# ╔═╡ 44300564-d572-4fa1-afb8-d74e7277342d
+
+
+# ╔═╡ fd5c53ac-1a27-40f9-8ae4-cfbf1aaba5d1
+md"""
+### CV unc`:=none` Result
+"""
 
 # ╔═╡ e6f43f01-15d8-4265-ae15-3673fb3cf7e3
 function plot_activity_time_electrode(result, bulk, electrolyte;
@@ -946,6 +901,9 @@ function plot_activity_time_electrode(result, bulk, electrolyte;
 end
 
 # ╔═╡ 9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
+
+
+# ╔═╡ ec296961-151f-4219-a7f2-fb34e7facaa5
 
 
 # ╔═╡ f1035efd-3e58-4c62-8799-a8750bdf137e
@@ -2046,8 +2004,52 @@ end
 # ╔═╡ ed92cece-3f89-45f5-ac17-cbc9a9abb906
 sawtooth
 
-# ╔═╡ 72b30fd2-d5d2-4a23-98e1-a5019841e839
-user_input_cv
+# ╔═╡ 87855181-ffbb-4a15-9852-0ded03746f18
+sawtooth
+
+# ╔═╡ 7da046bf-d3b1-43a0-bdba-89b4da2f6be3
+if CV
+	AuCO2RR_plots.plot_time_voltage_and_dt(pnpresult, sawtooth)
+end
+
+# ╔═╡ bf3a3756-59a9-4767-a713-034ef37ab55f
+let
+	    fig = Figure(size = (200,200))
+		axV = Axis(fig[1, 1],
+        	       xlabel = "Time (s)",
+            	   ylabel = "Voltage")
+		lines!(axV, pnpresult.times, sawtooth.(pnpresult.times))
+	fig
+end
+
+# ╔═╡ fdbaa3a0-6b2b-45ad-8618-a63a7f720049
+sawtooth.(pnpresult.times)
+
+# ╔═╡ 2429e070-ed38-4a5a-9cdf-7818e7827021
+function plot_cv_current(result, model;
+                         species=nothing,
+                         fig_size=(650, 400),
+                         scale=cm^2/mA,
+                         color_gradient=true)
+
+    sp = (species === nothing) ? model.cspecies[1] : species
+
+    fig = Figure(size = fig_size)
+    ax = Axis(fig[1, 1],
+              ylabel = L"I (mA/cm^2)",
+              xlabel = L"\phi (V \; \mathrm{vs}\; SHE)")
+
+    I = currents(result, sp) .* scale
+
+    if color_gradient
+        cols = RGBf.(range(0, 1, length(sawtooth.(pnpresult.times)), 0.0, 0.0))
+        lines!(ax,sawtooth.(pnpresult.times), I; color=cols)
+    else
+        lines!(ax, sawtooth.(pnpresult.times), I)
+    end
+
+    return fig
+end
 
 # ╔═╡ 0a1054c5-cee7-4202-9d32-9eee6ec55265
 user_input_cv.nperiods
@@ -2060,7 +2062,7 @@ floataside(
 			###### __Parameter Set__
 			
 			- **Use Physical ion size & solvation number**
-			  ``κ``, ``a`` : $(Child("use_physical_size", PlutoUI.CheckBox(default=false)))
+			  ``κ``, ``a`` : $(Child("use_physical_size", PlutoUI.CheckBox(default=true)))
 			  - **ON**  : Apply physical ion size and solvation number.
 			  - **OFF** : Use the previous model setting (only potassium has a size).
 			"""
@@ -2092,115 +2094,95 @@ floataside(
 	top = 600
 )
 
+# ╔═╡ 2d3e4cc2-7823-4fd3-b512-4d042f15cc68
+function makegrid(celldata, L; hmin = 1.0e-6 * μm, hmax = 1.0 * μm)
+	
+    "Position of boundary BP1 (electrode surface)."
+    x_BP1 = 0.0 * μm
+
+    "Position of boundary BP2 (inner Helmholtz plane)."
+    x_BP2 = 0.00029 * μm
+
+    "Position of boundary BP3 (plane of electron transfer / outer Helmholtz plane)."
+    x_BP3 = 0.00059 * μm
+
+    "Approximate outer edge of the electric double layer."
+    x_DL = user_input_model.L
+
+    "Integer label for Domain 1."
+    Domain1::Int = 1
+
+    "Integer label for Domain 2."
+    Domain2::Int = 2
+
+    "Integer label for Domain 3."
+    Domain3::Int = 3
+
+    "Integer label for boundary point BP1."
+    BP1::Int = 1
+
+    "Integer label for boundary point BP2."
+    BP2::Int = 2
+
+    "Integer label for boundary point BP3."
+    BP3::Int = 3
+
+    "Integer label for boundary point BP4."
+    BP4::Int = 4
+
+    X_raw = ExtendableGrids.geomspace(0.0, L, hmin, hmax)
+    
+    X = sort(unique([X_raw; x_BP1; x_BP2; x_BP3; L]))
+
+    grd = simplexgrid(X)
+    
+    safe_tol = 1.0e-12 
+
+    cellmask!(grd, [x_BP1], [x_BP2], Domain1, tol = safe_tol)
+    cellmask!(grd, [x_BP2], [x_BP3], Domain2, tol = safe_tol)
+    cellmask!(grd, [x_BP3], [L], Domain3, tol = safe_tol)
+
+    bfacemask!(grd, [x_BP1], [x_BP1], BP1, tol = safe_tol)
+    bfacemask!(grd, [x_BP2], [x_BP2], BP2, tol = safe_tol)
+    bfacemask!(grd, [x_BP3], [x_BP3], BP3, tol = safe_tol)
+    bfacemask!(grd, [L], [L], BP4, tol = safe_tol)
+    
+    return X, grd
+
+end
+
+
 # ╔═╡ 2c061d99-da09-4ccf-a4ec-73a3c9a908fe
 begin
 	#geometry function constant
 	#Γ_we = BP1
 	const Γ_we 		= 1
-	const Γ_bulk 	= 4
+	const Γ_bulk 	= 2
 	const L = user_input_model.L * μm
 end
 
-# ╔═╡ 41158868-8680-466b-a94b-9ffcd2d0ad8e
-function cvsweep(
-        sys, celldata;
-        inival = 0,
-        scanrate = 1ufac"V / s",
-        vmin = -1.5ufac"V",
-        vmax = 0.5ufac"V",
-        nperiods = 1,
-        Δt_min = 1.0e-11,
-        Δu_opt = 2.0e-2,
-        damp_initial = 0.5,
-        kwargs...
-    )
-    sawtooth = SawTooth(; scanrate, vmin, vmax)
-    times = [0, 2 * (vmax - vmin)] * nperiods / scanrate
-    celldata.mutables.sawtooth = sawtooth
-    grid = sys.vfvmsys.grid
-    X = grid[XCoordinates]
+# ╔═╡ 05ebcce5-6904-451f-bbd6-ea4588ca05e3
+begin
+    #Vmax = 2 * V
+    #L = user_input_model.L * μm
+    hmin = 1.0e-6 	* μm
+    hmax = 1.0	* μm 
+    X = ExtendableGrids.geomspace(0, L, hmin, hmax)
+    grid = ExtendableGrids.simplexgrid(X)
+	#X, grid = makegrid(elydata_Gold_unc, L)
+end
 
-    (; BP1, BP2, BP3, BP4, ε, ε0, iϕ, mutables) = celldata
-    
-    local_iDL = mutables.iDL
-    if local_iDL == 0
-        bfaceregions = grid[BFaceRegions]
-        bfacenodes = grid[BFaceNodes]
-        for ibf in 1:length(bfaceregions)
-            if bfaceregions[ibf] == BP2  # Diffuse Layer 시작 경계 플래그 대조
-                local_iDL = bfacenodes[1, ibf]
-                break
-            end
-        end
-    end
-    if local_iDL == 0
-        local_iDL = 2
-    end
+# ╔═╡ d5c6769d-35f9-461a-aae2-00122ccddd63
+gridplot(grid; size = (750, 200))
 
-    tff = TestFunctionFactory(sys.vfvmsys)
-    tf = testfunction(tff, [BP1, BP2, BP4], [BP3])
+# ╔═╡ 50dc3a93-6eeb-4f6f-ac42-65d8d597614c
+blthickness(grid, celldata_Gold_unc, tsol_unc; species = 1)/ufac"nm"
 
-    cvresult = CVResult()
+# ╔═╡ ea02ccff-20ea-426d-b102-e93a30e8fdb4
+blthickness(grid, celldata_Gold_irc, tsol_irc; species = 1)/ufac"nm"
 
-    function pre_callback(sol, t)
-        sys.vfvmsys.physics.data.ϕ_we = sawtooth(t)
-    end
-
-    function j_F(sol, t, celldata)
-        (; F) = celldata
-        I_boundary = VoronoiFVM.integrate(sys.vfvmsys, sys.vfvmsys.physics.breaction, sol; boundary = true)
-        net_co_flux = I_boundary[ico, Γ_we]
-        j_faradaic = -2 * F * net_co_flux
-        return j_faradaic
-    end
-	
-	function calc_local_surface_charge(sol_matrix, t_val)
-        v_we = sawtooth(t_val)
-        v_surface = sol_matrix[iϕ, 1] 
-        return C_gap * (v_we - ϕ_pzc - v_surface)
-    end
-	
-    function post(sol, oldsol, t, Δt)
-
-
-		sigma_current = calc_local_surface_charge(sol, t)
-        sigma_old     = calc_local_surface_charge(oldsol, t - Δt)
-        j_C  		  = (sigma_current - sigma_old) / Δt
-
-		
-        push!(cvresult.i_F, j_F(sol, t, celldata))
-        push!(cvresult.i_C, j_C)
-        push!(cvresult.simtimes, t)
-        push!(cvresult.sawtooth, sawtooth(t))
-        push!(cvresult.volts, sol[iϕ, 1])
-        push!(cvresult.dlvolts, sol[iϕ, 1] - sol[iϕ, local_iDL])
-        push!(cvresult.Ωdrop, sol[iϕ, end] - sol[iϕ, local_iDL])
-        return
-    end
-
-    function delta(sys_fvm, u, uold, t, Δt)
-        return norm(u[iϕ, :] - uold[iϕ, :], Inf)
-    end
-
-    tsol = VoronoiFVM.solve(
-        sys.vfvmsys;
-        inival = inival,
-        times = times,
-        pre = pre_callback,  
-        post = post,
-        delta = delta,
-        Δt_min = Δt_min,                        
-        Δt = 1.0e-4 / scanrate,                 
-        Δt_max = 5.0e-2 / scanrate,             
-        damp_initial = damp_initial,            
-        damp_growth = 1.1,                    
-        kwargs...
-    )
-
-    cvresult.ceflow = VoronoiFVM.integrate(sys.vfvmsys, tf, tsol)
-
-    return tsol, cvresult
-end;
+# ╔═╡ ce8dd32b-2ea3-4a42-9436-69b06e751984
+blthickness(grid, celldata_Gold_odr, tsol_odr; species = ico)/ufac"nm"
 
 # ╔═╡ 9d814b85-a5b6-42e5-abf4-15500bbdb717
 begin
@@ -2349,6 +2331,19 @@ begin
 	end
 	create_markdown(bulk)
 end
+
+# ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
+if CV
+	plot_conc_time_electrode(pnpresult, bulk)
+end
+
+# ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
+if CV
+	c_b = AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
+end
+
+# ╔═╡ bf991ac4-8ff2-4a49-9f1e-16ff60b12493
+c_b[1]
 
 # ╔═╡ 59f05654-a8de-4e17-b2ad-60a7ac64e122
 let
@@ -2664,93 +2659,28 @@ function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
 end
 
 
-# ╔═╡ e510bce3-d33f-47bb-98d6-121eee8f2252
-elydata_Gold = ElectrolyteData(;
-                               	nc = size(bulk)[1],
-								na    = na,
-								z     = getproperty.(bulk, :z),
-							  	D     = getproperty.(bulk, :D),
-							  	T     = T,
-							  	eneutral=false,
-							  	κ     = getproperty.(bulk, :κ),
-	                            c_bulk= getproperty.(bulk, :c_bulk),
-							    v0 	  = v0,
-								v     = getproperty.(bulk, :v),
-								M0 	  = M0,
-								M     = getproperty.(bulk, :M),
-							  	Γ_we  = Γ_we,
-							  	Γ_bulk= Γ_bulk,
-							   	actcoeff! = γ_mode,
-							   )
-
-# ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
-celldata_Gold_irc = CellData(; L, ircompensation=:pseudopotentiostat,
-                            # = size(bulk)[1],
-                        	nIon = size(bulk)[1],
-							na    = na,
-							z     = getproperty.(bulk, :z),
-						  	D     = getproperty.(bulk, :D),
-	                        cbulk = getproperty.(bulk, :c_bulk),
- 	                        c_bulk = getproperty.(bulk, :c_bulk),
-							#k0 = 1.0e13
-							iϕ    = elydata_Gold.iϕ,
-							iO = ico2,
-							iR = ico,
-							C_O = getproperty.(bulk, :c_bulk)[ico2],
-							C_elec = 1,
-							ircompfactor = user_input_cv.ircomp
-							)
-
 # ╔═╡ de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
-celldata_Gold_odr = CellData(; L, ircompensation=:ohmicdrop,
-                        	nIon = size(bulk)[1],
-							na    = na,
-							z     = getproperty.(bulk, :z),
-						  	D     = getproperty.(bulk, :D),
-	                        cbulk= getproperty.(bulk, :c_bulk),
- 	                        c_bulk = getproperty.(bulk, :c_bulk),
-							iϕ    = elydata_Gold.iϕ,
-							iO = ico2,
-							iR = ico,
-							C_O = getproperty.(bulk, :c_bulk)[ico2],
-							C_elec = 1,	 
-							ircompfactor = user_input_cv.ircomp
-							)
+elydata_Gold_odr = ElectrolyteData(; ircompensation=:ohmicdrop,
+	                               	nc = size(bulk)[1],
+									na    = na,
+									z     = getproperty.(bulk, :z),
+								  	D     = getproperty.(bulk, :D),
+								  	T     = T,
+								  	eneutral=false,
+								  	κ     = getproperty.(bulk, :κ),
+		                            c_bulk= getproperty.(bulk, :c_bulk),
+								    v0 	  = v0,
+									v     = getproperty.(bulk, :v),
+									M0 	  = M0,
+								   	x_ref = [0.0, 0.00029, 0.00059] * μm,
+									M     = getproperty.(bulk, :M),
+								  	Γ_we  = Γ_we,
+								  	Γ_bulk= Γ_bulk,
+									actcoeff! = γ_mode,
+									ircompfactor = user_input_cv.ircomp,
+									#redoxreaction = we_breactions
 
-# ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
-celldata_Gold_unc = CellData(; L, ircompensation=:ohmicdrop,
-                        	nIon = size(bulk)[1],
-							na    = na,
-							z     = getproperty.(bulk, :z),
-						  	D     = getproperty.(bulk, :D),
-	                        cbulk= getproperty.(bulk, :c_bulk),
- 	                        c_bulk = getproperty.(bulk, :c_bulk),
-							iϕ    = elydata_Gold.iϕ,
-							iO = ico2,
-							iR = ico,	
-							C_O = getproperty.(bulk, :c_bulk)[ico2],
-							C_elec = 1,			
-							ircompfactor = user_input_cv.ircomp
-							)
-
-# ╔═╡ 05ebcce5-6904-451f-bbd6-ea4588ca05e3
-begin
-    #Vmax = 2 * V
-    #L = user_input_model.L * μm
-    #hmin = 1.0e-6 	* μm
-    #hmax = 1.0	* μm 
-    #X = ExtendableGrids.geomspace(0, L, hmin, hmax)
-    #grid = ExtendableGrids.simplexgrid(X)
-
-	grid = makegrid(celldata_Gold_unc)
-	
-end;
-
-# ╔═╡ d5c6769d-35f9-461a-aae2-00122ccddd63
-gridplot(grid, size = (600, 200))
-
-# ╔═╡ 12235c3c-18f2-4fc7-95ef-800f71783036
-elydata_toy = elydata_Gold
+									);
 
 # ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
 function activity_coefficient!(
@@ -2771,6 +2701,8 @@ function activity_coefficient!(
         p = u[ip] * pscale - p_bulk
         c0, barc = c0_barc(u, data)
         for ic in cspecies
+		#println(c0,"\t", barc,"\t", tildev[ic],"\t", p, "\t",Mrel[ic])
+			
             γ[ic] = exp(tildev[ic] * p / RT) * (barc / c0)^Mrel[ic] * (1 / (v0 * barc)) #* (1 /barc)
 		end
 
@@ -2847,7 +2779,7 @@ begin
 		γ_co2 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico2]
 		γ_co 	 	= activity_coefficient!(γ, u, data, γ_mode)[ico]
 		σ 			= surface_charge(u, data, user_input_model.BC_Select)
-		local_pH 	= -log10(abs.(u[ihplus] * γ[ihplus] / (mol/dm^3)))
+		local_pH 	= -log10((u[ihplus] * γ[ihplus] / (mol/dm^3)))
 
 	
 
@@ -2883,38 +2815,75 @@ begin
 	end
 end
 
-# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
-function pb_bcondition(f, u, bnode, data)
-    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+# ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
+elydata_Gold_unc = ElectrolyteData(; ircompensation=:none,
+	                               	nc = size(bulk)[1],
+									na    = na,
+									z     = getproperty.(bulk, :z),
+								  	D     = getproperty.(bulk, :D),
+								  	T     = T,
+								  	eneutral=false,
+								  	κ     = getproperty.(bulk, :κ),
+		                            c_bulk= getproperty.(bulk, :c_bulk),
+								    v0 	  = v0,
+									v     = getproperty.(bulk, :v),
+									M0 	  = M0,
+									M     = getproperty.(bulk, :M),
+								  	Γ_we  = Γ_we,
+								  	Γ_bulk= Γ_bulk,
+									actcoeff! = γ_mode,
+									ircompfactor = user_input_cv.ircomp,
+									redoxreaction = we_breactions
+									)
 
-	if user_input_model.BC_Select == "Dirichlet"
-	    ## Dirichlet ϕ=ϕ_we at Γ_we
-	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
-	elseif user_input_model.BC_Select == "Robin"
-		## Robin ϕ=dϕ₀/dx 
-	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
-	else
-		## neumann ϕ=dϕ₀/dx 
-	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
-	
-	end
+# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
+function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+    celldata = deepcopy(model)
+    #celldata.eneutral = eneutral
+	reaction_arg = model == elydata_Gold_unc ? (; reaction) : NamedTuple()
+    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
+    return result = LiquidElectrolytes.cvsweep(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
+		kwargs...
+    )
 
-    return bulkbcondition(f, u, bnode, data)
 end
 
-# ╔═╡ 924f8f5d-2cb0-4381-a522-509ff4c002b6
-begin
-	model_key = user_input_model[:model_choice]
-	model = model_key == "Gold_Model" ? elydata_Gold :
-	        model_key == "Landstorfer_NaClO₄ model" ? elydata_NaClO₄ :
-	        model_key == "Landstorfer_NaF model" ? elydata_NaF :
-			model_key == "Toy model" ? elydata_toy :
-	        error("Unknown model choice: $model_key")
-	molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
-end;
+# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
+if pressure_varied_checkbox
+	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = 5)
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
+end
 
-# ╔═╡ 165446a0-da6c-4ecc-a5ba-c96eb300af12
-const c0_bulk   = c̄ - sum(model.c_bulk) # solvent bulk molar concentration
+# ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
+if pressure_varied_checkbox
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
+end
+
+# ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
+elydata_Gold_irc = ElectrolyteData(; ircompensation=:pseudopotentiostat,
+	                               	nc = size(bulk)[1],
+									na    = na,
+									z     = getproperty.(bulk, :z),
+								  	D     = getproperty.(bulk, :D),
+								  	T     = T,
+								  	eneutral=false,
+								  	κ     = getproperty.(bulk, :κ),
+		                            c_bulk= getproperty.(bulk, :c_bulk),
+								    v0 	  = v0,
+									v     = getproperty.(bulk, :v),
+									M0 	  = M0,
+									M     = getproperty.(bulk, :M),
+								  	Γ_we  = Γ_we,
+								  	Γ_bulk= Γ_bulk,
+									actcoeff! = γ_mode,
+									ircompfactor = user_input_cv.ircomp,
+								   	redoxreaction = we_breactions
+
+									);
 
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
@@ -2945,7 +2914,7 @@ function pnp_bcondition(
 	end
 		
 		
-	if bnode.region == Γ_we && model == elydata_Gold
+	if bnode.region == Γ_we 
 		we_breactions(f, u, bnode, data)
 	end
 
@@ -2955,10 +2924,45 @@ function pnp_bcondition(
 
 end;
 
+# ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
+pnpresult_unc = sweep(elydata_Gold_unc, grid, pnp_bcondition, reaction, sawtooth; nperiods = user_input_cv.nperiods, eneutral = true, tunnel = false)
+
+# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
+if CV
+	AuCO2RR_plots.plot_conc_profile_logx(pnpresult_unc, bulk, X, 120)
+end
+
+# ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
+if CV
+	path = AuCO2RR_plots.cv_conc_gif(pnpresult_unc, bulk, X; framerate=4)
+	LocalResource(path)
+end
+
+# ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
+if CV
+	AuCO2RR_plots.plot_cv_model_vs_koper_facets(pnpresult_unc; species = iohminus)
+end
+
+# ╔═╡ 74c43d72-3a23-4a24-a4ae-8b18b245610a
+if CV
+	AuCO2RR_plots.plot_iv_with_experiment(pnpresult_unc, iohminus)
+end
+
+# ╔═╡ 28337c8b-8687-4618-bd9d-16d94193dd5f
+if CV
+	pnpresult_irc = sweep(elydata_Gold_irc, grid, pnp_bcondition, reaction, sawtooth; nperiods = user_input_cv.nperiods, eneutral = true, tunnel = false, )
+end
+
+# ╔═╡ e8e6cff2-574f-4863-8093-9a747e419cf7
+if CV
+	pnpresult_odr = sweep(elydata_Gold_odr, grid, pnp_bcondition, reaction, sawtooth; nperiods = user_input_cv.nperiods, eneutral = false, tunnel = false)
+end
+
 # ╔═╡ 311660ce-0168-47eb-8d23-00a8e750fd84
 function simulate(
         grid, 
-        elydata, celldata; 
+        celldata,
+		reaction; 
         Δu_opt = 2.0e-2,
         damp_initial = 0.5,
         Δt_min = 1.0e-11,
@@ -2970,10 +2974,10 @@ function simulate(
         vmax = 0.1ufac"V",
         nperiods = 1,
         scanrate = 1.0ufac"V / s",
-        reaction = reaction,
         kwargs...
     )
-    sys = PNPSystem(grid; bcondition = pnp_bcondition, celldata = elydata, reaction = reaction)
+	celldata = deepcopy(celldata)
+    sys = PNPSystem(grid; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
     
     initial_guess_vector = LiquidElectrolytes.unknowns(sys)
     
@@ -2984,69 +2988,18 @@ function simulate(
         time = 0.0
     )
     
-    tsol, cvresult = cvsweep(
-        sys, celldata; 
-        inival = inisol, 
-        nperiods = nperiods, 
-        scanrate = scanrate,
-        Δu_opt = Δu_opt,
-        damp_initial = damp_initial,
-        Δt_min = Δt_min,
-        max_round = max_round,
-        tol_round = tol_round,
-        verbose = verbose,
-        handle_exceptions = handle_exceptions,
-        vmin = vmin,
-        vmax = vmax,
-        kwargs...
+    return result = LiquidElectrolytes.cvsweep(
+        sys;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
     )
     
     return tsol, cvresult
 end;
 
-# ╔═╡ 2ebfdd4f-445b-49d6-bcfb-6963ff52df4d
-tsol_irc, cvresult_irc = simulate(grid, elydata_Gold, celldata_Gold_irc; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
-
-# ╔═╡ 2d421be5-9287-4e8d-9a7e-d63c95d9f370
-md"""
-t/s: $@bind time PlutoUI.Slider(range(tsol_irc.t[begin], tsol_irc.t[end], length = 101), show_value = true)
-"""
-
-# ╔═╡ d9539ae9-d73f-452d-b6b8-2287268ce204
-plotsol(grid, tsol_irc(time), celldata_Gold_irc)
-
-# ╔═╡ b6adaa42-39ed-497c-b3d8-55512af1388b
-plotresult(cvresult_irc, tsol_irc, celldata_Gold_irc.mutables.sawtooth.scanrate, grid, celldata_Gold_irc)
-
-# ╔═╡ ea02ccff-20ea-426d-b102-e93a30e8fdb4
-blthickness(grid, celldata_Gold_irc, tsol_irc; species = 1)/ufac"nm"
-
-# ╔═╡ 4af2a551-3e68-4184-9d90-52b86d944aa7
-tsol_unc, cvresult_unc = simulate(grid, elydata_Gold, celldata_Gold_unc ; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
-
-# ╔═╡ e2194300-5e84-481f-81c0-3e733937ed4b
-plotsol(grid, tsol_unc(time), celldata_Gold_unc)
-
-# ╔═╡ 7bb87bfb-2fac-4b93-868f-885e0dcd72be
-plotresult(cvresult_unc, tsol_unc, celldata_Gold_unc.mutables.sawtooth.scanrate, grid, celldata_Gold_unc)
-
-# ╔═╡ 50dc3a93-6eeb-4f6f-ac42-65d8d597614c
-blthickness(grid, celldata_Gold_unc, tsol_unc; species = 1)/ufac"nm"
-
-# ╔═╡ a43ec777-d41f-4169-897f-a0812aea4436
-tsol_odr, cvresult_odr = simulate(grid, elydata_Gold, celldata_Gold_odr; vmax = user_input_cv.vmax,  vmin = user_input_cv.vmin, nperiods = 2, scanrate =  user_input_cv.scanrate)
-
-# ╔═╡ 1d7db684-efc6-4388-907b-69867511f581
-plotsol(grid, tsol_odr(time), celldata_Gold_odr)
-
-# ╔═╡ c035db31-cb1c-4409-a18f-c520e2754c5e
-plotresult(cvresult_odr, tsol_odr, celldata_Gold_odr.mutables.sawtooth.scanrate, grid, celldata_Gold_odr)
-
-# ╔═╡ ce8dd32b-2ea3-4a42-9436-69b06e751984
-blthickness(grid, celldata_Gold_odr, tsol_odr; species = ico)/ufac"nm"
-
 # ╔═╡ b65575ce-7c5e-4a70-bb50-3bd8054516aa
-function run(L_values; ircompensation = :pseudopotentiostat, elydata = elydata_Gold)
+function run(L_values; ircompensation = :pseudopotentiostat)
     tsols = []
     cvresults = []
     grids = []
@@ -3088,30 +3041,6 @@ function run(L_values; ircompensation = :pseudopotentiostat, elydata = elydata_G
     
     return cvresults, tsols, grids, celldatas
 end;
-
-# ╔═╡ 1efbe0ce-699f-4b6a-ab82-7b12d88e150b
-cvr_irc, tsols_irc, grids_irc, celldatas_irc = run(L_values; ircompensation = :pseudopotentiostat);
-
-# ╔═╡ 8fcfdc11-0e5b-46d9-bbe6-ca0ad89a549b
-plots_irc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_irc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_irc, celldatas_irc, tsols_irc)];
-
-# ╔═╡ 6d3dc6b1-82ea-448a-af86-ed6001ed5446
-cvr_unc, tsols_unc, grids_unc, celldatas_unc = run(L_values; ircompensation = :none);
-
-# ╔═╡ 924d98c3-9f21-4322-802d-8d883aee28c6
-plots_unc= [plottsol(grd,celldata,tsol; figscale, species=celldatas_unc[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_unc, celldatas_unc, tsols_unc)];
-
-# ╔═╡ adfc0c3b-10d0-4f99-8b42-6da9a26de219
-cvr_odr, tsols_odr, grids_odr, celldatas_odr = run(L_values; ircompensation = :ohmicdrop);
-
-# ╔═╡ f34bca99-5847-4253-9c02-b72a0899727d
-plots_odr= [plottsol(grd,celldata,tsol; figscale, species=celldatas_odr[1].iO, limits=(0,cmax)) for (grd,celldata,tsol) in zip(grids_odr, celldatas_odr, tsols_odr)];
-
-# ╔═╡ 7e3c2514-94eb-436a-8473-9d9755b24b2e
-plots=hcat(plots_irc,plots_unc, plots_odr)
-
-# ╔═╡ 44300564-d572-4fa1-afb8-d74e7277342d
-PlutoUI.ExperimentalLayout.grid(plots)
 
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
@@ -3333,6 +3262,37 @@ if Ldependancy
 	AuCO2RR_plots.plotcurr_over_L(ivL; species=iohminus, cutoff=-0.4, title="IV vs L (log scale)")
 end
 
+# ╔═╡ 9a4e01d9-f469-4427-bf4c-883adb67ae24
+function pb_bcondition(f, u, bnode, data)
+    (; Γ_we, Γ_bulk, ϕ_we, iϕ, ip) = data
+
+	if user_input_model.BC_Select == "Dirichlet"
+	    ## Dirichlet ϕ=ϕ_we at Γ_we
+	    boundary_dirichlet!(f, u, bnode; species = iϕ, region = Γ_we, value = ϕ_we)
+	elseif user_input_model.BC_Select == "Robin"
+		## Robin ϕ=dϕ₀/dx 
+	    boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+	else
+		## neumann ϕ=dϕ₀/dx 
+	    boundary_neumann!(f, u, bnode, species = iϕ, region = Γ_we, value = C_gap * (ϕ_we - ϕ_pzc))
+	
+	end
+
+    return bulkbcondition(f, u, bnode, data)
+end
+
+# ╔═╡ 924f8f5d-2cb0-4381-a522-509ff4c002b6
+begin
+	model_key = user_input_model[:model_choice]
+	model = model_key == "Gold_Model" ? elydata_Gold_unc :
+	        model_key == "Landstorfer_NaClO₄ model" ? elydata_NaClO₄ :
+	        error("Unknown model choice: $model_key")
+	molarities = [0.005, 0.1]#, 0.05, 0.1, 0.5] 
+end;
+
+# ╔═╡ 165446a0-da6c-4ecc-a5ba-c96eb300af12
+const c0_bulk   = c̄ - sum(model.c_bulk) # solvent bulk molar concentration
+
 # ╔═╡ 69ed6449-5caa-441b-9d8b-e38a9fce1f1f
 function pb_flux(y, u, edge, data)
     #(; Γ_we, Γ_bulk, ϕ_we, iϕ, ip, ε) = data
@@ -3340,7 +3300,7 @@ function pb_flux(y, u, edge, data)
 end
 
 # ╔═╡ 7fc5e2a3-c217-4042-9a42-e66d547bef96
-is_Landstorfer = model != elydata_Gold
+is_Landstorfer = model != elydata_Gold_unc
 
 # ╔═╡ 084e2127-ea77-4894-8990-380c2e8802c7
 if double_layer_curve
@@ -3374,84 +3334,11 @@ if double_layer_curve
 	fig_pnp
 end
 
-# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
-function sweep(pnpdata; eneutral = true, tunnel = false, bikerman = true)
-    celldata = deepcopy(pnpdata)
-    #celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = pnp_bcondition, celldata = celldata, reaction = reaction)
-    return result = LiquidElectrolytes.cvsweep(
-        pnpcell;
-        voltages = sawtooth,
-        nperiods,
-        store_solutions = true,
-    )
-
-end
-
-# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
-if pressure_varied_checkbox
-	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = 5)
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
-end
-
-# ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
-if pressure_varied_checkbox
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
-end
-
-# ╔═╡ 9fb47b83-a853-4316-bb8d-30e65b16ef78
-if CV
-	pnpresult = sweep(model; eneutral = false, tunnel = false)
-end
-
-# ╔═╡ 7da046bf-d3b1-43a0-bdba-89b4da2f6be3
-if CV
-	AuCO2RR_plots.plot_time_voltage_and_dt(pnpresult, sawtooth)
-end
-
-# ╔═╡ a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
-if CV
-	plot_conc_time_electrode(pnpresult, bulk)
-end
-
-# ╔═╡ 2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
-if CV
-	AuCO2RR_plots.plot_conc_profile_logx(pnpresult, bulk, X, 120)
-end
-
-# ╔═╡ 2420382d-227a-4063-9450-1f1726df018e
-if CV
-	path = AuCO2RR_plots.cv_conc_gif(pnpresult, bulk, X; framerate=4)
-	LocalResource(path)
-end
-
-# ╔═╡ 3d661549-a8d2-40b0-add8-b186193f90fe
-if CV
-	AuCO2RR_plots.plot_cv_model_vs_koper_facets(pnpresult; species = iohminus)
-end
-
-# ╔═╡ 74c43d72-3a23-4a24-a4ae-8b18b245610a
-if CV
-	AuCO2RR_plots.plot_iv_with_experiment(pnpresult, iohminus)
-end
-
-# ╔═╡ b25f2246-0182-4d50-a606-0d81776d414f
-if CV
-	c_b = AuCO2RR_plots.plot_conc_profile_with_delta(pnpresult, bulk, X)
-end
-
-# ╔═╡ bf991ac4-8ff2-4a49-9f1e-16ff60b12493
-c_b[1]
-
 # ╔═╡ e6de6e89-5dc6-4fac-a7fc-8346175283a3
-AuCO2RR_plots.plot_cv_current(pnpresult, model; species = ico)
-
-# ╔═╡ df1cd76c-343a-490b-a2f5-3249e3dca1cc
-plot_cv_current(pnpresult, model; species = iohminus)
+plot_cv_current(pnpresult_unc, model; species = ico)
 
 # ╔═╡ d242507d-d1bb-461f-b4fe-ab3f597d9c40
-plot_activity_time_electrode(pnpresult, bulk, model)
+plot_activity_time_electrode(pnpresult_unc, bulk, model)
 
 # ╔═╡ 8cd25c0c-e260-4401-af12-a1def38bb7c2
 if pH_varied_checkbox
@@ -4571,19 +4458,18 @@ floataside(
 # ╠═bd8134d8-5a69-486e-8429-7cf810b3ccbe
 # ╠═2176bc34-fc74-4532-912e-e73441b37245
 # ╠═f7d13047-4007-47ac-a3bb-a0b788dcd141
-# ╟─beae1479-1c0f-4a55-86e1-ad2b50174c83
+# ╠═beae1479-1c0f-4a55-86e1-ad2b50174c83
+# ╠═9b7350ca-e176-4ebc-8a67-00d6737ab1a2
 # ╟─ab2184fc-0279-46d9-9ee4-88fe3e732789
 # ╠═7316901c-d85d-48e9-87dc-3614ab3d81a5
 # ╟─6b7cfe87-8190-40a5-8d25-e39ef8d55db5
 # ╠═5a146a44-03dc-45f3-ae15-993d11c2edac
 # ╠═00947475-c96e-4ecc-a1ef-5be5e3e3c864
 # ╠═165446a0-da6c-4ecc-a5ba-c96eb300af12
-# ╠═a4b1300f-7e8a-46ab-9efd-dba82315a966
-# ╠═13e0b9ee-ab7a-4e6a-ad61-16f3de7fc135
+# ╟─a4b1300f-7e8a-46ab-9efd-dba82315a966
 # ╠═2d3e4cc2-7823-4fd3-b512-4d042f15cc68
 # ╠═05ebcce5-6904-451f-bbd6-ea4588ca05e3
 # ╠═2c061d99-da09-4ccf-a4ec-73a3c9a908fe
-# ╠═aded19f7-379a-4a69-b86e-cdf0c66168bd
 # ╠═d5c6769d-35f9-461a-aae2-00122ccddd63
 # ╠═ed1812f4-fdab-4fb5-88e1-0ece3c1e26b1
 # ╟─06f52599-7006-4a5c-ba86-0b668b6952c9
@@ -4600,20 +4486,20 @@ floataside(
 # ╟─d2c0642d-dfa5-4a76-bd36-ac4a735a3299
 # ╟─06d45088-ab8b-4e5d-931d-b58701bf8464
 # ╠═91113083-d80e-4528-be41-82d10f6860fc
+# ╠═ee9229f8-2f48-4c1f-88cf-4bcc40f6e5f6
 # ╠═960b1e96-da59-44c1-9828-929ece1a2955
+# ╠═fb8a9a17-ed12-4f87-9957-06e5e265fcb2
 # ╟─d0093605-0e35-4888-a93c-8456c698e6f0
 # ╟─f0b5d356-6b97-4878-98de-bee5f380d41a
 # ╟─e3eda42f-e2f3-4c10-81c4-610246ca528d
 # ╟─7b87aa2a-dbaf-441c-9ad7-444abf15f664
 # ╟─6e4c792e-e169-4b49-89d0-9cf8d5ac8c04
 # ╟─dabb7ca0-ce88-47d6-9315-9192d87c244e
-# ╠═e510bce3-d33f-47bb-98d6-121eee8f2252
+# ╠═8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
 # ╠═2947efab-e67e-41fa-ab91-7e3c1c09df2d
 # ╠═de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
-# ╠═8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
 # ╟─20324e33-26d0-4a95-bda3-5cb5d0fd8975
 # ╠═848b7aeb-968f-4116-8038-b61276f02b6c
-# ╟─12235c3c-18f2-4fc7-95ef-800f71783036
 # ╟─53f12821-7d8d-4971-87fd-ad4689ec62a5
 # ╠═9d814b85-a5b6-42e5-abf4-15500bbdb717
 # ╟─e1e0ca0f-7f88-40f0-850e-590b25da0331
@@ -4630,7 +4516,6 @@ floataside(
 # ╟─5b900250-56a4-4e0b-bbc7-37bd39456312
 # ╠═83ea329a-5d40-401d-8db1-59618c909f33
 # ╟─dc5b1cfc-9221-45e9-a4f3-69ec4f7ebb70
-# ╠═fb8a9a17-ed12-4f87-9957-06e5e265fcb2
 # ╟─2a20d9be-6c1e-4c1f-8bb6-a7693800732d
 # ╟─4f7ec19d-cd60-4c2b-a766-7557caa471c0
 # ╠═924f8f5d-2cb0-4381-a522-509ff4c002b6
@@ -4650,36 +4535,29 @@ floataside(
 # ╟─da8390d1-47e8-451f-b12b-45b8aca7b6ec
 # ╠═02d12ba4-4ab3-48f6-b084-edb06cb413b1
 # ╠═b4aaf070-d4ab-409a-b1e8-f5469b9f398b
+# ╠═87855181-ffbb-4a15-9852-0ded03746f18
 # ╠═e50fe651-11d4-45ee-89dd-371a7fbc097e
-# ╠═ba20b8f6-dfad-4560-b438-6082197e45d4
-# ╠═a274c939-31a5-4281-84bc-d621c1f9b117
-# ╟─afbb2386-871a-4858-964a-3d2ee212a614
 # ╟─ef7212fc-a3d0-4784-b901-219204b79dc0
 # ╠═a72db110-37c3-4f4d-b37e-fe613c1ae827
 # ╠═9739f8a5-f97e-4013-997f-d65cbf357ae5
 # ╠═b95160b5-18f7-49d9-80be-9159abd2dcd1
 # ╟─ad55a4c1-78b9-40d2-aec8-64ed95174e8a
+# ╠═f6f26f7e-b97e-4f83-8b02-d3ff8b8ad14d
 # ╠═9fb47b83-a853-4316-bb8d-30e65b16ef78
+# ╠═28337c8b-8687-4618-bd9d-16d94193dd5f
+# ╠═e8e6cff2-574f-4863-8093-9a747e419cf7
 # ╠═7da046bf-d3b1-43a0-bdba-89b4da2f6be3
+# ╠═bf3a3756-59a9-4767-a713-034ef37ab55f
+# ╠═fdbaa3a0-6b2b-45ad-8618-a63a7f720049
 # ╠═a64e2dc9-9be7-48b5-9d04-c448f19ed7f2
 # ╠═cdf52b70-94ad-45db-b82d-f1268cead86e
 # ╠═311660ce-0168-47eb-8d23-00a8e750fd84
-# ╠═72b30fd2-d5d2-4a23-98e1-a5019841e839
-# ╠═41158868-8680-466b-a94b-9ffcd2d0ad8e
-# ╠═2ebfdd4f-445b-49d6-bcfb-6963ff52df4d
-# ╠═4af2a551-3e68-4184-9d90-52b86d944aa7
-# ╠═a43ec777-d41f-4169-897f-a0812aea4436
+# ╟─41158868-8680-466b-a94b-9ffcd2d0ad8e
 # ╟─2d421be5-9287-4e8d-9a7e-d63c95d9f370
-# ╠═d9539ae9-d73f-452d-b6b8-2287268ce204
-# ╠═e2194300-5e84-481f-81c0-3e733937ed4b
-# ╠═1d7db684-efc6-4388-907b-69867511f581
-# ╠═b6adaa42-39ed-497c-b3d8-55512af1388b
-# ╠═7bb87bfb-2fac-4b93-868f-885e0dcd72be
-# ╠═c035db31-cb1c-4409-a18f-c520e2754c5e
 # ╠═c62b2553-e42f-4002-b206-9af0d8655c3d
 # ╠═089843dc-e9b0-4d43-afb7-d3477af39587
 # ╠═cdffb77b-89de-4aba-87b6-21e29bac0ae0
-# ╠═b65575ce-7c5e-4a70-bb50-3bd8054516aa
+# ╟─b65575ce-7c5e-4a70-bb50-3bd8054516aa
 # ╠═1efbe0ce-699f-4b6a-ab82-7b12d88e150b
 # ╠═6d3dc6b1-82ea-448a-af86-ed6001ed5446
 # ╠═adfc0c3b-10d0-4f99-8b42-6da9a26de219
@@ -4694,14 +4572,15 @@ floataside(
 # ╠═ea02ccff-20ea-426d-b102-e93a30e8fdb4
 # ╠═ce8dd32b-2ea3-4a42-9436-69b06e751984
 # ╠═e6de6e89-5dc6-4fac-a7fc-8346175283a3
-# ╟─df1cd76c-343a-490b-a2f5-3249e3dca1cc
-# ╠═c68691f1-502a-4aee-b56c-7169e007270d
+# ╠═2429e070-ed38-4a5a-9cdf-7818e7827021
+# ╠═fd5c53ac-1a27-40f9-8ae4-cfbf1aaba5d1
 # ╠═d242507d-d1bb-461f-b4fe-ab3f597d9c40
-# ╠═e6f43f01-15d8-4265-ae15-3673fb3cf7e3
+# ╟─e6f43f01-15d8-4265-ae15-3673fb3cf7e3
 # ╠═2754c3f8-c22b-4389-8aab-a6ab93a9ca9c
 # ╠═9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
 # ╠═2420382d-227a-4063-9450-1f1726df018e
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
+# ╠═ec296961-151f-4219-a7f2-fb34e7facaa5
 # ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
 # ╠═fd2fe768-020c-4751-bde0-8f75843580f7
 # ╠═9e44f14b-a799-4ca5-8641-a3726780a4fe
