@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v0.20.23
 
 using Markdown
 using InteractiveUtils
@@ -901,9 +901,6 @@ function plot_activity_time_electrode(result, bulk, electrolyte;
 end
 
 # ╔═╡ 9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
-
-
-# ╔═╡ ec296961-151f-4219-a7f2-fb34e7facaa5
 
 
 # ╔═╡ f1035efd-3e58-4c62-8799-a8750bdf137e
@@ -2659,8 +2656,9 @@ function conc_x_vs_RPM_at_time(RDE_result, ico; target_time = 24.0)
 end
 
 
-# ╔═╡ de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
-elydata_Gold_odr = ElectrolyteData(; ircompensation=:ohmicdrop,
+# ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
+elydata_Gold_unc = ElectrolyteData(; 
+								    ircompensation=:none,
 	                               	nc = size(bulk)[1],
 									na    = na,
 									z     = getproperty.(bulk, :z),
@@ -2672,12 +2670,86 @@ elydata_Gold_odr = ElectrolyteData(; ircompensation=:ohmicdrop,
 								    v0 	  = v0,
 									v     = getproperty.(bulk, :v),
 									M0 	  = M0,
-								   	x_ref = [0.0, 0.00029, 0.00059] * μm,
 									M     = getproperty.(bulk, :M),
 								  	Γ_we  = Γ_we,
 								  	Γ_bulk= Γ_bulk,
 									actcoeff! = γ_mode,
-									ircompfactor = user_input_cv.ircomp,
+								    C_gap = C_gap,
+								   ϕ_pzc = ϕ_pzc,
+								#	ircompfactor = user_input_cv.ircomp,
+								#	redoxreaction = we_breactions
+									)
+
+# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
+function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+    celldata = deepcopy(model)
+    #celldata.eneutral = eneutral
+	reaction_arg = model == elydata_Gold_unc ? (; reaction) : NamedTuple()
+    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
+    return result = LiquidElectrolytes.cvsweep(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
+		kwargs...
+    )
+
+end
+
+# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
+if pressure_varied_checkbox
+	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = 5)
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
+end
+
+# ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
+if pressure_varied_checkbox
+	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
+end
+
+# ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
+elydata_Gold_irc = ElectrolyteData(; 
+								   #ircompensation=:pseudopotentiostat,
+	                               	nc = size(bulk)[1],
+									na    = na,
+									z     = getproperty.(bulk, :z),
+								  	D     = getproperty.(bulk, :D),
+								  	T     = T,
+								  	eneutral=false,
+								  	κ     = getproperty.(bulk, :κ),
+		                            c_bulk= getproperty.(bulk, :c_bulk),
+								    v0 	  = v0,
+									v     = getproperty.(bulk, :v),
+									M0 	  = M0,
+									M     = getproperty.(bulk, :M),
+								  	Γ_we  = Γ_we,
+								  	Γ_bulk= Γ_bulk,
+									actcoeff! = γ_mode,
+								#	ircompfactor = user_input_cv.ircomp,
+								 #  	redoxreaction = we_breactions
+
+									);
+
+# ╔═╡ de3c2f2e-77fe-4d4f-9bbc-ae2cf8c0406f
+elydata_Gold_odr = ElectrolyteData(; 
+								   #ircompensation=:ohmicdrop,
+	                               	nc = size(bulk)[1],
+									na    = na,
+									z     = getproperty.(bulk, :z),
+								  	D     = getproperty.(bulk, :D),
+								  	T     = T,
+								  	eneutral=false,
+								  	κ     = getproperty.(bulk, :κ),
+		                            c_bulk= getproperty.(bulk, :c_bulk),
+								    v0 	  = v0,
+									v     = getproperty.(bulk, :v),
+									M0 	  = M0,
+								  # 	x_ref = [0.0, 0.00029, 0.00059] * μm,
+									M     = getproperty.(bulk, :M),
+								  	Γ_we  = Γ_we,
+								  	Γ_bulk= Γ_bulk,
+									actcoeff! = γ_mode,
+									#ircompfactor = user_input_cv.ircomp,
 									#redoxreaction = we_breactions
 
 									);
@@ -2815,76 +2887,6 @@ begin
 	end
 end
 
-# ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
-elydata_Gold_unc = ElectrolyteData(; ircompensation=:none,
-	                               	nc = size(bulk)[1],
-									na    = na,
-									z     = getproperty.(bulk, :z),
-								  	D     = getproperty.(bulk, :D),
-								  	T     = T,
-								  	eneutral=false,
-								  	κ     = getproperty.(bulk, :κ),
-		                            c_bulk= getproperty.(bulk, :c_bulk),
-								    v0 	  = v0,
-									v     = getproperty.(bulk, :v),
-									M0 	  = M0,
-									M     = getproperty.(bulk, :M),
-								  	Γ_we  = Γ_we,
-								  	Γ_bulk= Γ_bulk,
-									actcoeff! = γ_mode,
-									ircompfactor = user_input_cv.ircomp,
-									redoxreaction = we_breactions
-									)
-
-# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
-function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
-    celldata = deepcopy(model)
-    #celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold_unc ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
-    return result = LiquidElectrolytes.cvsweep(
-        pnpcell;
-        voltages = sawtooth,
-        nperiods,
-        store_solutions = true,
-		kwargs...
-    )
-
-end
-
-# ╔═╡ 7b38e59a-d005-4cfc-ba8c-b17e7c700119
-if pressure_varied_checkbox
-	P_recs = pressure_varied_sweep(elydata_Gold, sweep; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = 5)
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus)
-end
-
-# ╔═╡ c9ae7a67-9a5f-4d9a-88c0-742f4e91fb27
-if pressure_varied_checkbox
-	AuCO2RR_plots.plot_pressure_varied_sweep(P_recs, species = iohminus, limits = ((-0.6, 0.9), (0, 1)))
-end
-
-# ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
-elydata_Gold_irc = ElectrolyteData(; ircompensation=:pseudopotentiostat,
-	                               	nc = size(bulk)[1],
-									na    = na,
-									z     = getproperty.(bulk, :z),
-								  	D     = getproperty.(bulk, :D),
-								  	T     = T,
-								  	eneutral=false,
-								  	κ     = getproperty.(bulk, :κ),
-		                            c_bulk= getproperty.(bulk, :c_bulk),
-								    v0 	  = v0,
-									v     = getproperty.(bulk, :v),
-									M0 	  = M0,
-									M     = getproperty.(bulk, :M),
-								  	Γ_we  = Γ_we,
-								  	Γ_bulk= Γ_bulk,
-									actcoeff! = γ_mode,
-									ircompfactor = user_input_cv.ircomp,
-								   	redoxreaction = we_breactions
-
-									);
-
 # ╔═╡ dc203e95-7763-4b13-8408-038b933c5c9c
 function pnp_bcondition(
 	f,
@@ -2900,10 +2902,10 @@ function pnp_bcondition(
 		boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - ϕ_pzc))
 
 	elseif user_input_model.BC_Select == "Robin"
-		boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))
+		potentialbcondition!(f,u,bnode,data,ϕ_we)
 	else
 		boundary_neumann!(f, u, bnode; species = ic, region, value = 0)
-	 	boundary_robin!(f, u, bnode, iϕ, Γ_we, C_gap , C_gap * (ϕ_we - ϕ_pzc))	
+		potentialbcondition!(f,u,bnode,data,ϕ_we)
 	 	for ic in cspecies 
 			if ic == ico2 || ic == ico
 	       		boundary_neumann!(f, u, bnode; species = ic, region = Γ_we, value = 0)
@@ -2947,6 +2949,9 @@ end
 if CV
 	AuCO2RR_plots.plot_iv_with_experiment(pnpresult_unc, iohminus)
 end
+
+# ╔═╡ 3b07d9a6-bf83-43d0-89b6-64c112a94833
+pnpresult_unc.voltages
 
 # ╔═╡ 28337c8b-8687-4618-bd9d-16d94193dd5f
 if CV
@@ -4580,8 +4585,8 @@ floataside(
 # ╠═9d0b6083-e49b-4b15-ad2e-a2c74f689c5e
 # ╠═2420382d-227a-4063-9450-1f1726df018e
 # ╠═3d661549-a8d2-40b0-add8-b186193f90fe
-# ╠═ec296961-151f-4219-a7f2-fb34e7facaa5
 # ╠═74c43d72-3a23-4a24-a4ae-8b18b245610a
+# ╠═3b07d9a6-bf83-43d0-89b6-64c112a94833
 # ╠═fd2fe768-020c-4751-bde0-8f75843580f7
 # ╠═9e44f14b-a799-4ca5-8641-a3726780a4fe
 # ╠═f1035efd-3e58-4c62-8799-a8750bdf137e
