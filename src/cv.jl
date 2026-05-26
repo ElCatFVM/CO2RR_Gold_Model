@@ -53,15 +53,6 @@ function sweep_over_L_cv(
 end
 
 
-
-
-
-
-
-
-
-
-
 function scanrate_varied_sweep(
     elydata,
     sawtooth,
