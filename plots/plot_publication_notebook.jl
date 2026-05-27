@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.13
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -218,6 +218,53 @@ let
 	)
 	translate!(leg.blockscene,  -40, 40, 0)
 	fig
+end
+
+# ╔═╡ ccb13e5a-5ceb-4a56-9f3f-14307fc78115
+let
+    wanted    = ["0.1", "0.5", "1.0"]
+    pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
+
+    raw    = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
+    sub    = Matrix(raw[4:end, :])
+    num    = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num, :auto)
+    npairs = size(num_df, 2) ÷ 2
+
+    # 원하는 압력에 해당하는 pair 인덱스만 추출 → [2, 5, 7]
+    keep = findall(in(wanted), pressures[1:npairs])
+
+    # 3개뿐이니 불연속(distinct) 색상
+    cols1 = resample_cmap(:winter, npairs)
+
+    fig, ax = with_theme(electrochemistry_theme()) do
+        f = Figure(size = (1050, 500))
+        a = Axis(f[1, 1];
+                 xlabel = L"φ~(\mathrm{V~vs~SHE})",
+                 ylabel = L"j~(\mathrm{mA\,cm^{-2}})",
+                 limits = ((-1.3, 0.9), (-5.5, 1.8)),
+                 xticks = -1.5:0.3:1.0,
+                 yticks = 1:-1:-5)
+        return f, a
+    end
+
+    plot_objs1 = []
+    labels1    = String[]
+    for (k, j) in enumerate(keep)
+        xcol, ycol = 2j - 1, 2j
+        push!(labels1, pressures[j] * " pCO₂ atm")
+        line = lines!(ax, num_df[!, xcol], num_df[!, ycol];
+                      color = cols1[mod1(k, length(cols1))], linewidth = 4)
+        push!(plot_objs1, line)
+    end
+
+    leg = Legend(fig[1, 1], plot_objs1, labels1, "Experimental";
+        framevisible = false,
+        halign = :right, valign = :bottom, labelsize = 20, titlesize = 23,
+        padding = (0, 0, 0, 0),
+        tellwidth = false, tellheight = false)
+    translate!(leg.blockscene, -40, 40, 0)
+    fig
 end
 
 # ╔═╡ b0a4b942-5654-4b22-8849-90bf6c7f957f
@@ -2123,7 +2170,8 @@ end
 # ╠═270509a2-433d-42af-886b-983f226f3229
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═b3f44506-52eb-491c-bc44-76c9c49a43cd
-# ╟─40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╠═ccb13e5a-5ceb-4a56-9f3f-14307fc78115
 # ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
 # ╠═fc8096e4-01ca-451a-87cd-7e2e0171a531
 # ╠═05eb8a6f-d7b5-4f37-a905-2209323afe2d
