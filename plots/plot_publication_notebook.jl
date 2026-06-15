@@ -11,6 +11,8 @@ begin
 	using CSV, DataFrames, Colors, LessUnitful
 	using CairoMakie
 	using Printf
+	using Makie: rich, subscript, superscript, italic
+
 end
 
 # ╔═╡ f81c8540-591a-4a56-843f-f51085195e2e
@@ -218,6 +220,37 @@ let
 	)
 	translate!(leg.blockscene,  -40, 40, 0)
 	fig
+end
+
+# ╔═╡ 7ba7df52-eee1-4f36-a5d0-379f31c6c5ef
+function electrochemistry_theme()
+    Theme(
+        size = (960, 540),
+        fonts = Attributes(
+            regular = Makie.to_font("DejaVu Sans"),
+            bold    = Makie.to_font("DejaVu Sans Bold"),
+        ),
+        Axis = (
+            spinewidth        = 5.5,
+            xtickwidth        = 2.0,
+            ytickwidth        = 2.0,
+            xticksize         = 8,
+            yticksize         = 8,
+            xlabelsize        = 25,
+            ylabelsize        = 25,
+            xticklabelsize    = 25,
+            yticklabelsize    = 25,
+            xgridvisible      = false,
+            ygridvisible      = false,
+            xlabelpadding     = 10,
+            ylabelpadding     = 10,
+            xlabelfont        = :bold,
+            ylabelfont        = :bold,
+            yticks            = LinearTicks(5),
+            xticks            = LinearTicks(4),
+        ),
+        Lines = (linewidth = 3,),
+    )
 end
 
 # ╔═╡ ccb13e5a-5ceb-4a56-9f3f-14307fc78115
@@ -1168,264 +1201,453 @@ end
 
 # ╔═╡ a09d4a6a-1017-4792-b684-7f9ddfeba83b
 begin
-		const FS_BIG   = 18
-	    const FS_SMALL = 18
-	    const SP_BIG   = 3.5
-	    const SP_SMALL = 3.5
-	    const TICKW_BIG   = 2.0
-	    const TICKW_SMALL = 2.0
-	    const TICKL_BIG   = 8
-	    const TICKL_SMALL = 8
-end
+    const FS_BIG   = 22
+    const FS_SMALL = 18
+    const SP_BIG   = 3.5
+    const SP_SMALL = 3.5
+    const TICKW_BIG   = 2.0
+    const TICKW_SMALL = 2.0
+    const TICKL_BIG   = 8
+    const TICKL_SMALL = 8
 
-# ╔═╡ 5a090c2f-eb24-4453-b650-f4bc6c32c952
-let
-    df_prev = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Same_Size.csv", DataFrame)
-    df_curr = CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Same_Size.csv", DataFrame)
+    function style_axis!(ax; big::Bool)
+        fs = big ? FS_BIG   : FS_SMALL
+        sp = big ? SP_BIG   : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
 
-    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
-    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
-
-    V = df_curr[!, "Voltage"]
-
-    floors = Dict{String, Float64}()
-    for s in species
-        vals = vcat(df_prev[!, s], df_curr[!, s])
-        pos  = vals[vals .> 0]
-        floors[s] = isempty(pos) ? 1e-30 : minimum(pos) * 0.1
-    end
-
-    fig = Figure(size = (950, 750), figure_padding = (25, 25, 30, 25))
-
-    
-
-    function format_axis!(ax; big=true)
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
         if big
-            ax.spinewidth = SP_BIG
-            ax.xtickwidth = TICKW_BIG
-            ax.ytickwidth = TICKW_BIG
-            ax.xticksize  = TICKL_BIG
-            ax.yticksize  = TICKL_BIG
-            ax.xlabelsize = FS_BIG
-            ax.ylabelsize = FS_BIG
-            ax.xticklabelsize = FS_BIG
-            ax.yticklabelsize = FS_BIG
-            ax.xlabelpadding = 10
-            ax.ylabelpadding = 10
             ax.xlabelfont = :bold
             ax.ylabelfont = :bold
-        else
-            ax.spinewidth = SP_SMALL
-            ax.xtickwidth = TICKW_SMALL
-            ax.ytickwidth = TICKW_SMALL
-            ax.xticksize  = TICKL_SMALL
-            ax.yticksize  = TICKL_SMALL
-            ax.xlabelsize = FS_SMALL
-            ax.ylabelsize = FS_SMALL
-            ax.xticklabelsize = FS_SMALL
-            ax.yticklabelsize = FS_SMALL
         end
         ax.xgridvisible = false
         ax.ygridvisible = false
         return ax
     end
+end
 
-    ax_main = Axis(
-        fig[1, 1],
-        #xlabel = L"\text{Voltage} \mathrm{(V)}",
-        ylabel = L"\textbf{Interfacial\ concentration}\qquad \mathbf{c_i^{\ddagger}}\;(\mathrm{M})",
-        yscale = log10,
-    )
-		#xlabel = false
-	ax_main.xticklabelsvisible = false
-    ax_aux = Axis(
-        fig[2, 1],
-        xlabel = L"\text{Voltage} \mathrm{(V)}",
-        ylabel = L"\textbf{log10(current / previous)}",
-    )
+# ╔═╡ 4d250254-b8a8-4ff2-95c6-81a02ddfd982
+let
+    FS_BIG   = 28
+    FS_SMALL = 24
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
 
-    format_axis!(ax_main, big=true)
-    format_axis!(ax_aux,  big=true)
+    solid_lw = 7.0
+    dash_lw  = 4.5
 
-    for (i, s) in enumerate(species)
-        prev = df_prev[!, s]
-        curr = df_curr[!, s]
-        f    = floors[s]
+    species   = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    sp_colors = ["#E07B39","#888888","#7B5C3E","#222222",
+                 "#C0392B","#27AE60","#2980B9"]
+    sp_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#666666",
+                 "#FF746C","#80EF80","#AFCBFF"]
+    sp_rich = [
+        rich("K", superscript("+")),
+        rich("H", superscript("+")),
+        rich("HCO", subscript("3"), superscript("−")),
+        rich("CO", subscript("3"), superscript("2−")),
+        rich("CO", subscript("2")),
+        rich("OH", superscript("−")),
+        rich("CO"),
+    ]
 
-        lines!(ax_main, V, curr;
-            color = colors[i],
-            linestyle = :solid,
-            linewidth = 3.5
-        )
-		
-        lines!(ax_main, V, prev;
-            color = (:gray60, 0.8),
-            linestyle = :dash,
-            linewidth = 2
-        )
+    powlab(n) = rich("10", superscript(string(n)))
 
-        delta = log10.((curr .+ f) ./ (prev .+ f))
-        lines!(ax_aux, V, delta;
-            color = colors[i],
-            linewidth = 3
-        )
+    fig = Figure(size = (1250, 750), figure_padding = (25, 30, 30, 25))
+
+    function format_axis!(ax; big=true)
+        fs = big ? FS_BIG : FS_SMALL
+        sp = big ? SP_BIG : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
+        ax.xgridvisible   = false
+        ax.ygridvisible   = false
+        return ax
     end
 
-    hlines!(ax_aux, [0.0]; color = :black, linestyle = :dot, linewidth = 2)
+    # 물리량 italic / 약어 roman 라벨
+    lab_phi   = rich(rich("U", font=:italic), "  (V vs. SHE)")
+    lab_con   = rich("Interfacial Concentration\n\n\n",
+                     rich("c", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"), "  (M)")
+    lab_act   = rich("Interfacial Activity\n\n\n ",
+                     rich("a", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"))
+    # ratio: log(CatINT c / MPNP c)
+    lab_ratio_c = rich("log(", superscript("DGML"), rich("c", font=:italic),
+                       subscript(rich("i", font=:italic)), superscript("‡"),
+                       " / ", superscript("MPNP"), rich("c", font=:italic),
+                       subscript(rich("i", font=:italic)), superscript("‡"), ")")
+    lab_ratio_a = rich("log(", superscript("DGML"), rich("a", font=:italic),
+                       subscript(rich("i", font=:italic)), superscript("‡"),
+                       " / ", superscript("MPNP"), rich("a", font=:italic),
+                       subscript(rich("i", font=:italic)), superscript("‡"), ")")
 
-    linkxaxes!(ax_main, ax_aux)
-    ylims!(ax_aux, -0.075, 0.075)
-    ylims!(ax_main, 1e-12, 1e2)
-    xlims!(ax_aux, -1.2, -0.6)
+    xt = [-1.5, -1.2, -0.9, -0.6]
+    xtlab = [@sprintf("%.1f", x) for x in xt]
 
-    text!(ax_main, -1.15, 3e-1, text=L"\mathrm{K^+}",
-        color=colors[1], fontsize=18, font=:bold)
-    text!(ax_main, -0.90, 2e-8, text=L"\mathrm{H^+}",
-        color=colors[2], fontsize=18, font=:bold)
-    text!(ax_main, -1.05, 5e-11, text=L"\mathrm{CO_3^{2-}}",
-        color=colors[4], fontsize=18, font=:bold)
-    text!(ax_main, -1.05, 1e-7, text=L"\mathrm{HCO_3^-}",
-        color=colors[3], fontsize=18, font=:bold)
-    text!(ax_main, -1.06, 9.2e-6, text=L"\mathrm{CO_2}",
-        color=colors[5], fontsize=18, font=:bold)
-    text!(ax_main, -0.90, 1e-9, text=L"\mathrm{OH^-}",
-        color=colors[6], fontsize=18, font=:bold)
-    text!(ax_main, -1.17, 2.4e-4, text=L"\mathrm{CO}",
-        color=colors[7], fontsize=18, font=:bold)
-	ax_main.yticks = ([1e-12, 1e-8, 1e-4, 1], [L"10^{-12}", L"10^{-8}", L"10^{-4}", L"10^{0}"])
+    # ── (a) Concentration ──────────────────────────────────────
+    df_prev_a = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Same_Size.csv", DataFrame)  # MPNP (solid)
+    df_curr_a = CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Same_Size.csv", DataFrame)     # CatINT (dash)
+    V_a = df_curr_a[!, "Voltage"]
+
+    floors_a = Dict{String, Float64}()
+    for s in species
+        vals = vcat(df_prev_a[!, s], df_curr_a[!, s])
+        pos  = vals[vals .> 0]
+        floors_a[s] = isempty(pos) ? 1e-30 : minimum(pos) * 0.1
+    end
+
+    ax_main_a = Axis(fig[1, 1], ylabel = lab_con, yscale = log10)
+    ax_main_a.xticklabelsvisible = false
+    ax_aux_a  = Axis(fig[2, 1], xlabel = lab_phi, ylabel = lab_ratio_c)
+    format_axis!(ax_main_a, big=true)
+    format_axis!(ax_aux_a,  big=true)
+
+    for (i, s) in enumerate(species)
+        mpnp   = df_prev_a[!, s]   # solid
+        catint = df_curr_a[!, s]   # dash
+        f      = floors_a[s]
+        lines!(ax_main_a, V_a, mpnp;   color = sp_colors[i], linestyle = :solid, linewidth = solid_lw)
+        lines!(ax_main_a, V_a, catint; color = sp_pastel[i], linestyle = :dash,  linewidth = dash_lw)
+        delta = log10.((catint .+ f) ./ (mpnp .+ f))   # log(CatINT/MPNP)
+        lines!(ax_aux_a, V_a, delta; color = sp_colors[i], linewidth = solid_lw - 2)
+    end
+    hlines!(ax_aux_a, [0.0]; color = :black, linestyle = :dot, linewidth = 2)
+
+    linkxaxes!(ax_main_a, ax_aux_a)
+    ylims!(ax_aux_a, -0.075, 0.075)
+    ylims!(ax_main_a, 1e-12, 1e2)
+    xlims!(ax_aux_a, -1.5, -0.6)
+
+    sp_pos_a = [
+        (-1.35, 3e-1),  (-0.90, 1e-8),  (-0.85, 1e-4),  (-1.1, 5e-12),
+        (-1.35,  2e-6),  (-0.90, 1e-9),  (-1.37, 10e-5),
+    ]
+    order_a = [1,2,3,4,5,6,7]
+    for i in order_a
+        x,y = sp_pos_a[i]
+        text!(ax_main_a, x, y; text=sp_rich[i], color=sp_colors[i], fontsize=24, font=:bold)
+    end
+    ax_main_a.yticks = ([1e-12, 1e-8, 1e-4, 1], [powlab(-12), powlab(-8), powlab(-4), powlab(0)])
+    ax_main_a.xticks = (xt, xtlab)
+    ax_aux_a.xticks  = (xt, xtlab)
+
+    # ── (b) Activity ───────────────────────────────────────────
+    df_prev_b = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)  # MPNP
+    df_curr_b = CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)     # CatINT
+    V_b = df_curr_b[!, "Voltage"]
+
+    floors_b = Dict{String, Float64}()
+    for s in species
+        vals = vcat(df_prev_b[!, s], df_curr_b[!, s])
+        pos  = vals[vals .> 0]
+        floors_b[s] = isempty(pos) ? 1e-30 : minimum(pos) * 0.1
+    end
+
+    ax_main_b = Axis(fig[1, 2], ylabel = lab_act, yscale = log10)
+    ax_main_b.xticklabelsvisible = false
+    ax_aux_b  = Axis(fig[2, 2], xlabel = lab_phi, ylabel = lab_ratio_a)
+    format_axis!(ax_main_b, big=true)
+    format_axis!(ax_aux_b,  big=true)
+
+    for (i, s) in enumerate(species)
+        mpnp   = df_prev_b[!, s]
+        catint = df_curr_b[!, s]
+        f      = floors_b[s]
+        lines!(ax_main_b, V_b, mpnp;   color = sp_colors[i], linestyle = :solid, linewidth = solid_lw)
+        lines!(ax_main_b, V_b, catint; color = sp_pastel[i], linestyle = :dash,  linewidth = dash_lw)
+        delta = log10.((catint .+ f) ./ (mpnp .+ f))
+        lines!(ax_aux_b, V_b, delta; color = sp_colors[i], linewidth = solid_lw - 2)
+    end
+    hlines!(ax_aux_b, [0.0]; color = :black, linestyle = :dot, linewidth = 2)
+
+    linkxaxes!(ax_main_b, ax_aux_b)
+    ylims!(ax_aux_b, -0.075, 0.075)
+    ylims!(ax_main_b, 1e-10, 1e4)
+    xlims!(ax_aux_b, -1.5, -0.6)
+
+    sp_pos_b = [
+        (-1.35, 50),    (-0.875, 4e-7),  (-0.85, 70e-5),  (-1.15, 5e-10),
+        (-1.33, 5e-4), (-0.875, 1e-8),  (-1.4, 3.0e-2),
+    ]
+    for i in 1:7
+        x,y = sp_pos_b[i]
+        text!(ax_main_b, x, y; text=sp_rich[i], color=sp_colors[i], fontsize=24, font=:bold)
+    end
+    ax_main_b.yticks = ([1e-10, 1e-6, 1e-2, 1e2], [powlab(-10), powlab(-6), powlab(-2), powlab(2)])
+    ax_main_b.xticks = (xt, xtlab)
+    ax_aux_b.xticks  = (xt, xtlab)
+
+    Label(fig[1, 1, TopLeft()], "(a)", fontsize = 24, font = :bold, padding = (0, 5, 5, 0))
+    Label(fig[1, 2, TopLeft()], "(b)", fontsize = 24, font = :bold, padding = (0, 5, 5, 0))
 
     rowsize!(fig.layout, 1, Relative(0.72))
     rowsize!(fig.layout, 2, Relative(0.28))
     rowgap!(fig.layout, 14)
-    colgap!(fig.layout, 22)
+    colgap!(fig.layout, 40)
 
     resize_to_layout!(fig)
     fig
 end
 
-# ╔═╡ 224cf209-4aaa-49ca-a577-d77a597d256c
+# ╔═╡ ac4deeb9-812a-429c-afe9-389b22814ee6
 let
-    df_prev = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
-    df_curr = CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
+    FS_BIG   = 32
+    FS_SMALL = 32
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
 
-    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
-    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
+    solid_lw = 7.0
+    dash_lw  = 4.5
+
+
+    df_prev = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv", DataFrame)              # CatINT (dash, long-format Index)
+    df_curr = CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_All_species.csv", DataFrame)  # MPNP (solid)
+
+    species   = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    sp_colors = ["#E07B39","#888888","#7B5C3E","#222222",
+                 "#C0392B","#27AE60","#2980B9"]
+    sp_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#666666",
+                 "#FF746C","#80EF80","#AFCBFF"]
+    sp_rich = [
+        rich("K", superscript("+")),
+        rich("H", superscript("+")),
+        rich("HCO", subscript("3"), superscript("−")),
+        rich("CO", subscript("3"), superscript("2−")),
+        rich("CO", subscript("2")),
+        rich("OH", superscript("−")),
+        rich("CO"),
+    ]
+
+    powlab(n) = rich("10", superscript(string(n)))
 
     V = df_curr[!, "Voltage"]
 
-    floors = Dict{String, Float64}()
-    for s in species
-        vals = vcat(df_prev[!, s], df_curr[!, s])
-        pos  = vals[vals .> 0]
-        floors[s] = isempty(pos) ? 1e-30 : minimum(pos) * 0.1
-    end
-
-    fig = Figure(size = (950, 750), figure_padding = (25, 25, 30, 25))
-
-    
+    fig = Figure(size = (800, 700), figure_padding = (25, 25, 30, 25))
 
     function format_axis!(ax; big=true)
-        if big
-            ax.spinewidth = SP_BIG
-            ax.xtickwidth = TICKW_BIG
-            ax.ytickwidth = TICKW_BIG
-            ax.xticksize  = TICKL_BIG
-            ax.yticksize  = TICKL_BIG
-            ax.xlabelsize = FS_BIG
-            ax.ylabelsize = FS_BIG
-            ax.xticklabelsize = FS_BIG
-            ax.yticklabelsize = FS_BIG
-            ax.xlabelpadding = 10
-            ax.ylabelpadding = 10
-            ax.xlabelfont = :bold
-            ax.ylabelfont = :bold
-        else
-            ax.spinewidth = SP_SMALL
-            ax.xtickwidth = TICKW_SMALL
-            ax.ytickwidth = TICKW_SMALL
-            ax.xticksize  = TICKL_SMALL
-            ax.yticksize  = TICKL_SMALL
-            ax.xlabelsize = FS_SMALL
-            ax.ylabelsize = FS_SMALL
-            ax.xticklabelsize = FS_SMALL
-            ax.yticklabelsize = FS_SMALL
-        end
-        ax.xgridvisible = false
-        ax.ygridvisible = false
+        fs = big ? FS_BIG : FS_SMALL
+        sp = big ? SP_BIG : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
+        ax.xgridvisible   = false
+        ax.ygridvisible   = false
         return ax
     end
 
-    ax_main = Axis(
-        fig[1, 1],
-        #xlabel = L"\text{Voltage} \mathrm{(V)}",
-        ylabel = L"\textbf{Interfacial\ concentration}\qquad \mathbf{c_i^{\ddagger}}\;(\mathrm{M})",
+    # 라벨: 물리량 italic / 약어·단위 roman  (concentration)
+    lab_con = rich("Interfacial Concentration\n\n",
+                   rich("c", font=:italic),
+                   subscript(rich("i", font=:italic)), superscript("‡"), "  (M)")
+    lab_phi = rich(rich("U", font=:italic), "  (V vs. SHE)")
+    lab_ratio = rich("log(", superscript("CatINT"), rich("c", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"),
+                     " / ", superscript("MPNP"), rich("c", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"), ")")
+
+    ax_main = Axis(fig[1, 1];
+        ylabel = lab_con,
         yscale = log10,
+        limits = (-1.20, -0.55, 1e-11, 1e3),
     )
-		#xlabel = false
-	ax_main.xticklabelsvisible = false
-    ax_aux = Axis(
-        fig[2, 1],
-        xlabel = L"\text{Voltage} \mathrm{(V)}",
-        ylabel = L"\textbf{log10(current / previous)}",
-    )
+    ax_main.xticklabelsvisible = false
 
-    format_axis!(ax_main, big=true)
-    format_axis!(ax_aux,  big=true)
-
+    # ── MPNP (solid) + CatINT (dash) ───────────────────────────
     for (i, s) in enumerate(species)
-        prev = df_prev[!, s]
         curr = df_curr[!, s]
-        f    = floors[s]
-
-        lines!(ax_main, V, curr;
-            color = colors[i],
-            linestyle = :solid,
-            linewidth = 3.5
-        )
-		
-        lines!(ax_main, V, prev;
-            color = (:gray60, 0.8),
-            linestyle = :dash,
-            linewidth = 2
-        )
-
-        delta = log10.((curr .+ f) ./ (prev .+ f))
-        lines!(ax_aux, V, delta;
-            color = colors[i],
-            linewidth = 3
-        )
+        lines!(ax_main, V, curr; color = sp_colors[i], linewidth = solid_lw)
+        row = df_prev[df_prev.Index .== i, :]
+        if nrow(row) > 0
+            lines!(ax_main, row[!, "Voltage"], row[!, "Concentration"];
+                color = sp_pastel[i], linewidth = dash_lw, linestyle = :dash)
+        end
     end
 
+    # species 라벨 (rich)
+    sp_pos = [
+        (-1.15, 5),     (-0.875, 1e-8),  (-1.05, 30e-7),  (-1.05, 1e-11),
+        (-1.2, 72e-7),    (-0.875, 7e-10), (-1.17, 3.0e-4),
+    ]
+    for i in 1:7
+        x,y = sp_pos[i]
+        text!(ax_main, x, y; text=sp_rich[i], color=sp_colors[i], fontsize=24, font=:bold)
+    end
+
+    # ── ratio aux: log(CatINT / MPNP) ──────────────────────────
+    ax_aux = Axis(fig[2, 1];
+        xlabel = lab_phi,
+        ylabel = lab_ratio,
+    )
+    for (i, s) in enumerate(species)
+        row_prev = df_prev[df_prev.Index .== i, :]
+        if nrow(row_prev) > 0
+            matched_curr = [df_curr[findmin(abs.(V .- v))[2], s] for v in row_prev[!, "Voltage"]]
+            delta_y = log10.(row_prev[!, "Concentration"] ./ matched_curr)  # log(CatINT/MPNP)
+            scatter!(ax_aux, row_prev[!, "Voltage"], delta_y;
+                color = sp_colors[i], markersize = 10)
+        end
+    end
     hlines!(ax_aux, [0.0]; color = :black, linestyle = :dot, linewidth = 2)
 
+    format_axis!(ax_main, big=true)
+    format_axis!(ax_aux, big=true)
+
     linkxaxes!(ax_main, ax_aux)
-    ylims!(ax_aux, -0.075, 0.075)
-    ylims!(ax_main, 1e-10, 1e4)
-    xlims!(ax_aux, -1.2, -0.6)
+    xlims!(ax_aux, -1.250, -0.55)
+    ylims!(ax_aux, -0.3, 0.3)
 
-    text!(ax_main, -1.15, 50, text=L"\mathrm{K^+}",
-        color=colors[1], fontsize=18, font=:bold)
-    text!(ax_main, -0.875, 7e-7, text=L"\mathrm{H^+}",
-        color=colors[2], fontsize=18, font=:bold)
-    text!(ax_main, -1.05, 4e-9, text=L"\mathrm{CO_3^{2-}}",
-        color=colors[4], fontsize=18, font=:bold)
-    text!(ax_main, -1.05, 7e-5, text=L"\mathrm{HCO_3^-}",
-        color=colors[3], fontsize=18, font=:bold)
-    text!(ax_main, -1.10, 4.2e-4, text=L"\mathrm{CO_2}",
-        color=colors[5], fontsize=18, font=:bold)
-    text!(ax_main, -0.875, 1e-8, text=L"\mathrm{OH^-}",
-        color=colors[6], fontsize=18, font=:bold)
-    text!(ax_main, -1.17, 3.0e-2, text=L"\mathrm{CO}",
-        color=colors[7], fontsize=18, font=:bold)
+    xt = [-1.4, -1.2, -1.0, -0.8, -0.6]
+    xtlab = [@sprintf("%.1f", x) for x in xt]
+    ax_main.yticks = ([1e-10, 1e-6, 1e-2, 1e2], [powlab(-10), powlab(-6), powlab(-2), powlab(2)])
+    ax_main.xticks = (xt, xtlab)
+    ax_aux.xticks  = (xt, xtlab)
 
-	ax_main.yticks = ([1e-10, 1e-6, 1e-2, 1e2], [L"10^{-10}", L"10^{-6}", L"10^{-2}", L"10^{2}"])
+    # ── legend: MPNP(solid) / CatINT(dash) ─────────────────────
+    legend_entries = [
+        LineElement(color = :black,  linestyle = :solid, linewidth = solid_lw),
+        LineElement(color = :gray60, linestyle = :dash,  linewidth = dash_lw),
+    ]
+    legend_labels = ["MPNP@LiquidElectrolytes.jl", "CatINT"]
 
+    axislegend(ax_main, legend_entries, legend_labels;
+        position = :rt,
+        orientation = :vertical,
+        labelsize = 20,
+        font = :bold,
+        framevisible = true,
+        backgroundcolor = (:white, 0.5),
+        framecolor = (:black, 0.5),
+    )
 
-	
-    rowsize!(fig.layout, 1, Relative(0.72))
-    rowsize!(fig.layout, 2, Relative(0.28))
-    rowgap!(fig.layout, 14)
-    colgap!(fig.layout, 22)
+    rowsize!(fig.layout, 1, Relative(0.68))
+    rowsize!(fig.layout, 2, Relative(0.32))
+    rowgap!(fig.layout, 15)
+
+    resize_to_layout!(fig)
+    fig
+end
+
+# ╔═╡ 9d660147-670a-4728-b2ef-8bb978f6981b
+let
+    FS_BIG   = 32
+    FS_SMALL = 32
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
+
+    solid_lw = 7.0
+    dash_lw  = 4.5
+
+    df_sim = CSV.read(raw"../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.005M.csv", DataFrame)  # dash
+    df_exp = CSV.read(raw"../data/Valette_Cap_data/NaClO4_0.005M.csv", DataFrame)             # solid
+
+    # 1행 = Voltage, 2행 = dlcaps (row-major)
+    M_sim = Matrix(df_sim)
+    M_exp = Matrix(df_exp)
+    V_sim    = Float64.(M_sim[:, 1]);  caps_sim = Float64.(M_sim[:, 2])
+    V_exp    = Float64.(M_exp[:, 1]);  caps_exp = Float64.(M_exp[:, 2])
+
+    fig = Figure(size = (800, 700), figure_padding = (25, 25, 30, 25))
+
+    function format_axis!(ax; big=true)
+        fs = big ? FS_BIG : FS_SMALL
+        sp = big ? SP_BIG : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
+        ax.xgridvisible   = false
+        ax.ygridvisible   = false
+        return ax
+    end
+
+    # 라벨: 물리량 italic / 약어·단위 roman
+    lab_phi = rich(rich("U", font=:italic), "  (V vs. SHE)")
+    lab_cap = rich("Differential Capacitance\n\n",
+                   rich("C", font=:italic),
+                   subscript(rich("dl", font=:italic)),
+                   "  (μF cm", superscript("−2"), ")")
+
+    ax = Axis(fig[1, 1];
+        xlabel = lab_phi,
+        ylabel = lab_cap,
+    )
+
+    lines!(ax, V_exp, caps_exp; color = "#222222", linewidth = solid_lw)
+    lines!(ax, V_sim, caps_sim; color = "#888888", linewidth = dash_lw, linestyle = :dash)
+
+    format_axis!(ax, big=true)
+
+    # ── legend: Experiment(solid) / Theory(dash) ───────────────
+    legend_entries = [
+        LineElement(color = :black,  linestyle = :solid, linewidth = solid_lw),
+        LineElement(color = :gray60, linestyle = :dash,  linewidth = dash_lw),
+    ]
+    legend_labels = ["Experiment", "Theory"]
+
+    axislegend(ax, legend_entries, legend_labels;
+        position = :rt,
+        orientation = :vertical,
+        labelsize = 32,
+        font = :bold,
+        framevisible = true,
+        backgroundcolor = (:white, 0.5),
+        framecolor = (:black, 0.5),
+    )
 
     resize_to_layout!(fig)
     fig
@@ -1433,104 +1655,150 @@ end
 
 # ╔═╡ 400709f7-2a7c-431a-96ce-99a678b840f7
 let
-    df_prev = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv", DataFrame)
-	    df_curr = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+    FS_BIG   = 32
+    FS_SMALL = 32
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
 
-    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
-    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
+    solid_lw = 7.0
+    dash_lw  = 4.5
+
+    df_prev = CSV.read(raw"../data/catmap_CO2R_data/voltage-activ.csv", DataFrame)              # CatINT (dash, long-format Index)
+    df_curr = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_All_species.csv", DataFrame)  # MPNP (solid)
+
+    species   = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    sp_colors = ["#E07B39","#888888","#7B5C3E","#222222",
+                 "#C0392B","#27AE60","#2980B9"]
+    sp_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#666666",
+                 "#FF746C","#80EF80","#AFCBFF"]
+    sp_rich = [
+        rich("K", superscript("+")),
+        rich("H", superscript("+")),
+        rich("HCO", subscript("3"), superscript("−")),
+        rich("CO", subscript("3"), superscript("2−")),
+        rich("CO", subscript("2")),
+        rich("OH", superscript("−")),
+        rich("CO"),
+    ]
+
+    powlab(n) = rich("10", superscript(string(n)))
 
     V = df_curr[!, "Voltage"]
 
-    fig = Figure(size = (950, 600), figure_padding = (25, 25, 30, 25))
+    fig = Figure(size = (800, 700), figure_padding = (25, 25, 30, 25))
 
     function format_axis!(ax; big=true)
-        if big
-            ax.spinewidth = SP_BIG
-            ax.xtickwidth = TICKW_BIG
-            ax.ytickwidth = TICKW_BIG
-            ax.xticksize  = TICKL_BIG
-            ax.yticksize  = TICKL_BIG
-            ax.xlabelsize = FS_BIG
-            ax.ylabelsize = FS_BIG
-            ax.xticklabelsize = FS_BIG
-            ax.yticklabelsize = FS_BIG
-            ax.xlabelpadding = 10
-            ax.ylabelpadding = 10
-            ax.xlabelfont = :bold
-            ax.ylabelfont = :bold
-        else
-            ax.spinewidth = SP_SMALL
-            ax.xtickwidth = TICKW_SMALL
-            ax.ytickwidth = TICKW_SMALL
-            ax.xticksize  = TICKL_SMALL
-            ax.yticksize  = TICKL_SMALL
-            ax.xlabelsize = FS_SMALL
-            ax.ylabelsize = FS_SMALL
-            ax.xticklabelsize = FS_SMALL
-            ax.yticklabelsize = FS_SMALL
-        end
-        ax.xgridvisible = false
-        ax.ygridvisible = false
+        fs = big ? FS_BIG : FS_SMALL
+        sp = big ? SP_BIG : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
+        ax.xgridvisible   = false
+        ax.ygridvisible   = false
         return ax
     end
 
-    ax_main = Axis(
-        fig[1, 1],
-        xlabel = L"\text{Voltage} \mathrm{(V)}",
-        ylabel = L"\textbf{Interfacial\ concentration}\qquad \mathbf{c_i^{\ddagger}}\;(\mathrm{M})",
+    # 라벨: 물리량 italic / 약어·단위 roman
+    lab_act = rich("Interfacial Activity\n\n",
+                   rich("a", font=:italic),
+                   subscript(rich("i", font=:italic)), superscript("‡"))
+    lab_phi = rich(rich("U", font=:italic), "  (V vs. SHE)")
+    lab_ratio = rich("log(", superscript("CatINT"), rich("a", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"),
+                     " / ", superscript("MPNP"), rich("a", font=:italic),
+                     subscript(rich("i", font=:italic)), superscript("‡"), ")")
+
+    ax_main = Axis(fig[1, 1];
+        ylabel = lab_act,
         yscale = log10,
-		limits = (-1.25, -0.55, 1e-11, 1e1),
-
+        limits = (-1.25, -0.55, 1e-11, 1e3),
     )
+    ax_main.xticklabelsvisible = false
 
-    format_axis!(ax_main, big=true)
-
-    # df_curr: species별 곡선
+    # ── MPNP (solid) + CatINT (dash) ───────────────────────────
     for (i, s) in enumerate(species)
         curr = df_curr[!, s]
-        lines!(ax_main, V, curr;
-            color = colors[i],
-            linewidth = 3.5
-        )
-    end
-
-    # df_prev: Index=1:7 을 species 순서와 매칭해서 점으로 표시
-    for i in 1:length(species)
+        lines!(ax_main, V, curr; color = sp_colors[i], linewidth = solid_lw)
         row = df_prev[df_prev.Index .== i, :]
         if nrow(row) > 0
-            scatter!(ax_main,
-                row[!, "Voltage"],
-                row[!, "Concentration"] ;
-                color = colors[i],
-                markersize = 5,
-                #strokecolor = :black,
-                #strokewidth = 1.5
-            )
+            lines!(ax_main, row[!, "Voltage"], row[!, "Concentration"];
+                color = sp_pastel[i], linewidth = dash_lw, linestyle = :dash)
         end
     end
 
-    #text!(ax_main, -1.15, 50, text=L"\mathrm{K^+}",
-    #    color=colors[1], fontsize=18, font=:bold)
-    #text!(ax_main, -0.875, 7e-7, text=L"\mathrm{H^+}",
-    #    color=colors[2], fontsize=18, font=:bold)
-    #text!(ax_main, -1.05, 4e-9, text=L"\mathrm{CO_3^{2-}}",
-    #    color=colors[4], fontsize=18, font=:bold)
-    #text!(ax_main, -1.05, 7e-5, text=L"\mathrm{HCO_3^-}",
-    #    color=colors[3], fontsize=18, font=:bold)
-    #text!(ax_main, -1.10, 4.2e-4, text=L"\mathrm{CO_2}",
-    #    color=colors[5], fontsize=18, font=:bold)
-    #text!(ax_main, -0.875, 1e-8, text=L"\mathrm{OH^-}",
-    #    color=colors[6], fontsize=18, font=:bold)
-    #text!(ax_main, -1.17, 3.0e-2, text=L"\mathrm{CO}",
-    #    color=colors[7], fontsize=18, font=:bold)
+    # species 라벨 (rich)
+    sp_pos = [
+        (-1.15, 30),     (-0.875, 2e-7),  (-1.05, 20e-7),  (-1.1, 0.5e-9),
+        (-1.2, 9e-4),    (-0.875, 16e-9), (-1.17, 5000e-4),
+    ]
+    for i in 1:7
+        x,y = sp_pos[i]
+        text!(ax_main, x, y; text=sp_rich[i], color=sp_colors[i], fontsize=24, font=:bold)
+    end
 
-    ax_main.yticks = (
-        [1e-10, 1e-6, 1e-2, 1e2],
-        [L"10^{-10}", L"10^{-6}", L"10^{-2}", L"10^{2}"]
+    # ── ratio aux: log(CatINT / MPNP) ──────────────────────────
+    ax_aux = Axis(fig[2, 1];
+        xlabel = lab_phi,
+        ylabel = lab_ratio,
+    )
+    for (i, s) in enumerate(species)
+        row_prev = df_prev[df_prev.Index .== i, :]
+        if nrow(row_prev) > 0
+            matched_curr = [df_curr[findmin(abs.(V .- v))[2], s] for v in row_prev[!, "Voltage"]]
+            delta_y = log10.(row_prev[!, "Concentration"] ./ matched_curr)  # log(CatINT/MPNP)
+            scatter!(ax_aux, row_prev[!, "Voltage"], delta_y;
+                color = sp_colors[i], markersize = 10)
+        end
+    end
+    hlines!(ax_aux, [0.0]; color = :black, linestyle = :dot, linewidth = 2)
+
+    format_axis!(ax_main, big=true)
+    format_axis!(ax_aux, big=true)
+
+    linkxaxes!(ax_main, ax_aux)
+    xlims!(ax_aux, -1.25, -0.55)
+    ylims!(ax_aux, -0.3, 0.3)
+
+    xt = [-1.2, -1.0, -0.8, -0.6]
+    xtlab = [@sprintf("%.1f", x) for x in xt]
+    ax_main.yticks = ([1e-10, 1e-6, 1e-2, 1e2], [powlab(-10), powlab(-6), powlab(-2), powlab(2)])
+    ax_main.xticks = (xt, xtlab)
+    ax_aux.xticks  = (xt, xtlab)
+
+    # ── legend: MPNP(solid) / CatINT(dash) ─────────────────────
+    legend_entries = [
+        LineElement(color = :black,  linestyle = :solid, linewidth = solid_lw),
+        LineElement(color = :gray60, linestyle = :dash,  linewidth = dash_lw),
+    ]
+    legend_labels = ["MPNP@LiquidElectrolytes.jl", "CatINT"]
+
+    axislegend(ax_main, legend_entries, legend_labels;
+        position = :rt,
+        orientation = :vertical,
+        labelsize = 20,
+        font = :bold,
+        framevisible = true,
+        backgroundcolor = (:white, 0.5),
+        framecolor = (:black, 0.5),
     )
 
-    #xlims!(ax_main, -1.2, -0.6)
-    #ylims!(ax_main, 1e-10, 1e4)
+    rowsize!(fig.layout, 1, Relative(0.68))
+    rowsize!(fig.layout, 2, Relative(0.32))
+    rowgap!(fig.layout, 15)
 
     resize_to_layout!(fig)
     fig
@@ -1541,8 +1809,8 @@ let
 
 
     csv_paths = [
-       # raw"../data/output/IV_Robin_DMGL_γ_pnp_ohminus.csv",
-       # raw"../data/output/IV_Robin_DMGL_γ_pnp_ohminus_koh_nonsol.csv",
+        raw"../data/output/IV_Robin_DMGL_γ_pnp_ohminus.csv",
+        raw"../data/output/IV_Robin_DMGL_γ_pnp_ohminus_koh_nonsol.csv",
         raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv",
     ]
 
@@ -1680,6 +1948,263 @@ end
 
 # ╔═╡ 17b95990-f6e8-4da5-909a-1a2d46d7494d
 let
+    FS_BIG   = 32
+    FS_SMALL = 32
+    SP_BIG   = 3.5
+    SP_SMALL = 3.5
+    TICKW_BIG   = 2.0
+    TICKW_SMALL = 2.0
+    TICKL_BIG   = 8
+    TICKL_SMALL = 8
+
+    function style_axis!(ax; big::Bool)
+        fs = big ? FS_BIG : FS_SMALL
+        sp = big ? SP_BIG : SP_SMALL
+        tw = big ? TICKW_BIG : TICKW_SMALL
+        tl = big ? TICKL_BIG : TICKL_SMALL
+        ax.spinewidth     = sp
+        ax.xtickwidth     = tw
+        ax.ytickwidth     = tw
+        ax.xticksize      = tl
+        ax.yticksize      = tl
+        ax.xlabelsize     = fs
+        ax.ylabelsize     = fs
+        ax.xticklabelsize = fs
+        ax.yticklabelsize = fs
+        ax.xlabelpadding  = 10
+        ax.ylabelpadding  = 10
+        ax.xgridvisible   = false
+        ax.ygridvisible   = false
+        return ax
+    end
+
+    col_mpnp   = "#2980B9"          # MPNP (solid, 파랑)
+    col_catint = "#999999"          # CatINT (dash, 회색) ── (a)(b)(c)
+    col_dgml   = ("#999999", 0.9)   # (d) 회색 점선
+    col_exp    = "#222222"          # Experiment (dot)
+    solid_lw = 7.0
+    dash_lw  = 4.5
+
+    # ── rich-text 틱라벨 헬퍼 (serif 방지: L"" 대신 rich) ───────
+    powlab(n) = rich("10", superscript(string(n)))
+
+    # ── rich-text 축 라벨: 물리량=italic, 약어/단위=roman ──────
+    lab_pol  = rich("Partial CO Current\n\n",
+                    "|", rich("I", font=:italic), subscript("CO"),
+                    "|  (mA cm", superscript("−2"), ")")
+    lab_act  = rich("Interfacial Activity\n\n",
+                    rich("a", font=:italic),
+                    subscript(rich("i", font=:italic)), superscript("‡"))
+    lab_con  = rich("Interfacial Concentration\n\n",
+                    rich("c", font=:italic),
+                    subscript(rich("i", font=:italic)), superscript("‡"),
+                    "  (M)")
+    lab_cdl  = rich("Differential Capacitance\n\n",
+                    rich("C", font=:italic), subscript("dl"),
+                    "  (μF cm", superscript("−2"), ")")
+    lab_xshe = rich("Voltage ", rich("U", font=:italic), "  (V vs. SHE)")
+    lab_xpzc = rich("Voltage [", rich("U", font=:italic), " − ",
+                    rich("U", font=:italic), subscript("pzc"), "]  (V)")
+
+    df_conc    = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Same_Size.csv", DataFrame)
+    df_pol     = CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
+    df_cdl     = CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pb_Same_Size_1.csv", DataFrame)
+    df_act     = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
+
+
+	
+    df_cap_exp_dgml = CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_All_species_1.csv", DataFrame)
+
+
+	
+    df_conc_pr = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv",    DataFrame)
+    df_act_pr  = CSV.read(raw"../data/catmap_CO2R_data/voltage-activ.csv",   DataFrame)
+    df_pol_pr  = CSV.read(raw"../data/catmap_CO2R_data/Ringe-theorical.csv", DataFrame; header=[:Voltage, :Current])
+    # (a) 실험 데이터 (dot) — TODO: 실제 경로로 교체
+    df_pol_exp = CSV.read(raw"../data/catmap_CO2R_data/Ringe-experimental.csv", DataFrame; header=[:Voltage, :Current])
+
+    species   = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    sp_colors = ["#E07B39","#888888","#7B5C3E","#222222",
+                 "#C0392B","#27AE60","#2980B9"]
+    sp_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#666666",
+                 "#FF746C","#80EF80","#AFCBFF"]
+    # rich species 라벨 (한 번 정의해서 (b)(c) 양쪽에 사용)
+    sp_rich = [
+        rich("K", superscript("+")),
+        rich("H", superscript("+")),
+        rich("HCO", subscript("3"), superscript("−")),
+        rich("CO", subscript("3"), superscript("2−")),
+        rich("CO", subscript("2")),
+        rich("OH", superscript("−")),
+        rich("CO"),
+    ]
+
+    vgrid_con = df_conc[!, :Voltage]
+    vgrid_act = df_act[!, :Voltage]
+    conc_electrode = permutedims(Matrix(df_conc[!, Symbol.(species)]))
+    act_electrode  = permutedims(Matrix(df_act[!,  Symbol.(species)]))
+
+    xt_bottom = [-1.4, -1.2, -1.0, -0.8, -0.6]
+    xt_cdl    = [-0.8, -0.4,  0.0,  0.4,  0.8]
+
+    fig = Figure(size = (1400, 1100), figure_padding = (40, 60, 30, 60))
+
+    # (a) Partial CO Current — x라벨 없음
+    ax_pol = Axis(fig[1, 1];
+        ylabel = lab_pol,
+        limits = (-1.5, -0.4, 1e-10, 100),
+        yscale = log10,
+        yaxisposition = :left,
+    )
+    style_axis!(ax_pol; big=false)
+    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_pol.yticks = (10.0 .^ (0:-5:-10), [powlab(0), powlab(-5), powlab(-10)])
+    ax_pol.xticklabelsvisible = true
+    ax_pol.xlabelvisible      = false
+
+    # (b) Interfacial Activity — right y-axis
+    ax_act = Axis(fig[1, 2];
+        ylabel = lab_act,
+        yscale = log10,
+        limits = (-1.5, -0.5, 1e-11, 1e4),
+        yaxisposition = :right,
+    )
+    style_axis!(ax_act; big=false)
+    ax_act.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_act.yticks = (10.0 .^ (3:-3:-9),
+                     [powlab(3), powlab(0), powlab(-3), powlab(-6), powlab(-9)])
+
+    # (c) Interfacial Concentration
+    ax_con = Axis(fig[2, 1];
+        xlabel = lab_xshe,
+        ylabel = lab_con,
+        yscale = log10,
+        limits = (-1.5, -0.5, 1e-11, 1e1),
+        yaxisposition = :left,
+    )
+    style_axis!(ax_con; big=true)
+    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_con.yticks = (10.0 .^ (0:-3:-9),
+                     [powlab(0), powlab(-3), powlab(-6), powlab(-9)])
+    ax_con.xticklabelsvisible = true
+    ax_con.xlabelvisible      = true
+
+    # (d) Differential Capacitance — right y-axis
+    ax_cdl = Axis(fig[2, 2];
+        xlabel = lab_xpzc,
+        ylabel = lab_cdl,
+        limits = (-0.9, 0.9, 0, 25),
+        yaxisposition = :right,
+    )
+    style_axis!(ax_cdl; big=true)
+    ax_cdl.xticks = (xt_cdl, [@sprintf("%.1f", x) for x in xt_cdl])
+    ax_cdl.yticks = ([0, 10, 20, 30, 40, 50], ["0","10","20","30","40","50"])
+
+    rowgap!(fig.layout, 20)
+    colgap!(fig.layout, 30)
+
+    # ── plots ───────────────────────────────────────────────────
+    # (a) MPNP(solid) vs CatINT(dash) + Experiment(dot)
+    lines!(ax_pol, df_pol[!, :Voltage],    abs.(df_pol[!, :Current]    .* (cm^2/mA));
+        color=col_mpnp,   linewidth=solid_lw)
+    lines!(ax_pol, df_pol_pr[!, :Voltage], abs.(df_pol_pr[!, :Current]);
+        color=col_catint, linewidth=dash_lw, linestyle=:dash)
+    scatter!(ax_pol, df_pol_exp[!, :Voltage], abs.(df_pol_exp[!, :Current]);
+        color=col_exp, markersize=12)
+
+    # (b)(c) species: MPNP(solid, species color) vs CatINT(dash, pastel)
+    for ia in 1:7
+        lines!(ax_act, vgrid_act, max.(act_electrode[ia, :], eps(Float64));
+            color=sp_colors[ia], linewidth=solid_lw)
+        ma = df_act_pr[!, :Index] .== ia
+        any(ma) && lines!(ax_act, df_act_pr[ma, :Voltage],
+            max.(df_act_pr[ma, :Concentration], eps(Float64));
+            color=sp_pastel[ia], linewidth=dash_lw, linestyle=:dash)
+
+        lines!(ax_con, vgrid_con, max.(conc_electrode[ia, :], eps(Float64));
+            color=sp_colors[ia], linewidth=solid_lw)
+        mc = df_conc_pr[!, :Index] .== ia
+        any(mc) && lines!(ax_con, df_conc_pr[mc, :Voltage],
+            max.(df_conc_pr[mc, :Concentration], eps(Float64));
+            color=sp_pastel[ia], linewidth=dash_lw, linestyle=:dash)
+    end
+
+    # (d) MPNP(solid, 파랑) 만
+    lines!(ax_cdl, df_cdl[!, :Voltage] .- 0.16,
+           df_cdl[!, :Capacitance] / (μF/cm^2);
+        color=col_mpnp, linewidth=solid_lw)
+
+    # ── legends ─────────────────────────────────────────────────
+    # (a): MPNP / CatINT / Experiment
+    pol_elems  = [LineElement(color=col_mpnp,   linewidth=solid_lw),
+                  LineElement(color=col_catint, linewidth=dash_lw, linestyle=:dash),
+                  MarkerElement(color=col_exp, marker=:circle, markersize=14)]
+    pol_labels = ["MPNP@LiquidElectrolytes.jl", "CatINT", "Experiment"]
+
+    axislegend(ax_pol, pol_elems, pol_labels;
+        position        = :lb,
+        orientation     = :vertical,
+        labelsize       = 28,
+        font            = :bold,
+        framevisible    = true,
+        backgroundcolor = (:white, 0.5),
+        framecolor      = (:black, 0.5),
+        patchsize       = (45, 22),
+    )
+    text!(ax_cdl, 0.4, 10; text="MPNP",
+          color=col_mpnp, fontsize=28, font=:bold,
+          align=(:center, :center))
+    # ── species text labels — (b) activity 와 (c) concentration 양쪽 ─
+    sp_pos_con = [          # (좌표는 (c) concentration 기준)
+        (-1.35,  1e-1),     # K⁺
+        (-1.05,  9e-9),     # H⁺
+        (-0.8,   2e-4),     # HCO₃⁻
+        (-1.40,  2e-11),    # CO₃²⁻
+        (-1.35,  7e-7),     # CO₂
+        (-0.90,  9e-10),    # OH⁻
+        (-1.35,  1e-4),     # CO
+    ]
+    for ia in 1:7
+        x, y = sp_pos_con[ia]
+        text!(ax_con, x, y; text=sp_rich[ia], color=sp_colors[ia],
+              fontsize=32, font=:bold, offset=(0, 0))
+    end
+    # (b) activity 에도 동일 라벨 (활동도 스케일에 맞춰 y 위치만 조정)
+    sp_pos_act = [
+        (-1.35,  3e1),      # K⁺
+        (-1.00,  9e-7),     # H⁺
+        (-0.8,   6e-4),     # HCO₃⁻
+        (-1.40,  2e-9),     # CO₃²⁻
+        (-1.35,  7e-5),     # CO₂
+        (-0.90,  9e-8),     # OH⁻
+        (-1.35,  4e-2),     # CO
+    ]
+    for ia in 1:7
+        x, y = sp_pos_act[ia]
+        text!(ax_act, x, y; text=sp_rich[ia], color=sp_colors[ia],
+              fontsize=32, font=:bold, offset=(0, 0))
+    end
+
+    # ── panel labels ────────────────────────────────────────────
+    for (pos, lbl, pad) in [
+        (fig[1, 1, TopLeft()], "(a)", 130),
+        (fig[1, 2, TopLeft()], "(b)", 0),
+        (fig[2, 1, TopLeft()], "(c)", 130),
+        (fig[2, 2, TopLeft()], "(d)", 0),
+    ]
+        Label(pos, lbl;
+            fontsize = 30, font = :bold,
+            padding  = (0, pad, 8, 0),
+            halign   = :right, valign = :bottom,
+        )
+    end
+
+    resize_to_layout!(fig)
+    fig
+end
+
+# ╔═╡ 0290138e-4839-49a0-9a77-050bb4ab2cc0
+let
     FS_BIG   = 24
     FS_SMALL = 24
     SP_BIG   = 3.5
@@ -1720,446 +2245,216 @@ let
         return ax
     end
 
-    priv_color = (:gray60, 0.8)
+    priv_color = (:gray60, 0.6)
 
-    df_conc = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Same_Size.csv", DataFrame)
-    df_pol  = CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
-    df_cdl  = CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pb_Same_Size_1.csv", DataFrame)
-    df_act  = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Same_Size.csv", DataFrame)
+    cdl_mpb_color  = "#A7C7E7"
+    cdl_dgml_color = "#C3A6E0"
+    exp_color      = "#555555"
 
-    df_conc_pr = CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Same_Size.csv", DataFrame)
-    df_pol_pr  = CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
-    df_cdl_pr  = CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pb_Same_Size_1.csv", DataFrame)
-    df_act_pr  = CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Same_Size.csv", DataFrame)
+    # ── MPB (solid) — Potassium_only 로 교체 ───────────────────
+    df_conc    = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
+    df_pol     = CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cdl     = CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
+    df_act     = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
+    df_cap_exp      = CSV.read(raw"../data/Valette_Cap_data/NaClO4_0.005M.csv", DataFrame)
+    df_cap_exp_dgml = CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_All_species_1.csv", DataFrame)
+    # ── CatINT (점선) — 첫 번째와 동일, long-format ────────────
+    # Index 매핑: 1=K⁺ 2=H⁺ 3=HCO₃⁻ 4=CO₃²⁻ 5=CO₂ 6=OH⁻ 7=CO
+    df_conc_pr  = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv",   DataFrame)  # Index,Voltage,Concentration
+    df_act_pr   = CSV.read(raw"../data/catmap_CO2R_data/voltage-activ.csv",  DataFrame)  # Index,Voltage,Concentration
+    df_pol_pr   = CSV.read(raw"../data/catmap_CO2R_data/Ringe-theorical.csv", DataFrame; header=[:Voltage, :Current])
 
+    species       = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
+    colors        = [:orange, :gray, :brown, :violet, :red, :green, :blue]
+    colors_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#FFC5D3","#FF746C","#80EF80","#AFCBFF"]
 
-	
-    fig = Figure(size = (1200, 820), figure_padding = (40, 40, 30, 45))
+    vgrid_con    = df_conc[!, :Voltage]
+    vgrid_act    = df_act[!, :Voltage]
+    conc_electrode    = permutedims(Matrix(df_conc[!, Symbol.(species)]))
+    act_electrode     = permutedims(Matrix(df_act[!, Symbol.(species)]))
 
-    ax_cdl = Axis(fig[1, 1],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
-        limits = (-0.8, 0.8, 0, 25),
-    )
-    style_axis!(ax_cdl; big=false)
+    # (a)(b)(c) 공유 모델 legend: CatINT(dash) / MPB@LiquidElectrolytes.jl(solid)
+    model_elems  = [
+        LineElement(color = priv_color, linewidth = 1.8, linestyle = :dash),
+        LineElement(color = :black,     linewidth = 3,   linestyle = :solid),
+    ]
+    model_labels = ["CatINT", "MPB@LiquidElectrolyte.jl"]
 
-    ax_pol = Axis(fig[1, 2],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"|j| \; \textrm{(mA\,cm^{-2})}",
-        limits = (-1.3, -0.4, 1e-10, 100),
-		yaxisposition = :right,
-        yscale = log10
+    # (d) capacitance legend: dash 없이 alpha+굵기로 구별, 파스텔 3색
+    cdl_mpb_lw  = 7    # 이전 모델: 굵고 연하게
+    cdl_dgml_lw = 3.5  # 현재 모델: 가늘고 진하게
+    cdl_elems  = [
+        LineElement(color = (cdl_mpb_color, 0.55), linewidth = cdl_mpb_lw),
+        LineElement(color = (cdl_dgml_color, 1.0), linewidth = cdl_dgml_lw),
+        MarkerElement(color = exp_color, marker = :circle, markersize = 10),
+    ]
+    cdl_labels = ["MPB@LiquidElectrolyte.jl", "DGML@LiquidElectrolyte.jl", "Experiment@Valette"]
+
+    xt_bottom = [-1.4, -1.2, -1.0, -0.8, -0.6]
+    xt_top    = [-0.8, -0.4,  0.0,  0.4,  0.8]
+
+    # 세로 스택용 figure
+    fig = Figure(size = (900, 1500), figure_padding = (40, 40, 30, 45))
+
+    xlabel_str = L"\textbf{Voltage}\ U \; \mathrm{(V \; vs. \; SHE)}"
+
+    # ── (a) Partial CO Current  →  fig[1,1] ────────────────────
+    ax_pol = Axis(fig[1, 1];
+        ylabel = L"|I_{CO}| \; \mathrm{(mA \; cm^{-2})}",
+        limits = (-1.5, -0.4, 1e-10, 100),
+        yscale = log10,
     )
     style_axis!(ax_pol; big=false)
+    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_pol.yticks = (10.0 .^ (0:-5:-10),
+                     [L"10^{0}", L"10^{-5}", L"10^{-10}"])
+    ax_pol.xticklabelsvisible = false
 
-    ax_con = Axis(fig[2, 1],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{Interfacial\ concentration}\; \mathbf{c_i^{\ddagger}}\;(\mathrm{M})",
+    # ── (b) Interfacial Concentration  →  fig[2,1] ─────────────
+    ax_con = Axis(fig[2, 1];
+        ylabel = L"c_\alpha^{\ddagger} \; \mathrm{(M)}",
         yscale = log10,
-        limits = (-1.25, -0.5, 1e-11, 1e1),
+        limits = (-1.5, -0.5, 1e-11, 1e1),
     )
     style_axis!(ax_con; big=true)
+    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_con.yticks = (10.0 .^ (0:-3:-9),
+                     [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"])
+    ax_con.xticklabelsvisible = false
 
-    ax_act = Axis(fig[2, 2],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{Interfacial\ activity}\qquad \mathbf{a_i^{\ddagger}}",
+    # ── (c) Interfacial Activity  →  fig[3,1]  (x축 라벨 여기에) ─
+    ax_act = Axis(fig[3, 1];
+        xlabel = xlabel_str,
+        ylabel = L"a_\alpha^{\ddagger}",
         yscale = log10,
-        limits = (-1.25, -0.5, 1e-11, 1e4),
+        limits = (-1.5, -0.5, 1e-11, 1e4),
     )
     style_axis!(ax_act; big=true)
-
-    rowsize!(fig.layout, 1, Relative(0.28))
-    rowsize!(fig.layout, 2, Relative(0.72))
-    rowgap!(fig.layout, 14)
-    colgap!(fig.layout, 22)
-
-    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
-    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
-	colors_pastel = [
-	    "#F7C97F",  
-	    "#D3D3D3",  
-	    "#D9C2A7", 
-	    "#FFC5D3",  
-	    "#FF746C",  
-	    "#80EF80",  
-	    "#AFCBFF",  
-	]
-
-    vgrid_con = df_conc[!, :Voltage]
-    conc_electrode = permutedims(Matrix(df_conc[!, Symbol.(species)]))
-
-    vgrid_act = df_act[!, :Voltage]
-    act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))
-
-    vgrid_con_pr = df_conc_pr[!, :Voltage]
-    conc_electrode_pr = permutedims(Matrix(df_conc_pr[!, Symbol.(species)]))
-
-    vgrid_act_pr = df_act_pr[!, :Voltage]
-    act_electrode_pr = permutedims(Matrix(df_act_pr[!, Symbol.(species)]))
-
-    xt_bottom = [-1.2, -1.0, -0.8, -0.6]
-    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
     ax_act.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
-    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
+    ax_act.yticks = (10.0 .^ (3:-3:-9),
+                     [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"])
 
-    yt_vals_con = 10.0 .^ (0:-3:-9)
-    yt_labs_con = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax_con.yticks = (yt_vals_con, yt_labs_con)
+    # ── (d) Differential Capacitance  →  fig[4,1] ──────────────
+    # x축은 pzc 기준 상대전위 (U - U_pzc), y축 한계 제거(auto)
+    xlabel_pzc = L"\textbf{Voltage}\ U - U_\mathrm{pzc} \; \mathrm{(V)}"
+    ax_cdl = Axis(fig[4, 1];
+        xlabel = xlabel_pzc,
+        ylabel = L"C_\mathrm{dl} \; (\mu\mathrm{F \; cm^{-2}})",
+    )
+    style_axis!(ax_cdl; big=false)
+    xt_cdl = [-0.8, -0.4, 0.0, 0.4, 0.8]
+    ax_cdl.xticks = (xt_cdl .- 0.16, [@sprintf("%.1f", x) for x in xt_cdl])
 
-    yt_vals_act = 10.0 .^ (3:-3:-9)
-    yt_labs_act = [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax_act.yticks = (yt_vals_act, yt_labs_act)
+    # 행 높이 비율 2:3:3:2
+    rowsize!(fig.layout, 1, Relative(2/10))
+    rowsize!(fig.layout, 2, Relative(3/10))
+    rowsize!(fig.layout, 3, Relative(3/10))
+    rowsize!(fig.layout, 4, Relative(2/10))
+    rowgap!(fig.layout, 14)
 
-    yt_vals_pol = 10.0 .^ (0:-5:-10)
-    yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}"]
-    ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
+    solid_linewidth = 3.5
+    dash_linewidth  = 2.0
 
-    yt_vals_cdl = [0, 10, 20, 30]
-    yt_labs_cdl = [L"0", L"10", L"20", L"30"]
-    ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
-
-    xt_top = [-0.8, -0.4, 0.0, 0.4, 0.8]
-    ax_cdl.xticks = (xt_top, [@sprintf("%.1f", x) for x in xt_top])
-
-	solid_linewidth = 3.5
-	dash_linewidth = 2
-	
+    # ── MPB (solid) ────────────────────────────────────────────
     for ia in 1:7
         lines!(ax_con, vgrid_con, max.(conc_electrode[ia, :], eps(Float64));
             color=colors[ia], linewidth=solid_linewidth)
-        lines!(ax_act, vgrid_act, max.(act_electrode[ia, :], eps(Float64));
+        lines!(ax_act, vgrid_act, max.(act_electrode[ia, :],  eps(Float64));
             color=colors[ia], linewidth=solid_linewidth)
-        lines!(ax_con, vgrid_con_pr, max.(conc_electrode_pr[ia, :], eps(Float64));
-            color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
-        lines!(ax_act, vgrid_act_pr, max.(act_electrode_pr[ia, :], eps(Float64));
-            color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
     end
 
-    lines!(ax_pol, df_pol[!, :Voltage], abs.(df_pol[!, :Current] .* (cm^2/mA));
-        color="#8ED1C6", linewidth=solid_linewidth)
-    lines!(ax_pol, df_pol_pr[!, :Voltage], abs.(df_pol_pr[!, :Current] .* (cm^2/mA));
-        color=priv_color, linewidth=dash_linewidth, linestyle=:dash)
-
-    lines!(ax_cdl, df_cdl[!, :Voltage], df_cdl[!, :Capacitance] / (μF / cm^2);
-        color="#8ED1C6", linewidth=solid_linewidth)
-    lines!(ax_cdl, df_cdl_pr[!, :Voltage], df_cdl_pr[!, :Capacitance] / (μF / cm^2);
-        color=priv_color, linewidth=dash_linewidth, linestyle=:dash)
-
-    model_elems = [
-        LineElement(color = priv_color, linewidth = 1.8, linestyle = :dash),
-        LineElement(color = :black, linewidth = 3, linestyle = :solid),
-    ]
-    model_labels = [
-        "MPB",
-        "DGML",
-    ]
-
-    Legend(
-        fig[1, 1],
-        [model_elems],
-        [model_labels],
-        ["Model"];
-        framevisible = false,
-        nbanks = 1,
-        tellwidth = false,
-        tellheight = false,
-        halign = :right,
-        valign = :bottom,
-        margin = (10, 10, 10, 10),
-    )
-	text!(fig[2, 1], -1.15, 0.3, text=L"\mathrm{K^+}",
-				  color=colors[1], fontsize=24, font="sans-bold")
-	text!(fig[2, 1], -0.90, 0.000000009, text=L"\mathrm{H^+}", 
-				  color=colors[2], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.05, 2e-11, text=L"\mathrm{CO_3^{2-}}",
-				  color=colors[4], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.055, 4.00e-6, text=L"\mathrm{HCO_3^-}", 
-				  color=colors[3], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.23, 7.0e-6, text=L"\mathrm{CO_2}", 
-				  color=colors[5], fontsize=24, font = "sans-bold")
-	text!(fig[2, 1], -0.90, 9e-10, text=L"\mathrm{OH^-}",
-				  color=colors[6], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.17, 0.00024, text=L"\mathrm{CO}", 
-			 	  color=colors[7], fontsize=24, font = "sans-bold")
-    resize_to_layout!(fig)
-
-	Label(fig[1, 1, TopLeft()], "(a)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 45, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[1, 2, TopLeft()], "(b)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 45, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[2, 1, TopLeft()], "(c)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 45, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[2, 2, TopLeft()], "(d)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 45, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-
-	fig
-	
-    #display(fig)
-end
-
-# ╔═╡ 0290138e-4839-49a0-9a77-050bb4ab2cc0
-let
-    FS_BIG   = 24
-    FS_SMALL = 24
-    SP_BIG   = 3.5
-    SP_SMALL = 3.5
-    TICKW_BIG   = 2.0
-    TICKW_SMALL = 2.0
-    TICKL_BIG   = 8
-    TICKL_SMALL = 8
-
-    function style_axis!(ax; big::Bool)
-        if big
-            ax.spinewidth = SP_BIG
-            ax.xtickwidth = TICKW_BIG
-            ax.ytickwidth = TICKW_BIG
-            ax.xticksize  = TICKL_BIG
-            ax.yticksize  = TICKL_BIG
-            ax.xlabelsize = FS_BIG
-            ax.ylabelsize = FS_BIG
-            ax.xticklabelsize = FS_BIG
-            ax.yticklabelsize = FS_BIG
-            ax.xlabelpadding = 10
-            ax.ylabelpadding = 10
-            ax.xlabelfont = :bold
-        else
-            ax.spinewidth = SP_SMALL
-            ax.xtickwidth = TICKW_SMALL
-            ax.ytickwidth = TICKW_SMALL
-            ax.xticksize  = TICKL_SMALL
-            ax.yticksize  = TICKL_SMALL
-            ax.xlabelsize = FS_SMALL
-            ax.ylabelsize = FS_SMALL
-            ax.xticklabelsize = FS_SMALL
-            ax.yticklabelsize = FS_SMALL
+    # ── CatINT (dashed) — long-format 에서 종별 추출 ───────────
+    for ia in 1:7
+        # concentration
+        mc = df_conc_pr[!, :Index] .== ia
+        if any(mc)
+            lines!(ax_con, df_conc_pr[mc, :Voltage],
+                max.(df_conc_pr[mc, :Concentration], eps(Float64));
+                color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
         end
-        ax.xgridvisible = false
-        ax.ygridvisible = false
-        return ax
+        # activity
+        ma = df_act_pr[!, :Index] .== ia
+        if any(ma)
+            lines!(ax_act, df_act_pr[ma, :Voltage],
+                max.(df_act_pr[ma, :Concentration], eps(Float64));
+                color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
+        end
     end
 
-    df_conc = 
-		CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
-    df_pol  = 
-		CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
-    df_cdl  = 
-		CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
-    df_act  = 
-		CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
-
-
-	df_conc_pr = 
-		CSV.read(raw"../data/output/Concentration_Robin_DMGL_γ_Potassium_only.csv", DataFrame)
-    df_pol_pr  = 
-		CSV.read(raw"../data/output/Polarization_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
-    df_cdl_pr  = 
-		CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_Potassium_only_1.csv", DataFrame)
-    df_act_pr  = 
-		CSV.read(raw"../data/output/Activity_Curve_Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
-	
-
-      fig = Figure(size = (1200, 820), figure_padding = (40, 40, 30, 45))
-    priv_color = (:gray60, 0.8)
-
-    ax_cdl = Axis(fig[1, 1],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{C_{dl}} \textrm{(μF\,cm^{-2})}",
-        limits = (-0.8, 0.8, 0, 25),
-    )
-    style_axis!(ax_cdl; big=false)
-
-    ax_pol = Axis(fig[1, 2],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"|j| \; \textrm{(mA\,cm^{-2})}",
-        limits = (-1.3, -0.4, 1e-10, 100),
-		#yaxisposition = :right,
-        yscale = log10
-    )
-    style_axis!(ax_pol; big=false)
-
-    ax_con = Axis(fig[2, 1],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{Interfacial\ concentration}\quad \mathbf{c_i^{\ddagger}}\;(\mathrm{M})",
-        yscale = log10,
-        limits = (-1.25, -0.5, 1e-11, 1e1),
-    )
-    style_axis!(ax_con; big=true)
-
-    ax_act = Axis(fig[2, 2],
-        xlabel = L"\quad φ\; \mathrm{(V vs SHE)}",
-        ylabel = L"\text{Interfacial\ activity}\qquad \mathbf{a_i^{\ddagger}}\; ",
-        yscale = log10,
-        limits = (-1.25, -0.5, 1e-11, 1e4),
-		#yaxisposition = :right
-    )
-    style_axis!(ax_act; big=true)
-
-    rowsize!(fig.layout, 1, Relative(0.28))
-    rowsize!(fig.layout, 2, Relative(0.72))
-    rowgap!(fig.layout, 14)
-    colgap!(fig.layout, 22)
-
-    species = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
-    colors  = [:orange, :gray, :brown, :violet, :red, :green, :blue]
-	colors_pastel = [
-	    "#F7C97F",  
-	    "#D3D3D3",  
-	    "#D9C2A7", 
-	    "#FFC5D3",  
-	    "#FF746C",  
-	    "#80EF80",  
-	    "#AFCBFF",  
-	]
-    vgrid_con = df_conc[!, :Voltage]
-    conc_electrode = permutedims(Matrix(df_conc[!, Symbol.(species)]))
-
-    vgrid_act = df_act[!, :Voltage]
-    act_electrode = permutedims(Matrix(df_act[!, Symbol.(species)]))
-
-    vgrid_con_pr = df_conc_pr[!, :Voltage]
-    conc_electrode_pr = permutedims(Matrix(df_conc_pr[!, Symbol.(species)]))
-
-    vgrid_act_pr = df_act_pr[!, :Voltage]
-    act_electrode_pr = permutedims(Matrix(df_act_pr[!, Symbol.(species)]))
-
-    xt_bottom = [-1.2, -1.0, -0.8, -0.6]
-    ax_con.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
-    ax_act.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
-    ax_pol.xticks = (xt_bottom, [@sprintf("%.1f", x) for x in xt_bottom])
-
-    yt_vals_con = 10.0 .^ (0:-3:-9)
-    yt_labs_con = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax_con.yticks = (yt_vals_con, yt_labs_con)
-
-    yt_vals_act = 10.0 .^ (3:-3:-9)
-    yt_labs_act = [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
-    ax_act.yticks = (yt_vals_act, yt_labs_act)
-
-    yt_vals_pol = 10.0 .^ (0:-5:-10)
-    yt_labs_pol = [L"10^{0}", L"10^{-5}", L"10^{-10}"]
-    ax_pol.yticks = (yt_vals_pol, yt_labs_pol)
-
-    yt_vals_cdl = [0, 10, 20]
-    yt_labs_cdl = [L"0", L"10", L"20"]
-    ax_cdl.yticks = (yt_vals_cdl, yt_labs_cdl)
-
-    xt_top = [-0.8, -0.4, 0.0, 0.4, 0.8]
-    ax_cdl.xticks = (xt_top, [@sprintf("%.1f", x) for x in xt_top])
-
-	solid_linewidth = 3.5
-	dash_linewidth = 2
-	
-    for ia in 1:7
-        lines!(ax_con, vgrid_con, max.(conc_electrode[ia, :], eps(Float64));
-            color=colors[ia], linewidth=solid_linewidth)
-        lines!(ax_act, vgrid_act, max.(act_electrode[ia, :], eps(Float64));
-            color=colors[ia], linewidth=solid_linewidth)
-        lines!(ax_con, vgrid_con_pr, max.(conc_electrode_pr[ia, :], eps(Float64));
-            color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
-        lines!(ax_act, vgrid_act_pr, max.(act_electrode_pr[ia, :], eps(Float64));
-            color=colors_pastel[ia], linewidth=dash_linewidth, linestyle=:dash)
-    end
-
-    lines!(ax_pol, df_pol[!, :Voltage], abs.(df_pol[!, :Current] .* (cm^2/mA));
+    # ── Partial CO current ─────────────────────────────────────
+    lines!(ax_pol, df_pol[!, :Voltage],    abs.(df_pol[!, :Current]    .* (cm^2/mA));
         color="#8ED1C6", linewidth=solid_linewidth)
-    lines!(ax_pol, df_pol_pr[!, :Voltage], abs.(df_pol_pr[!, :Current] .* (cm^2/mA));
+    lines!(ax_pol, df_pol_pr[!, :Voltage], abs.(df_pol_pr[!, :Current]);
         color=priv_color, linewidth=dash_linewidth, linestyle=:dash)
 
-    lines!(ax_cdl, df_cdl[!, :Voltage], df_cdl[!, :Capacitance] / (μF / cm^2);
-        color="#8ED1C6", linewidth=solid_linewidth)
-    lines!(ax_cdl, df_cdl_pr[!, :Voltage], df_cdl_pr[!, :Capacitance] / (μF / cm^2);
-        color=priv_color, linewidth=dash_linewidth, linestyle=:dash)
+    # ── Differential capacitance — dash 없이 alpha+굵기로 구별 ──
+    # MPB (이전 모델): 굵고 연하게, 뒤에 깔리도록 먼저 그림
+    lines!(ax_cdl, df_cdl[!, :Voltage] .- 0.16, df_cdl[!, :Capacitance] / (μF/cm^2);
+        color=(cdl_mpb_color, 0.55), linewidth=cdl_mpb_lw)
+    # DGML (현재 모델): 가늘고 진하게
+    lines!(ax_cdl, df_cap_exp_dgml[!, :Voltage] .- 0.16, df_cap_exp_dgml[!, :Capacitance] / (μF/cm^2);
+        color=(cdl_dgml_color, 1.0), linewidth=cdl_dgml_lw)
+    # Experiment
+    scatter!(ax_cdl, df_cap_exp[!, :Voltage] .+ 0.972, df_cap_exp[!, :Cdl];
+        color=exp_color, markersize=7)
 
-    model_elems = [
-        LineElement(color = priv_color, linewidth = 1.8, linestyle = :dash),
-        LineElement(color = :black, linewidth = 3, linestyle = :solid),
-    ]
-    model_labels = [
-        "MPB",
-        "DGML",
-    ]
-
-    Legend(
-        fig[1, 1],
-        [model_elems],
-        [model_labels],
-        ["Model"];
+    # ── Legends ────────────────────────────────────────────────
+    # (a) 패널: 공유 모델 (CatINT / MPB)
+    Legend(fig[1, 1], [model_elems], [model_labels], ["Model"];
         framevisible = false,
-        nbanks = 1,
-        tellwidth = false,
-        tellheight = false,
-        halign = :right,
-        valign = :bottom,
-        margin = (10, 10, 10, 10),
+        nbanks       = 1,
+        tellwidth    = false,
+        tellheight   = false,
+        halign       = :left,
+        valign       = :bottom,
+        margin       = (10, 10, 10, 10),
+        labelsize    = 22,
+        titlesize    = 24,
+        patchsize    = (40, 20),
     )
-	text!(fig[2, 1], -1.15, 0.3, text=L"\mathrm{K^+}",
-				  color=colors[1], fontsize=24, font="sans-bold")
-	text!(fig[2, 1], -0.90, 0.000000009, text=L"\mathrm{H^+}", 
-				  color=colors[2], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.05, 2e-11, text=L"\mathrm{CO_3^{2-}}",
-				  color=colors[4], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.055, 4.00e-6, text=L"\mathrm{HCO_3^-}", 
-				  color=colors[3], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.23, 7.0e-6, text=L"\mathrm{CO_2}", 
-				  color=colors[5], fontsize=24, font = "sans-bold")
-	text!(fig[2, 1], -0.90, 9e-10, text=L"\mathrm{OH^-}",
-				  color=colors[6], fontsize=24, font = "sans-bold") 
-	text!(fig[2, 1], -1.17, 0.00024, text=L"\mathrm{CO}", 
-			 	  color=colors[7], fontsize=24, font = "sans-bold")
+
+    # (d) 패널: MPB / DGML / Experiment
+    Legend(fig[4, 1], [cdl_elems], [cdl_labels], ["Capacitance"];
+        framevisible = false,
+        nbanks       = 1,
+        tellwidth    = false,
+        tellheight   = false,
+        halign       = :left,
+        valign       = :top,
+        margin       = (10, 10, 10, 10),
+        labelsize    = 22,
+        titlesize    = 24,
+        patchsize    = (40, 20),
+    )
+
+    # species labels — (b) concentration 패널 (ax_con)
+    text!(ax_con, -1.35,  3e-1;   text=L"\mathrm{K^+}",       color=colors[1], fontsize=24, font=:bold)
+    text!(ax_con, -0.90,  9e-9;   text=L"\mathrm{H^+}",       color=colors[2], fontsize=24, font=:bold)
+    text!(ax_con, -1.30,  2e-11;  text=L"\mathrm{CO_3^{2-}}", color=colors[4], fontsize=24, font=:bold)
+    text!(ax_con, -1.055, 4e-6;   text=L"\mathrm{HCO_3^-}",   color=colors[3], fontsize=24, font=:bold)
+    text!(ax_con, -1.3,  7e-7;   text=L"\mathrm{CO_2}",      color=colors[5], fontsize=24, font=:bold)
+    text!(ax_con, -0.90,  9e-10;  text=L"\mathrm{OH^-}",      color=colors[6], fontsize=24, font=:bold)
+    text!(ax_con, -1.35,  1e-4; text=L"\mathrm{CO}",        color=colors[7], fontsize=24, font=:bold)
+
+    # 외부 라벨 — 각 패널 왼쪽 (col 0) 세로 회전
+    Label(fig[1, 0], "Partial CO Current";
+        rotation = π/2, fontsize = 24, font = :bold, tellheight = false)
+    Label(fig[2, 0], "Interfacial Concentration";
+        rotation = π/2, fontsize = 24, font = :bold, tellheight = false)
+    Label(fig[3, 0], "Interfacial Activity";
+        rotation = π/2, fontsize = 24, font = :bold, tellheight = false)
+    Label(fig[4, 0], "Differential Capacitance";
+        rotation = π/2, fontsize = 24, font = :bold, tellheight = false)
+
+    # panel labels
+    for (pos, lbl) in [(fig[1,1,TopLeft()], "(a)"), (fig[2,1,TopLeft()], "(b)"),
+                       (fig[3,1,TopLeft()], "(c)"), (fig[4,1,TopLeft()], "(d)")]
+        Label(pos, lbl; fontsize=25, font=:bold,
+              padding=(0,45,8,0), halign=:right, valign=:bottom)
+    end
+
     resize_to_layout!(fig)
-
-	Label(fig[1, 1, TopLeft()], "(a)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 30, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[1, 2, TopLeft()], "(b)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 30, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[2, 1, TopLeft()], "(c)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 30, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-Label(fig[2, 2, TopLeft()], "(d)",
-    fontsize = 25,
-    font = :bold,
-    padding = (0, 30, 8, 0),
-    halign = :right,
-    valign = :bottom)
-
-
-	fig
-	
-    #display(fig)
+    fig
 end
 
 # ╔═╡ Cell order:
@@ -2171,6 +2466,7 @@ end
 # ╠═a9bb3083-d499-4462-845b-c41963cae1e5
 # ╠═b3f44506-52eb-491c-bc44-76c9c49a43cd
 # ╠═40b4e182-7aa2-4518-842a-e70dd9dced0d
+# ╠═7ba7df52-eee1-4f36-a5d0-379f31c6c5ef
 # ╠═ccb13e5a-5ceb-4a56-9f3f-14307fc78115
 # ╠═b0a4b942-5654-4b22-8849-90bf6c7f957f
 # ╠═fc8096e4-01ca-451a-87cd-7e2e0171a531
@@ -2179,7 +2475,7 @@ end
 # ╠═2ddeace6-663d-4fd1-8494-f1c88c19e628
 # ╠═caa05490-0c7d-44ec-9be8-73f7a4473d8a
 # ╠═2b10e19b-c099-4e4e-9cc1-5be1255d03bd
-# ╟─4a68d318-ab6f-45b3-ad63-33d4a77c534d
+# ╠═4a68d318-ab6f-45b3-ad63-33d4a77c534d
 # ╟─8545d818-d255-4e8a-af8f-72fdaf9d4bdd
 # ╠═dcb38fd2-23b6-481e-83b7-4f3ee332c4ee
 # ╠═ee091126-671e-46d8-8ed5-9457aeefd8fb
@@ -2187,10 +2483,11 @@ end
 # ╟─59b13ba5-c85d-4e31-bd06-e1541b426205
 # ╟─95844847-6f46-4840-979d-c54282295f41
 # ╠═a09d4a6a-1017-4792-b684-7f9ddfeba83b
-# ╠═5a090c2f-eb24-4453-b650-f4bc6c32c952
-# ╠═224cf209-4aaa-49ca-a577-d77a597d256c
-# ╟─400709f7-2a7c-431a-96ce-99a678b840f7
-# ╟─d7ad452c-d3c1-485c-92ac-0b006dfb5acd
+# ╠═4d250254-b8a8-4ff2-95c6-81a02ddfd982
+# ╠═ac4deeb9-812a-429c-afe9-389b22814ee6
+# ╠═9d660147-670a-4728-b2ef-8bb978f6981b
+# ╠═400709f7-2a7c-431a-96ce-99a678b840f7
+# ╠═d7ad452c-d3c1-485c-92ac-0b006dfb5acd
 # ╟─89112dd8-08c8-4887-90db-e2e9c5ce0d88
 # ╠═17b95990-f6e8-4da5-909a-1a2d46d7494d
 # ╠═0290138e-4839-49a0-9a77-050bb4ab2cc0

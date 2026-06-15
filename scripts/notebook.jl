@@ -55,103 +55,16 @@ md"""
 """
 
 # ╔═╡ 0854d2c7-1b61-46b0-aa0a-496cdc8439f2
-@unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
+begin
+	@unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
+	@phconstants N_A c_0 k_B e h ε_0 R
+	
+end
 
 # ╔═╡ b24b7697-2c64-4e7a-8f7f-87cab6add489
 md"""
 ### Data
 """
-
-# ╔═╡ 8041c0b4-4c66-44c1-928d-0bb12bf8cc1e
-begin
-	@phconstants N_A c_0 k_B e h ε_0 R
-	const F = N_A * e
-
-	const voltages = (-1.15:0.1:-0.0) * V
-	const vmin = -1.0
-	const vmax = 1.1
-	
-	# bulk constants
-	const pH 		= 6.8
-	const T 		= 298.0 * K
-	const Hcp_CO  	= 9.7e-6 * mol/(m^3 * Pa)
-    const Hcp_CO2 	= 3.3e-4 * mol/(m^3 * Pa)
-	# species not involved in reactions
-	const ikplus 	= 1
-	# species involved in buffer reactions but not in surface reactions
-	const ibufferstart = 2
-	const ihplus 	= 2
-	const ihco3 	= 3
-    const ico3 		= 4
-	# species involved in buffer reactions and surface reactions
-    const isurfacestart = 5
-	const ico2 		= 5
-    const iohminus 	= 6
-	const ibufferend = 6
-	# species involved in surface reactions but not in buffer reactions
-	const ico  		= 7
-	const nc 		= 7
-	## reaction rate constants for bulk reactions
-	### CO2 + OH- <=> HCO3-
-	const kbe1 = 4.44e7 / (mol/dm^3)
-	const kbf1 = 5.93e3 / (mol/dm^3) / s
-	const kbr1 = kbf1 / kbe1
-	### HCO3- + OH- <=> CO3-- + H2O
-	const kbe2 = 4.66e3 / (mol/dm^3)
-	const kbf2 = 1.0e8 / (mol/dm^3) / s
-	const kbr2 = kbf2 / kbe2
-	### CO2 + H20 <=> HCO3- + H+
-    const kae1 = 4.44e-7 * (mol/dm^3)
-    const kaf1 = 3.7e-2 / s
-    const kar1 = kaf1 / kae1
-    ### HCO3- <=> CO3-- + H+ 
-    const kae2 = 4.66e-5 / (mol/dm^3)
-    const kaf2 = 59.44e3 / (mol/dm^3) / s
-    const kar2 = kaf2 / kae2
-	### autoprotolyse
-    const kwe  = 1.0e-14 * (mol/dm^3)^2
-    const kwf  = 2.4e-5 * (mol/dm^3) / s
-    const kwr  = kwf / kwe
-	const aH₂O = 1.0 #* mol/dm^3
-	const c̄    = 55.508mol / dm^3
-
-	# surface constants
-	const S 		= 9.61e-5 / N_A * (1.0e10)^2 * mol/m^2
-	const C_gap 	= 20 * μF/cm^2
-    const ϕ_pzc 	= 0.16 * V
-	const ico_t 	= 8
-	const icooh_t 	= 9
-	const ico2_t 	= 10
-	const isurfaceend = 10
-	const na 		= 3 # CO_t, CO2_t, COOH_t
-	const M0 		= 18.0153 * ufac"g/mol"
-	const v0        = N_A * (8.2 * Å)^3#18.048 * ufac"cm^3/mol"# # 1 / (55.4 * ufac"M") #
-	const c̄ 		= 55.508mol / dm^3
-
-
-	
-	const species_dict = Dict(
-		"K⁺" => ikplus,
-		"HCO₃⁻" => ihco3,
-		"CO₃²⁻" => ico3,
-		"CO₂" => ico2,
-		"OH⁻" => iohminus, 
-		"H⁺" => ihplus,
-		"CO" => ico,
-		"CO_t" => ico_t,
-		"COOH_t" => icooh_t,
-		"CO2_t" => ico2_t,
-	)
-
-	const species_dict_catmap = Dict(
-		"OH_g" => iohminus,
-		"CO2_aq" => ico2,
-		"CO_aq" => ico,
-		"CO_t" => ico_t,
-		"COOH_t" => icooh_t,
-		"CO2_t" => ico2_t,
-	)
-end;
 
 # ╔═╡ 96af1c36-0fab-4c1d-bad1-96b98a927d66
 begin
@@ -184,7 +97,7 @@ begin
 end
 
 # ╔═╡ 0963720a-e310-45b2-92a5-a9e5bc3e6888
-elystruct = GoldModel.create_model()
+elystruct = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
 
 # ╔═╡ f4f59329-e817-495a-9e83-1ab53e7738a9
 function sweep(model, grid, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
@@ -203,16 +116,13 @@ end
 # ╔═╡ e2eb4160-550a-4a07-b4c8-66863aaab46f
 odr_cv_pnp = sweep(elystruct, grid, sawtooth; nperiods = nperiods)
 
-# ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
-function plot_conc_time_electrode(result, bulk;
-
 # ╔═╡ 144c4dec-4cdf-440c-94da-38f6fb25742d
-function plot_conc_time_electrode(result, bulk;
+function plot_conc_time_electrode(result, elystruct;
                                   nspecies=7,
                                   scale=(mol/dm^3))
 
-    names  = getproperty.(bulk, :name)
-    colors = getproperty.(bulk, :color)
+    names  = elystruct.bulknames
+    colors = elystruct.bulkcolors
 
     times = result.tsol.t
     nt    = length(times)
@@ -225,7 +135,7 @@ function plot_conc_time_electrode(result, bulk;
 
     cols = RGBf(0.3, 0.5, 1.0) 
 
-    fig, ax_conc, ax_current = with_theme(electrochemistry_theme()) do
+    fig, ax_conc, ax_current = with_theme(AuCO2RR_plots.electrochemistry_theme()) do
         f = Figure(size = (960, 540))
         
         a_conc = Axis(f[1, 1],
@@ -272,6 +182,9 @@ function plot_conc_time_electrode(result, bulk;
     return fig
 end
 
+# ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
+plot_conc_time_electrode(odr_cv_pnp, elystruct)
+
 # ╔═╡ 5077d283-8067-4bee-9e94-14cb3f759e9d
 # I'll reconstruct after the publishing...
 
@@ -283,7 +196,6 @@ end
 # ╟─4b663702-b895-4a84-b065-0673e287b0ca
 # ╠═0854d2c7-1b61-46b0-aa0a-496cdc8439f2
 # ╟─b24b7697-2c64-4e7a-8f7f-87cab6add489
-# ╠═8041c0b4-4c66-44c1-928d-0bb12bf8cc1e
 # ╠═96af1c36-0fab-4c1d-bad1-96b98a927d66
 # ╠═d011050d-c66e-4e8a-a173-f55679403a90
 # ╟─035cf151-b62a-42ee-8b03-38e68fc4e4b3

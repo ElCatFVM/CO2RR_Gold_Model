@@ -24,4 +24,7 @@ module AuCO2RR_plots
     include("ivplot.jl")
     export iv_curve_axis, conc_vs_voltage_axis, addplot_ax!, plot1d_makie, conc_vs_voltage_axis_compare, ivsweep_over_L, addplot, plot1d, plotcurr_over_L, plot_iv_with_ringe_refs
 
+    include("struct.jl")
+    export electrochemistry_theme
+
 end # module

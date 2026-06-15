@@ -117,7 +117,7 @@ elydata_NaF() = ElectrolyteData(
     v0 = 18.048 * ufac"cm^3" / ufac"mol",
 )
 
-elydata_Au(bulk, γ, specieslayout, reactiondata) = ElectrolyteData(;
+elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteData(;
     nc = size(bulk)[1],
     na = specieslayout.na,
     z = getproperty.(bulk, :z),
@@ -132,6 +132,7 @@ elydata_Au(bulk, γ, specieslayout, reactiondata) = ElectrolyteData(;
     M = getproperty.(bulk, :M),
     Γ_we = specieslayout.Γ_we,
     Γ_bulk = specieslayout.Γ_bulk,
+    ircompensation = ircompensation,
     actcoeff! = γ,
 )
 
@@ -168,7 +169,8 @@ Base.@kwdef struct BulkSpecies
     a::Float64 = 1.0 # Å
     v::Float64 = v = ph"N_A" * (a * 1.0e-1 * ufac"nm")^3
     M::Float64 = ReactionData().M0 * v
-    color::Symbol = :none
+    color::String = "#000000"
+
 end
 
 function make_eneutral(
@@ -259,13 +261,25 @@ end
 
 
 function create_model(;
-        γ = DGML_γ!,
+        γ_select = "DGML",
         use_md_hydrated = true,
         BC_model = :Robin,
         model = :Gold,
+        ircompensation = :none,
         specieslayout = SpeciesLayout(),
         reactiondata = ReactionData()
     )
+
+    if γ_select == "DGML"
+        γ = DGML_γ!
+    elseif γ_select == "Stefan"
+        γ = Stefan_γ!
+    elseif γ_select == "Potassium"
+        γ = Potassium_γ!
+    else
+        error("undefined γ model: $(γ_select)")
+    end
+
 
     if use_md_hydrated == true && γ == DGML_γ!
         println("hydrated_DGML")
@@ -341,6 +355,15 @@ function create_model(;
         a_H = 0;  κ_H = 0
         a_CO = 0;  κ_CO = 0
         a_K = 8.2;  κ_K = 0
+    elseif use_md_hydrated == false && γ == Stefan_γ!
+        println("Same_size_MPB_Stefan")
+        a_HCO3  = 8.2      ;  κ_HCO3    = 0
+        a_CO3   = 8.2      ;  κ_CO3     = 0
+        a_CO2   = 8.2      ;  κ_CO2     = 0
+        a_OH    = 8.2      ;  κ_OH      = 0
+        a_H     = 8.2      ;  κ_H       = 0
+        a_CO    = 8.2      ;  κ_CO      = 0
+        a_K     = 8.2      ;  κ_K       = 0
     else
         error("undefined case:  use_md_hydrated = $(use_md_hydrated), γ=$(γ)")
     end
@@ -353,7 +376,7 @@ function create_model(;
             c_bulk = 0.091,
             a = a_HCO3,
             κ = κ_HCO3,
-            color = :brown
+            color = "#7B5C3E"
         ),
         BulkSpecies(;
             name = "CO₃²⁻",
@@ -362,7 +385,7 @@ function create_model(;
             c_bulk = 2.68e-6,
             a = a_CO3,
             κ = κ_CO3,
-            color = :violet
+            color = "#222222"
         ),
         BulkSpecies(;
             name = "CO₂",
@@ -371,7 +394,7 @@ function create_model(;
             c_bulk = 0.033,
             a = a_CO2,
             κ = κ_CO2,
-            color = :red
+            color = "#C0392B"
         ),
         BulkSpecies(;
             name = "OH⁻",
@@ -380,7 +403,7 @@ function create_model(;
             c_bulk = 10^(reactiondata.pH - 14),
             a = a_OH,
             κ = κ_OH,
-            color = :green
+            color = "#27AE60"
         ),
         BulkSpecies(;
             name = "H⁺",
@@ -389,7 +412,7 @@ function create_model(;
             c_bulk = 10^(-reactiondata.pH),
             a = a_H,
             κ = κ_H,
-            color = :gray
+            color = "#888888"
         ),
         BulkSpecies(;
             name = "CO",
@@ -398,7 +421,7 @@ function create_model(;
             c_bulk = 0.0,
             a = a_CO,
             κ = κ_CO,
-            color = :blue
+            color = "#2980B9"
         ),
     ]
 
@@ -409,7 +432,7 @@ function create_model(;
             D = 1.957e-9,
             a = a_K,
             κ = κ_K,
-            color = :orange
+            color = "#E07B39"
         )
     )
     species_dict = make_species_dict(specieslayout)
@@ -421,7 +444,7 @@ function create_model(;
     @show bulkcolors
 
     if model == :Gold
-        elydata = elydata_Au(bulk, γ, specieslayout, reactiondata)
+        elydata = elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation)
     elseif model == :Landstorfer_NaClO₄
         elydata = elydata_NaClO₄
     elseif model == :Landstorfer_NaF
@@ -580,7 +603,7 @@ function create_model(;
 
         return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
     end
-    return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulknames = bulknames)
+    return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
 end
 
 end

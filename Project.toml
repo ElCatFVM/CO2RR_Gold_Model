@@ -1,7 +1,7 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 version = "0.2.0"
+authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -23,6 +23,7 @@ LessUnitful = "f29f6376-6e90-4d80-80c9-fb8ec61203d5"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 LiquidElectrolytes = "5a7dfd8c-b3af-4c8d-a082-d3a774d75e72"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
@@ -35,8 +36,8 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"
 
 [compat]
-CairoMakie = "0.14, 0.15"
 CSV = "0.10"
+CairoMakie = "0.14, 0.15"
 Catalyst = "15"
 CatmapInterface = "0.3"
 Colors = "0.12, 0.13"
@@ -53,6 +54,7 @@ Latexify = "0.16"
 LessUnitful = "1"
 LinearSolve = "2, 3"
 LiquidElectrolytes = "2.7"
+Makie = "0.24.10"
 ModelingToolkit = "9,10"
 NLsolve = "4"
 NonlinearSolve = "4"
