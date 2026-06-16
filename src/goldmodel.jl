@@ -132,6 +132,8 @@ elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteD
     M = getproperty.(bulk, :M),
     Γ_we = specieslayout.Γ_we,
     Γ_bulk = specieslayout.Γ_bulk,
+    C_gap = reactiondata.C_gap,
+    ϕ_pzc = reactiondata.ϕ_pzc,
     ircompensation = ircompensation,
     actcoeff! = γ,
 )
@@ -164,7 +166,7 @@ Base.@kwdef struct BulkSpecies
     name::String = ""
     z::Int = 0
     D::Float64 = 1.0e-9 * ufac"m^2/s"
-    c_bulk::Union{Nothing, Float64} = nothing
+    c_bulk::Union{Nothing, Float64} = nothing 
     κ::Float64 = 0
     a::Float64 = 1.0 # Å
     v::Float64 = v = ph"N_A" * (a * 1.0e-1 * ufac"nm")^3
@@ -373,7 +375,7 @@ function create_model(;
             name = "HCO₃⁻",
             z = -1,
             D = 1.185e-9,
-            c_bulk = 0.091,
+            c_bulk = 0.091 * ufac"mol / dm^3",
             a = a_HCO3,
             κ = κ_HCO3,
             color = "#7B5C3E"
@@ -382,7 +384,7 @@ function create_model(;
             name = "CO₃²⁻",
             z = -2,
             D = 0.923e-9,
-            c_bulk = 2.68e-6,
+            c_bulk = 2.68e-6 * ufac"mol / dm^3",
             a = a_CO3,
             κ = κ_CO3,
             color = "#222222"
@@ -391,7 +393,7 @@ function create_model(;
             name = "CO₂",
             z = 0,
             D = 1.91e-9,
-            c_bulk = 0.033,
+            c_bulk = 0.033 * ufac"mol / dm^3",
             a = a_CO2,
             κ = κ_CO2,
             color = "#C0392B"
@@ -400,7 +402,7 @@ function create_model(;
             name = "OH⁻",
             z = -1,
             D = 5.273e-9,
-            c_bulk = 10^(reactiondata.pH - 14),
+            c_bulk = 10^(reactiondata.pH - 14) * ufac"mol / dm^3",
             a = a_OH,
             κ = κ_OH,
             color = "#27AE60"
@@ -409,7 +411,7 @@ function create_model(;
             name = "H⁺",
             z = 1,
             D = 9.31e-9,
-            c_bulk = 10^(-reactiondata.pH),
+            c_bulk = 10^(-reactiondata.pH) * ufac"mol / dm^3",
             a = a_H,
             κ = κ_H,
             color = "#888888"
@@ -418,7 +420,7 @@ function create_model(;
             name = "CO",
             z = 0,
             D = 2.23e-9,
-            c_bulk = 0.0,
+            c_bulk = 0.0 * ufac"mol / dm^3",
             a = a_CO,
             κ = κ_CO,
             color = "#2980B9"
