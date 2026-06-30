@@ -97,10 +97,11 @@ begin
 end
 
 # ╔═╡ 0963720a-e310-45b2-92a5-a9e5bc3e6888
-elystruct = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
+elystruct = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :ohmicdrop)
 
 # ╔═╡ f4f59329-e817-495a-9e83-1ab53e7738a9
 function sweep(model, grid, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+	elystruct.elydata.ircompfactor = 0.00
     celldata = deepcopy(model)
     pnpcell = PNPSystem(grid; bcondition = model.bcondition, celldata = model.elydata, reaction = model.reaction)
     return result = cvsweep(

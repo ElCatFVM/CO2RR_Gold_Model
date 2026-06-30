@@ -3999,7 +3999,7 @@ let
     result = pnpresult_unc
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 1260))          # 6패널이니 높이 ↑ (1050 → 1260)
-        ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
+        ax1, leg1 = panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
         ax2 = panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
         ax3 = panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
         ax4 = panel_time_ph!(f, f[4, 2], result;                  xlabel = "")   # (d) pH

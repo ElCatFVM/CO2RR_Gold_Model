@@ -1815,10 +1815,14 @@ function panel_time_current!(fig, panel_pos, result, m;
 end
 
 # ── moved from cell 13a0e5da (panel_time_voltage!) ──
-function panel_time_voltage!(fig, panel_pos, result; lw=5, xlabel = lab_time)
+# Pass `sawtooth` to plot the APPLIED protocol U_we(t) (the full vmin..vmax ramp).
+# Without it, `result.voltages` is plotted, which here is the reaction-plane
+# (electrode node) potential — compressed by the gap capacitance, not the sawtooth.
+function panel_time_voltage!(fig, panel_pos, result; sawtooth = nothing, lw = 5, xlabel = lab_time)
     ax = Axis(panel_pos; xlabel = xlabel,
-              ylabel = rich(rich("U", font=:italic), "  (V vs. SHE)"))
-    lines!(ax, result.times, result.voltages;
+              ylabel = rich(rich("U", font = :italic), "  (V vs. SHE)"))
+    U = sawtooth === nothing ? result.voltages : sawtooth.(result.times)
+    lines!(ax, result.times, U;
            color = parse(Colorant, "#D7C2F0"), linewidth = lw)
     return ax
 end

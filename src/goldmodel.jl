@@ -593,8 +593,13 @@ function create_model(;
         if BC_model == :Dirichlet
             boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - reactiondata.ϕ_pzc))
         elseif BC_model == :Robin
-            # j + cgap*u = cgap*(ϕ_we -ϕ_pzc)
-            boundary_robin!(f, u, bnode, iϕ, Γ_we, reactiondata.C_gap, reactiondata.C_gap * (ϕ_we - reactiondata.ϕ_pzc))
+            # Use LiquidElectrolytes' potential BC (handles ircompensation and makes
+            # cvsweep record the APPLIED potential ϕ_we in `.voltages`), matching the
+            # row_interaction_script. The raw boundary_robin! below bypassed that and
+            # caused `.voltages` to hold the (compressed) reaction-plane potential.
+            potentialbcondition!(f, u, bnode, data, ϕ_we)
+            # j + cgap*u = cgap*(ϕ_we - ϕ_pzc)   # previous raw-Robin form:
+            # boundary_robin!(f, u, bnode, iϕ, Γ_we, reactiondata.C_gap, reactiondata.C_gap * (ϕ_we - reactiondata.ϕ_pzc))
         end
 
 
