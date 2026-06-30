@@ -1,7 +1,7 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-version = "0.2.0"
 authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
+version = "0.2.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -31,6 +31,7 @@ PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"

@@ -605,7 +605,7 @@ function create_model(;
 
         return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
     end
-    return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
+    return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulk = bulk, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
 end
 
 end

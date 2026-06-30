@@ -96,3 +96,135 @@ function ivsweep_csv(;
     CSV.write(sweepcomparedir(fname), df)
     return cell, ivresult
 end;
+
+
+# =====================================================================
+# Added from scripts/row_interaction_script.jl  (only added, nothing removed)
+# Batch 6: CSV export utilities.
+# `filename` used the notebook globals `L`, `user_input_model`,
+# `user_input_cv`, `ionsize`; here those are passed via keyword arguments.
+# The export functions forward them through a `meta` NamedTuple, e.g.
+#   meta = (L=L, BC_Select="Robin", mode="DMGL_γ", ionsize="All_species",
+#           scanrate=0.05, nperiods=1, vmin=-1.2, vmax=0.8)
+# `species` defaults to 6 (= iohminus index for the Gold CO2RR model).
+# =====================================================================
+
+# ── moved from cell a34cdba3 (filename)  [notebook globals → keyword args] ──
+function filename(function_name;
+        L, BC_Select, mode, ionsize, scanrate, nperiods, vmin, vmax)
+    σ = round(L / ufac"μm")
+    base_cvname = string(function_name, "_σ_", σ, "_", BC_Select, "_", mode,
+                         "_pnp_", ionsize, "_Scanrate_", scanrate,
+                         "_Periods_", nperiods, "_sweep_range_", vmin, "-", vmax, "_cv")
+    return base_cvname
+end
+
+# ── moved from cell 406fb8e5 (export_scanrate_varied_species_csv_long) ──
+function export_scanrate_varied_species_csv_long(
+    saws,
+    scresults;
+    meta,
+    species = 6,  # iohminus index
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "scanrate_varied",
+    current_scale = ufac"cm^2" / ufac"mA",
+    scanrate_scale = 1.0,
+    scanrate_get = saw -> saw.scanrate,
+)
+    @assert length(saws) == length(scresults)
+
+    scanrates = Float64[]
+    voltages  = Float64[]
+    values    = Float64[]
+
+    for (saw, rec) in zip(saws, scresults)
+        sr = Float64(scanrate_get(saw) * scanrate_scale)
+
+        V = rec.voltages
+        Y = currents(rec, species) .* current_scale
+
+        @assert length(V) == length(Y)
+
+        append!(scanrates, fill(sr, length(V)))
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        ScanRate = scanrates,
+        Voltage  = voltages,
+        Value    = values,
+    )
+
+    fname = filename(function_name; meta...)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ── moved from cell 9e44f14b (export_cv_profile_csv) ──
+function export_cv_profile_csv(
+    rec;
+    meta,
+    species = 6,  # iohminus index
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "cv_profile",
+    current_scale = ufac"cm^2" / ufac"mA",
+)
+    V = rec.voltages
+    I = currents(rec, species) .* current_scale
+
+    @assert length(V) == length(I)
+
+    df = DataFrame(
+        Voltage = V,
+        Current = I,
+    )
+
+    fname = filename(function_name; meta...)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end
+
+# ── moved from cell e6dca43d (export_pressure_varied_species_csv_long) ──
+function export_pressure_varied_species_csv_long(
+    P_recs;
+    meta,
+    species = 6,  # iohminus index
+    outdir::AbstractString = "../data/output",
+    function_name::AbstractString = "pressure_varied",
+    scale = ufac"cm^2" / ufac"mA",
+)
+    pressures = Float64[]
+    voltages  = Float64[]
+    values    = Float64[]
+
+    for (p, rec) in P_recs
+        V = rec.voltages
+        Y = currents(rec, species) .* scale
+
+        @assert length(V) == length(Y)
+
+        append!(pressures, fill(Float64(p), length(V)))
+        append!(voltages, V)
+        append!(values, Y)
+    end
+
+    df = DataFrame(
+        Pressure = pressures,
+        Voltage  = voltages,
+        Value    = values,
+    )
+
+    fname = filename(function_name; meta...)
+    outfile = joinpath(outdir, fname * ".csv")
+    mkpath(dirname(outfile))
+    CSV.write(outfile, df)
+
+    return df
+end

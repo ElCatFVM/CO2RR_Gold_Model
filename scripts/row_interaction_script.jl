@@ -578,6 +578,21 @@ md"""
 ### System Setup
 """
 
+# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
+function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+    celldata = deepcopy(model)
+    #celldata.eneutral = eneutral
+    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
+    return result = cvsweep(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
+		kwargs...
+    )
+
+end
+
 # ╔═╡ ef7212fc-a3d0-4784-b901-219204b79dc0
 md"""
 #### General CV
@@ -727,6 +742,12 @@ end;
 # ╔═╡ e7e678cb-0573-4c1d-8d04-978887c0b900
 
 
+# ╔═╡ 3b8bc779-69f8-4f78-b55a-df90e226bcc9
+#plot_7species_contours(pnpresult_unc, X, bulk)
+
+# ╔═╡ 22155420-3676-45f7-9bc8-8e00dfaf36be
+
+
 # ╔═╡ fd5c53ac-1a27-40f9-8ae4-cfbf1aaba5d1
 md"""
 ### CV unc`:none` Result
@@ -808,9 +829,6 @@ if pressure_varied_checkbox
 	#P_recs_irc = pressure_varied_sweep(elydata_Gold_irc, grid, pnp_bcondition, reaction, sawtooth; Pvec = [0.1, 0.2, 0.3, 0.5, 0.6, 1], ispec = ico2)
 end
   ╠═╡ =#
-
-# ╔═╡ 76099e9c-018b-4468-9d32-1767514ee5ec
-#P_recs_odr = pressure_varied_sweep(elydata_Gold_odr, grid, pnp_bcondition, reaction, sawtooth; Pvec = [0.1, 0.5, 1], ispec = ico2)
 
 # ╔═╡ 9c38b6f2-8f1b-49eb-bcdc-e3c792deed34
 #P_recs_odr = pressure_varied_sweep(elydata_Gold_odr, grid, pnp_bcondition, reaction, sawtooth; Pvec = [0.1, 0.5, 1], ispec = ico2)
@@ -2129,12 +2147,6 @@ end
 # ╔═╡ 92417c77-5ad2-451a-9848-44c9fe1f103b
 plot_pressure_varied_sweep_ivc(P_recs_unc, species = iohminus)
 
-# ╔═╡ 7036f45b-b0ba-4013-935e-756523f0f646
-the = plot_pressure_varied_sweep_ivc(P_recs_odr, species = iohminus)
-
-# ╔═╡ 4c1d7bef-f890-4078-89f0-85114df11216
-(expfig, the)
-
 # ╔═╡ 6f6e779c-6ba3-49c5-9541-359ab4dbf13f
 function plot_cv_current_dict(result_dict, model;
                               species = nothing,
@@ -2722,7 +2734,7 @@ begin
     #Vmax = 2 * V
     #L = user_input_model.L * μm
     hmin = 1.0e-6 	* μm
-    hmax = L * 0.02 
+    hmax = L * 0.0070	#* μm
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
@@ -3093,22 +3105,6 @@ elydata_Gold_unc = ElectrolyteData(;
 # ╔═╡ cd62234e-7f4a-4d0e-aea5-989f410d8cdc
 R_u = L / conductivity(elydata_Gold_unc, elydata_Gold_unc.c_bulk)
 
-# ╔═╡ e50fe651-11d4-45ee-89dd-371a7fbc097e
-function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
-    celldata = deepcopy(model)
-    #celldata.eneutral = eneutral
-	reaction_arg = model == elydata_Gold_unc ? (; reaction) : NamedTuple()
-    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
-    return result = LiquidElectrolytes.cvsweep(
-        pnpcell;
-        voltages = sawtooth,
-        nperiods,
-        store_solutions = true,
-		kwargs...
-    )
-
-end
-
 # ╔═╡ 13a0e5da-4b0e-4cf2-b43e-05f17802e48d
 begin
 	powlab(n) = rich("10", superscript(string(n)))
@@ -3250,6 +3246,75 @@ end
 	end
 end
 
+# ╔═╡ ac2bef83-9ebb-4bdc-869a-44cc1e2ef9e4
+function plot_7species_contours(result, X, bulk; scale=mol/dm^3, num_levels=24)
+    target_species = [
+        ("K⁺",    rich("K", superscript("+"))),
+        ("H⁺",    rich("H", superscript("+"))),
+        ("CO₂",   rich("CO", subscript("2"))),
+        ("OH⁻",   rich("OH", superscript("−"))),
+        ("HCO₃⁻", rich("HCO", subscript("3"), superscript("−"))),
+        ("CO₃²⁻", rich("CO", subscript("3"), superscript("2−"))),
+        ("CO",    rich("CO", superscript("−"))) 
+    ]
+    fig = Figure(size = (750, 1500)) 
+    times = result.tsol.t
+    discrete_cmap = cgrad(:jet, num_levels, categorical = true)
+
+    for i in 1:7
+        sp_name, sp_label = target_species[i]
+        
+        sp_idx = findfirst(s -> s.name == sp_name, bulk)
+        if isnothing(sp_idx)
+            @warn "Species '$sp_name'를 bulk에서 찾을 수 없어 이 패널은 건너뜁니다."
+            continue
+        end
+
+        # 1. 데이터 가져오기 및 하한선(1e-12) 적용
+        @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times)] ./ scale
+        
+        # 2. bulk 차이 대신, 순수 농도의 log10 계산
+        # 완전히 0인 값들이 무한대로 터지는 것을 막기 위해 max 사용
+        M = log10.(max.(c_matrix, 1e-12))
+
+        # 혹시 모를 비정상 값 필터링
+        replace!(M, Inf => -12.0, -Inf => -12.0, NaN => -12.0)
+
+        # 3. 각 종의 데이터에 맞게 Colorbar 범위 자동 조절
+        # 값이 완전히 균일한 경우(예: 평형 상태 고정)를 대비해 최소 범위를 1.0 확보
+        c_min = minimum(M)
+        c_max = maximum(M)
+        if c_min == c_max
+            c_min -= 0.5
+            c_max += 0.5
+        end
+
+        # fig[i, 1] 자리에 Axis 생성
+        ax = Axis(fig[i, 1];
+            xlabel = (i == 7) ? "Time (s)" : "", # 맨 아래만 x축 이름 표시
+            ylabel = rich(rich("x", font=:italic), "  (m)"),
+            yscale = log10,
+            yminorticksvisible = true,
+            yminorticks = IntervalsBetween(9),
+            yticks = (10.0 .^ (-12:3:-6), [powlab(-12), powlab(-9), powlab(-6)]),
+            title = "$sp_name Concentration Contour" 
+        )
+
+        # 히트맵 그리기
+        hm = heatmap!(ax, times, X .+ 1e-12, M';
+            colorrange = (c_min, c_max),
+            colormap = discrete_cmap,
+            interpolate = false)
+
+        # 컬러바 생성 (라벨을 log10(c) 형태로 변경)
+        Colorbar(fig[i, 2], hm;
+            label = rich("log", subscript("10"), "(", rich("c", font=:italic), 
+                         subscript(sp_label), " / M)"),
+            ticklabelsize = 14, labelsize = 14)
+    end
+    return fig
+end
+
 # ╔═╡ 358b1fba-2f7a-4a45-b2f7-e8fbbff725ee
 function panel_log_contour!(panel_pos, cbar_pos, result, X, times, sp;
                             scale=mol/dm^3, num_levels=24)
@@ -3283,28 +3348,6 @@ function panel_log_contour!(panel_pos, cbar_pos, result, X, times, sp;
         ticklabelsize = 20, labelsize = 20)
 
     return ax, hm
-end
-
-# ╔═╡ ac2bef83-9ebb-4bdc-869a-44cc1e2ef9e4
-function plot_all_species_contours(result, X, bulk;
-                                   scale=mol/dm^3, num_levels=24, L_val=nothing)
-    species = [
-        (name = "CO₂",   idx = ico2,     label = rich("CO", subscript("2"))),
-        (name = "HCO₃⁻", idx = ihco3,    label = rich("HCO", subscript("3"), superscript("-"))),
-        (name = "CO₃²⁻", idx = ico3,     label = rich("CO", subscript("3"), superscript("2-"))),
-        (name = "OH⁻",   idx = iohminus, label = rich("OH", superscript("-"))),
-    ]
-
-    fig = Figure()
-    times = result.tsol.t
-
-    for (i, sp) in enumerate(species)
-        row, col = fldmod1(i, 2)
-        panel_log_contour!(fig[row, 2col-1], fig[row, 2col],
-                           result, X, times, sp; scale, num_levels)
-    end
-
-    return fig
 end
 
 # ╔═╡ 34857db0-530c-435b-81c7-fa4b111faddc
@@ -3360,8 +3403,94 @@ end
 # ╔═╡ 79e62b5b-7578-4c7e-80c4-90bd34168650
 elydata_Gold_unc.ircompfactor
 
-# ╔═╡ 2c1153a7-49e9-4661-ba22-7e6bca236f96
-plot_cv_scanrate_grid_unc(scresult_2, elydata_Gold_unc; electrolyte = elydata_Gold_unc, redox_species=Dict(ico => 2), co_idx= ico)
+# ╔═╡ 2f0d56cb-0668-44d8-8cea-cb3b5c4036d2
+function plot_combined_exp_sim_ivc(
+    P_recs;
+    redox_species = Dict(ico => 2),  # OH- 1개당 1 electron (CO2RR/HER 둘 다)
+    include_capacitive = true,
+    scale = cm^2/mA,
+    sign = 1,                             # cathodic 음수 convention
+    sim_linewidth::Real = 5
+)
+    wanted    = ["0.1", "0.5", "1.0"]
+    pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
+    raw_cv = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
+    sub    = Matrix(raw_cv[4:end, :])
+    num_cv = map(x -> x === missing ? NaN : parse(Float64, x), sub)
+    num_df = DataFrame(num_cv, :auto)
+    npairs = size(num_df, 2) ÷ 2
+    keep   = findall(in(wanted), pressures[1:npairs])
+    n_exp = length(keep)
+    n_sim = length(P_recs)
+    pastel2  = cgrad([colorant"#F2728A", colorant"#5BA8E8"])
+    cols_exp = [pastel2[t] for t in range(0, 1, length = max(n_exp, 1))]
+    pastel3  = cgrad([colorant"#FFB3BA", colorant"#A3D8FF"])
+    cols_sim = [pastel3[t] for t in range(0, 1, length = max(n_sim, 1))]
+    fig = with_theme(electrochemistry_theme()) do
+        return Figure(size = (800, 800))
+    end
+    ax_exp = Axis(fig[1, 1],
+        ylabel = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")"),
+        xticklabelsvisible = false, xticksvisible = false)
+    ax_sim = Axis(fig[2, 1],
+        xlabel = rich(rich("ϕ", font=:italic), "  (V vs. SHE)"),
+        ylabel = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")"))
+    linkxaxes!(ax_exp, ax_sim)
+    ax_sim.xticks = -1.5:0.3:1.0
+    ax_exp.limits = (nothing, (-5.5, 1.8))
+    ax_exp.yticks = 1:-2:-5
+  #  ax_sim.limits = ((-1.3, 0.9), (-1.0, 0.2))
+   # ax_sim.yticks = 0.2:-0.5:-1.0
+    # ---- exp ----
+    for (k, j) in enumerate(keep)
+        xcol, ycol = 2j - 1, 2j
+        label_text = "$(pressures[j]) atm"
+        lines!(ax_exp, num_df[!, xcol], num_df[!, ycol];
+               color = cols_exp[k], linewidth = sim_linewidth)
+        text!(ax_exp, label_text;
+              position = (-0.79 - 0.03*k, 1.6 - 1.3*k),
+              color = cols_exp[k], fontsize = 26, font = :bold)
+    end
+    # ---- tor ----
+    for j in 1:n_sim
+        p, rec = P_recs[j]
+        # Faradaic: sum over redox species with electron counts
+        n_t = length(rec.voltages)
+        I_F = zeros(n_t)
+        for (idx, n_e) in redox_species
+            I_F .+= n_e .* currents(rec, idx)
+        end
+        # Capacitive (only meaningful in :ohmicdrop mode)
+        I_C = zeros(n_t)
+        if include_capacitive
+            ely = elydata_Gold_unc   # rec 구조에 맞게 조정
+            if ely.ircompensation == :ohmicdrop
+                icc = ely.icc
+                node_we = 1
+                I_C = [u[icc, node_we] for u in rec.tsol[1:end-1]]
+            end
+        end
+        I = sign .* (I_F .+ I_C) .* scale .* 2
+        label_text = "$(p) atm"
+        lines!(ax_sim, rec.voltages, I;
+               color = cols_sim[j], linewidth = sim_linewidth)
+        text!(ax_sim, label_text;
+              position = (-0.99 - 0.05*j, 0.7 - 0.7*j),
+              color = cols_sim[j], fontsize = 26, font = :bold)
+    end
+    text!(ax_sim, "Theory";
+          position = (-0.5, -0.8), color = :gray30,
+          fontsize = 32, font = :bold)
+    text!(ax_exp, "Experiment";
+          position = (-0.5, -1.27), color = :gray40,
+          fontsize = 32, font = :bold)
+    Label(fig[1, 1, TopLeft()], "(a)";
+          fontsize = 28, font = :bold, padding = (0, 5, 20, 0))
+    Label(fig[2, 1, TopLeft()], "(b)";
+          fontsize = 28, font = :bold, padding = (0, 5, 20, 0))
+    rowgap!(fig.layout, 1, 15)
+    return fig
+end
 
 # ╔═╡ 2947efab-e67e-41fa-ab91-7e3c1c09df2d
 elydata_Gold_irc = ElectrolyteData(; 
@@ -3483,98 +3612,6 @@ elydata_odr_f0 = deepcopy(elydata_Gold_odr)
 
 # ╔═╡ 3a63acb9-4d2b-4e61-a5fb-638f33ba5215
 elydata_Gold_odr
-
-# ╔═╡ 2f0d56cb-0668-44d8-8cea-cb3b5c4036d2
-function plot_combined_exp_sim_ivc(
-    P_recs;
-    redox_species = Dict(ico => 2),  # OH- 1개당 1 electron (CO2RR/HER 둘 다)
-    include_capacitive = true,
-    scale = cm^2/mA,
-    sign = 1,                             # cathodic 음수 convention
-    sim_linewidth::Real = 5
-)
-    wanted    = ["0.1", "0.5", "1.0"]
-    pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
-    raw_cv = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
-    sub    = Matrix(raw_cv[4:end, :])
-    num_cv = map(x -> x === missing ? NaN : parse(Float64, x), sub)
-    num_df = DataFrame(num_cv, :auto)
-    npairs = size(num_df, 2) ÷ 2
-    keep   = findall(in(wanted), pressures[1:npairs])
-    n_exp = length(keep)
-    n_sim = length(P_recs)
-    pastel2  = cgrad([colorant"#F2728A", colorant"#5BA8E8"])
-    cols_exp = [pastel2[t] for t in range(0, 1, length = max(n_exp, 1))]
-    pastel3  = cgrad([colorant"#FFB3BA", colorant"#A3D8FF"])
-    cols_sim = [pastel3[t] for t in range(0, 1, length = max(n_sim, 1))]
-    fig = with_theme(electrochemistry_theme()) do
-        return Figure(size = (800, 800))
-    end
-    ax_exp = Axis(fig[1, 1],
-        ylabel = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")"),
-        xticklabelsvisible = false, xticksvisible = false)
-    ax_sim = Axis(fig[2, 1],
-        xlabel = rich(rich("ϕ", font=:italic), "  (V vs. SHE)"),
-        ylabel = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")"))
-    linkxaxes!(ax_exp, ax_sim)
-    ax_sim.xticks = -1.5:0.3:1.0
-    ax_exp.limits = (nothing, (-5.5, 1.8))
-    ax_exp.yticks = 1:-2:-5
-  #  ax_sim.limits = ((-1.3, 0.9), (-1.0, 0.2))
-   # ax_sim.yticks = 0.2:-0.5:-1.0
-    # ---- exp ----
-    for (k, j) in enumerate(keep)
-        xcol, ycol = 2j - 1, 2j
-        label_text = "$(pressures[j]) atm"
-        lines!(ax_exp, num_df[!, xcol], num_df[!, ycol];
-               color = cols_exp[k], linewidth = sim_linewidth)
-        text!(ax_exp, label_text;
-              position = (-0.79 - 0.03*k, 1.6 - 1.3*k),
-              color = cols_exp[k], fontsize = 26, font = :bold)
-    end
-    # ---- tor ----
-    for j in 1:n_sim
-        p, rec = P_recs[j]
-        # Faradaic: sum over redox species with electron counts
-        n_t = length(rec.voltages)
-        I_F = zeros(n_t)
-        for (idx, n_e) in redox_species
-            I_F .+= n_e .* currents(rec, idx)
-        end
-        # Capacitive (only meaningful in :ohmicdrop mode)
-        I_C = zeros(n_t)
-        if include_capacitive
-            ely = elydata_Gold_odr   # rec 구조에 맞게 조정
-            if ely.ircompensation == :ohmicdrop
-                icc = ely.icc
-                node_we = 1
-                I_C = [u[icc, node_we] for u in rec.tsol[1:end-1]]
-            end
-        end
-        I = sign .* (I_F .+ I_C) .* scale .* 2
-        label_text = "$(p) atm"
-        lines!(ax_sim, rec.voltages, I;
-               color = cols_sim[j], linewidth = sim_linewidth)
-        text!(ax_sim, label_text;
-              position = (-0.99 - 0.05*j, 0.7 - 0.7*j),
-              color = cols_sim[j], fontsize = 26, font = :bold)
-    end
-    text!(ax_sim, "Theory";
-          position = (-0.5, -0.8), color = :gray30,
-          fontsize = 32, font = :bold)
-    text!(ax_exp, "Experiment";
-          position = (-0.5, -1.27), color = :gray40,
-          fontsize = 32, font = :bold)
-    Label(fig[1, 1, TopLeft()], "(a)";
-          fontsize = 28, font = :bold, padding = (0, 5, 20, 0))
-    Label(fig[2, 1, TopLeft()], "(b)";
-          fontsize = 28, font = :bold, padding = (0, 5, 20, 0))
-    rowgap!(fig.layout, 1, 15)
-    return fig
-end
-
-# ╔═╡ cdca328c-c7c6-42d9-953e-c3f5fda73e77
-plot_combined_exp_sim_ivc(P_recs_odr)
 
 # ╔═╡ 5f17b4f7-54d6-4ad0-9886-252854840a80
 function activity_coefficient!(
@@ -3763,9 +3800,6 @@ if CV
 	AuCO2RR_plots.plot_time_voltage_and_dt(pnpresult_unc, sawtooth)
 end
 
-# ╔═╡ 3b8bc779-69f8-4f78-b55a-df90e226bcc9
-plot_all_species_contours(pnpresult_unc, X, bulk)
-
 # ╔═╡ 8510c7ea-762c-4db4-b76a-9773dc4bbedc
 if CV
 	path = AuCO2RR_plots.cv_conc_gif(pnpresult_unc, bulk, X; framerate=4)
@@ -3826,23 +3860,38 @@ blthickness(grid, elydata_Gold_odr, pnpresult_odr.tsol)
 
 # ╔═╡ a05cf724-cd32-498e-8afb-ecbf4a1f1648
 if scan_rate_varied_checkbox
-	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold_odr, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.05, 0.5, 5], nperiods = user_input_cv.nperiods)
+	sc, saw, scresult = scanrate_varied_sweep(elydata_Gold_unc, sawtooth, grid, pnp_bcondition, reaction; scanrates = [0.05, 0.5, 5], nperiods = user_input_cv.nperiods)
 end
 
 # ╔═╡ 980a13df-b578-4296-9cf5-2c5543d6b1f8
 maximum(abs.(scresult[1].voltages .- scresult_2[1].voltages))
 
 # ╔═╡ 3c476260-2fb5-4c87-9cbe-955ad1949671
-plot_scanrate_sweeps_cv_2(scresult, sc; electrolyte=elydata_Gold_unc, redox_species = Dict(iohminus => 2))
+AuCO2RR_plots.plot_scanrate_sweeps_cv_2(scresult, sc; electrolyte=elydata_Gold_unc, redox_species = Dict(iohminus => 2))
 
 # ╔═╡ 2e642590-305c-4059-b756-16227f36a71c
-plot_scanrate_sweeps_cv(  scresult,  sc; )
+AuCO2RR_plots.plot_scanrate_sweeps_cv(  scresult,  sc; )
 
 # ╔═╡ 126f65a1-c02f-4f8e-be0a-40b1baa6b697
-plot_cv_scanrate_grid(scresult, elydata_Gold_odr; electrolyte = elydata_Gold_odr, redox_species=Dict(ico => 2), co_idx= ico)
+plot_cv_scanrate_grid(scresult, elydata_Gold_unc; electrolyte = elydata_Gold_odr, redox_species=Dict(ico => 2), co_idx= ico)
+
+# ╔═╡ 2c1153a7-49e9-4661-ba22-7e6bca236f96
+AuCO2RR_plots.plot_cv_scanrate_grid_unc(scresult, elydata_Gold_unc; electrolyte = elydata_Gold_unc, redox_species=Dict(ico => 2), co_idx= ico)
 
 # ╔═╡ 4eac37f2-b364-43ef-a57d-ce00025c07d7
-plot_scanrate_sweeps_cap(scresult, sc; )
+AuCO2RR_plots.plot_scanrate_sweeps_cap(scresult, sc; )
+
+# ╔═╡ 76099e9c-018b-4468-9d32-1767514ee5ec
+P_recs_odr = pressure_varied_sweep(elydata_Gold_unc, grid, pnp_bcondition, reaction, sawtooth; Pvec = [0.1, 0.5, 1], ispec = ico2)
+
+# ╔═╡ 7036f45b-b0ba-4013-935e-756523f0f646
+the = plot_pressure_varied_sweep_ivc(P_recs_odr, species = iohminus)
+
+# ╔═╡ 4c1d7bef-f890-4078-89f0-85114df11216
+(expfig, the)
+
+# ╔═╡ cdca328c-c7c6-42d9-953e-c3f5fda73e77
+plot_combined_exp_sim_ivc(P_recs_odr)
 
 # ╔═╡ 012b426e-3550-4678-a666-eeb4bd32d20e
 function simulate_CO2R_dir(grid, celldata; voltages = (-1.5:0.1:0.0) * V, kwargs...)
@@ -3950,7 +3999,7 @@ let
     result = pnpresult_unc
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 1260))          # 6패널이니 높이 ↑ (1050 → 1260)
-        ax1, leg1 = panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
+        ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
         ax2 = panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
         ax3 = panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
         ax4 = panel_time_ph!(f, f[4, 2], result;                  xlabel = "")   # (d) pH
@@ -3990,15 +4039,15 @@ end
 
 # ╔═╡ 1b809579-668b-4efa-a4f0-7352d8dfa5d5
 let
-    result = pnpresult_odr
+    result = pnpresult_unc
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 1260))          # 6패널이니 높이 ↑ (1050 → 1260)
-        ax1, leg1 = panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
-        ax2 = panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
-        ax3 = panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
-        ax4 = panel_time_ph!(f, f[4, 2], result;                  xlabel = "")   # (d) pH
+        ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
+        ax2 = AuCO2RR_plots.panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
+        ax3 = AuCO2RR_plots.panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
+        ax4 = AuCO2RR_plots.panel_time_ph!(f, f[4, 2], result;                  xlabel = "")   # (d) pH
         #ax5, hm = panel_co2_log_contour!(f, f[5, 2], f[5, 3], result, X, bulk; L_val = L)  # (e)
-        ax5, leg5 = QoverK(f, f[5, 2], result, bulk; legend_pos = f[5, 3])       # (f) Q/K
+        ax5, leg5 = AuCO2RR_plots.QoverK(f, f[5, 2], result, bulk; legend_pos = f[5, 3])       # (f) Q/K
 
         labels = ["(a)", "(b)", "(c)", "(d)", "(e)"]
         for i in 1:5
@@ -4746,6 +4795,7 @@ floataside(
 # ╠═13a0e5da-4b0e-4cf2-b43e-05f17802e48d
 # ╠═3b8bc779-69f8-4f78-b55a-df90e226bcc9
 # ╠═ac2bef83-9ebb-4bdc-869a-44cc1e2ef9e4
+# ╠═22155420-3676-45f7-9bc8-8e00dfaf36be
 # ╠═358b1fba-2f7a-4a45-b2f7-e8fbbff725ee
 # ╠═34857db0-530c-435b-81c7-fa4b111faddc
 # ╠═5a0c57b6-75cc-421c-8369-6531fb4d5ef7

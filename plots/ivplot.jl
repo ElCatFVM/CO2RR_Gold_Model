@@ -39,8 +39,8 @@ function iv_curve_axis(ivresult;
     # ---- FIGURE STYLE (match conc_vs_voltage_axis) ----
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
-        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ \mathrm{(V)}}",
-        ylabel = L"\mathbf{I}\;(\mathrm{mA/cm^2})",
+        xlabel = lab_voltage,
+        ylabel = lab_current,
         yscale = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e2)),
     )
@@ -49,24 +49,9 @@ function iv_curve_axis(ivresult;
     ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
 
     yt_vals = 10.0 .^ (0:-3:-9)
-    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    yt_lbls = [powlab(0), powlab(-3), powlab(-6), powlab(-9)]
     ax.yticks = (yt_vals, yt_lbls)
-
-    ax.spinewidth = 5.5
-    ax.xtickwidth = 2.0
-    ax.ytickwidth = 2.0
-    ax.xticksize  = 8
-    ax.yticksize  = 8
-    ax.xlabelsize = 25
-    ax.ylabelsize = 25
-    ax.xticklabelsize = 25
-    ax.yticklabelsize = 25
-
-    ax.xgridvisible = false
-    ax.ygridvisible = false
-    ax.xlabelpadding = 10
-    ax.ylabelpadding = 10
-    ax.xlabelfont = :bold
+    # Axis style (spinewidth, sizes, fonts, grid) now comes from the global theme.
 
     # ---- PLOTS ----
     # simulation line
@@ -106,12 +91,12 @@ end
 
 
 function conc_vs_voltage_axis(
-    result;
-    bulk,
+    result, m;
     grid,
     useonly_pH::Bool = false,
     showlegend::Bool = false,
 )
+    bulk = m.bulk
     species  = getproperty.(bulk, :name)
     colors   = getproperty.(bulk, :color)
     nspecies = length(species)
@@ -136,8 +121,8 @@ function conc_vs_voltage_axis(
 
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
-        xlabel = L"\mathbf{\text{U}\ \mathrm{vs.}\ \text{SHE}\ (V)}",
-        ylabel = L"\mathbf{c_i^{+}}\;(\mathrm{M})",
+        xlabel = lab_voltage,
+        ylabel = rich(rich("c", font = :italic), subscript("i"), superscript("+"), "  (M)"),
         yscale  = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
@@ -146,23 +131,9 @@ function conc_vs_voltage_axis(
     ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
 
     yt_vals = 10.0 .^ (0:-3:-9)
-    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    yt_lbls = [powlab(0), powlab(-3), powlab(-6), powlab(-9)]
     ax.yticks = (yt_vals, yt_lbls)
-
-    ax.spinewidth = 5.5
-    ax.xtickwidth = 2.0
-    ax.ytickwidth = 2.0
-    ax.xticksize  = 8
-    ax.yticksize  = 8
-    ax.xlabelsize = 25
-    ax.ylabelsize = 25
-    ax.xticklabelsize = 25
-    ax.yticklabelsize = 25
-    ax.xgridvisible = false
-    ax.ygridvisible = false
-    ax.xlabelpadding = 10
-    ax.ylabelpadding = 10
-    ax.xlabelfont = :bold
+    # Axis style now comes from the global theme.
 
     if useonly_pH
         iH = findfirst(isequal("H⁺"), species)
@@ -183,13 +154,13 @@ end
 
 
 function addplot_ax!(
-    ax, sol, vshow;
-    bulk,
+    ax, sol, vshow, m;
     grid,
     useonly_pH::Bool=false,
     scale = 1.0 / (mol / dm^3),
     clear::Bool=true,
 )
+    bulk = m.bulk
     species = getproperty.(bulk, :name)
     colors  = getproperty.(bulk, :color)
 
@@ -214,57 +185,45 @@ function addplot_ax!(
 end
 
 function plot1d_makie(
-    result, vshow;
-    bulk,
+    result, vshow, m;
     grid,
     L,
     useonly_pH::Bool=false,
     df_compare=nothing,
     fig_size=(960, 540),
 )
+    bulk = m.bulk
     tsol = LiquidElectrolytes.voltages_solutions(result)
 
     fig = Figure(size=fig_size)
     ax  = Axis(fig[1, 1];
         xlabel = "Distance from electrode [m]",
-        ylabel = L"\log_{10} c(a_i)",
+        ylabel = rich("log", subscript("10"), " ", rich("c", font = :italic), "(", rich("a", font = :italic), subscript("i"), ")"),
         xscale = log10,
         limits = ((1e-11, L*1.2), (-11, 1)),
     )
 
-    ax.spinewidth = 5.5
-    ax.xtickwidth = 2.0
-    ax.ytickwidth = 2.0
-    ax.xticksize  = 8
-    ax.yticksize  = 8
-    ax.xlabelsize = 25
-    ax.ylabelsize = 25
-    ax.xticklabelsize = 25
-    ax.yticklabelsize = 25
-    ax.xgridvisible = false
-    ax.ygridvisible = false
-    ax.xlabelpadding = 10
-    ax.ylabelpadding = 10
+    # Axis style now comes from the global theme.
 
     sol = tsol(vshow)
     sol === nothing && error("No solution available at voltage $vshow")
 
-    addplot_ax!(ax, sol, vshow; bulk=bulk, grid=grid, useonly_pH=useonly_pH, clear=true)
+    addplot_ax!(ax, sol, vshow, m; grid=grid, useonly_pH=useonly_pH, clear=true)
 
     if df_compare !== nothing
-        addplot_ax!(ax, df_compare, vshow; bulk=bulk, grid=grid, useonly_pH=useonly_pH, clear=false)
+        addplot_ax!(ax, df_compare, vshow, m; grid=grid, useonly_pH=useonly_pH, clear=false)
     end
 
     return (fig=fig, ax=ax, species=getproperty.(bulk, :name), colors=getproperty.(bulk, :color))
 end
 
-function conc_vs_voltage_axis_compare(result; 
-    bulk, 
-    grid, 
-    useonly_pH=false, 
-    showlegend=true, 
+function conc_vs_voltage_axis_compare(result, m;
+    grid,
+    useonly_pH=false,
+    showlegend=true,
     compare=false
 )
+    bulk = m.bulk
     species  = getproperty.(bulk, :name)
     colors   = getproperty.(bulk, :color)
     nspecies = length(species)
@@ -289,8 +248,8 @@ function conc_vs_voltage_axis_compare(result;
 
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
-        xlabel = L"\text{Voltage}\ U\ \mathrm{vs.}\ \text{SHE}\ (V)",
-        ylabel = L"c_i^{+}\;(\mathrm{M})",
+        xlabel = lab_voltage,
+        ylabel = rich(rich("c", font = :italic), subscript("i"), superscript("+"), "  (M)"),
         yscale = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
@@ -299,20 +258,9 @@ function conc_vs_voltage_axis_compare(result;
     ax.xticks = (xt, [@sprintf("%.1f", x) for x in xt])
 
     yt_vals = 10.0 .^ (0:-3:-9)
-    yt_lbls = [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"]
+    yt_lbls = [powlab(0), powlab(-3), powlab(-6), powlab(-9)]
     ax.yticks = (yt_vals, yt_lbls)
-
-    ax.spinewidth = 2.5
-    ax.xtickwidth = 2.0
-    ax.ytickwidth = 2.0
-    ax.xticksize  = 8
-    ax.yticksize  = 8
-    ax.xlabelsize = 30
-    ax.ylabelsize = 30
-    ax.xticklabelsize = 20
-    ax.yticklabelsize = 20
-    ax.xgridvisible = false
-    ax.ygridvisible = false
+    # Axis style now comes from the global theme.
 
     if useonly_pH
         iH = findfirst(isequal("H⁺"), species)
@@ -373,7 +321,8 @@ end
 
 
 
-function plot1d(result, vshow; bulk, grid, L, df_compare=nothing)
+function plot1d(result, vshow, m; grid, L, df_compare=nothing)
+    bulk = m.bulk
     tsol = LiquidElectrolytes.voltages_solutions(result)
 
     vis = GridVisualizer(;
@@ -390,16 +339,17 @@ function plot1d(result, vshow; bulk, grid, L, df_compare=nothing)
     sol = tsol(vshow)
     sol === nothing && error("No solution available at voltage $vshow")
 
-    addplot_solution!(vis, sol, vshow; bulk=bulk, grid=grid)
+    addplot_solution!(vis, sol, vshow, m; grid=grid)
 
     if df_compare !== nothing
-        addplot_df!(vis, df_compare; bulk=bulk)
+        addplot_df!(vis, df_compare, m)
     end
 
     return reveal(vis)
 end
 
-function addplot_solution!(vis, sol, vshow; bulk, grid)
+function addplot_solution!(vis, sol, vshow, m; grid)
+    bulk = m.bulk
     species = getproperty.(bulk, :name)
     colors  = getproperty.(bulk, :color)
 
@@ -421,7 +371,8 @@ function addplot_solution!(vis, sol, vshow; bulk, grid)
 end
 
 
-function addplot_df!(vis, df::DataFrame; bulk)
+function addplot_df!(vis, df::DataFrame, m)
+    bulk = m.bulk
     species  = getproperty.(bulk, :name)
     colors   = getproperty.(bulk, :color)
     nspecies = length(species)
@@ -462,7 +413,8 @@ function addplot_df!(vis, df::DataFrame; bulk)
     return vis
 end
 
-function plot1d_movie(result; bulk, grid, L, step=5, file="concentrations.gif", framerate=2)
+function plot1d_movie(result, m; grid, L, step=5, file="concentrations.gif", framerate=2)
+    bulk = m.bulk
     tsol = LiquidElectrolytes.voltages_solutions(result)
 
     vis = GridVisualizer(;
@@ -482,7 +434,7 @@ function plot1d_movie(result; bulk, grid, L, step=5, file="concentrations.gif", 
         for vshow in vrange
             sol = tsol(vshow)
             sol === nothing && continue
-            addplot_solution!(vis, sol, vshow; bulk=bulk, grid=grid)
+            addplot_solution!(vis, sol, vshow, m; grid=grid)
             reveal(vis)
         end
     end
@@ -506,8 +458,8 @@ function plotcurr_over_L(results::Dict{Int,Any};
     vis = GridVisualizer(;
         size   = (800, 500),
         title  = title,
-        xlabel = L"\phi_{we}\;(\mathrm{V\;vs\;SHE})",
-        ylabel = L"I\;(\mathrm{mA/cm^2})",
+        xlabel = lab_voltage,
+        ylabel = lab_current,
         legend = :rt,
         yscale = :log,
     )
@@ -564,8 +516,8 @@ function plot_iv_with_ringe_refs(
     vis = GridVisualizer(;
         size   = get(vis_kwargs, :size, (600, 400)),
         title  = get(vis_kwargs, :title, "IV Curve"),
-        xlabel = get(vis_kwargs, :xlabel, L"\phi_{we} \, (\mathrm{V \; vs \; SHE})"),
-        ylabel = get(vis_kwargs, :ylabel, L"I / (\mathrm{mA/cm^2})"),
+        xlabel = get(vis_kwargs, :xlabel, lab_voltage),
+        ylabel = get(vis_kwargs, :ylabel, lab_current),
         legend = get(vis_kwargs, :legend, :lb),
         yscale = get(vis_kwargs, :yscale, :log),
     )
@@ -607,6 +559,192 @@ function plot_iv_with_ringe_refs(
     )
 
     return reveal(vis)
+end
+
+
+# =====================================================================
+# Added from scripts/row_interaction_script.jl  (only added, nothing removed)
+# Batch 3: electrode activity vs voltage (self-contained; take electrolyte/grid).
+# =====================================================================
+
+# ── moved from cell f2a1829d (electrode_activity_vs_voltage) ──
+function electrode_activity_vs_voltage(result, grid, m;
+    c_ref = 1.0 * ufac"mol/dm^3",
+    node_selector = :minx,
+)
+    electrolyte = m.elydata
+    tsol = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = LiquidElectrolytes.voltages(result)
+
+    xcoords = grid.components[XCoordinates]
+    ielectrode = node_selector === :minx ? argmin(xcoords) : argmax(xcoords)
+
+    cspecies = electrolyte.cspecies
+    ip       = LiquidElectrolytes.pressure_index(electrolyte)
+
+    nspecies = length(cspecies)
+    nv       = length(vgrid)
+
+    γ_e = fill(NaN, nspecies, nv)
+    a_e = fill(NaN, nspecies, nv)
+    c_e = fill(NaN, nspecies, nv)
+
+    for (j, U) in enumerate(vgrid)
+        sol = tsol(U)
+        sol === nothing && continue
+
+        unode = view(sol, :, ielectrode)
+        pnode = unode[ip]
+
+        γ = zeros(eltype(sol), size(sol, 1))
+
+        electrolyte.actcoeff!(γ, unode, pnode, electrolyte)
+
+        for (k, ic) in enumerate(cspecies)
+            cval = unode[ic]
+            γval = γ[ic]
+            aval = γval * (cval / c_ref)
+
+            c_e[k, j] = cval / c_ref
+            γ_e[k, j] = γval
+            a_e[k, j] = aval
+        end
+    end
+
+    return (
+        voltages = vgrid,
+        ielectrode = ielectrode,
+        cspecies = cspecies,
+        gamma_electrode = γ_e,
+        activity_electrode = a_e,
+        concentration_scaled = c_e,
+    )
+end
+
+# ── moved from cell 11d6598c (activity_vs_voltage_axis) ──
+function activity_vs_voltage_axis(
+    result, m;
+    grid,
+    ipressure,
+    model_type::String, # "Stefan(MPB)" "DGML"
+    useonly_pH::Bool = false,
+    showlegend::Bool = false,
+)
+    bulk = m.bulk
+    electrolyte = m.elydata
+    species  = getproperty.(bulk, :name)
+    colors   = getproperty.(bulk, :color)
+    nspecies = length(species)
+
+    tsol  = LiquidElectrolytes.voltages_solutions(result)
+    vgrid = result.voltages
+
+    xcoords    = grid.components[XCoordinates]
+    ielectrode = argmin(xcoords)
+
+    scale = 1.0 / (mol / dm^3)
+    nv = length(vgrid)
+
+    activity_electrode = fill(NaN, nspecies, nv)
+    gamma_electrode    = fill(NaN, nspecies, nv)
+    conc_electrode     = fill(NaN, nspecies, nv)
+
+    cspecies = electrolyte.cspecies
+
+    for (j, v) in enumerate(vgrid)
+        sol = tsol(v)
+        sol === nothing && continue
+
+        # Extract spatial unit (x=0) our unit vector and magnitude
+        cnode = zeros(eltype(sol), maximum(cspecies))
+        for ic in cspecies
+            cnode[ic] = sol[ic, ielectrode]
+        end
+        pnode = sol[ipressure, ielectrode]
+
+        v0 = electrolyte.v0
+        bar_c = 1.0 / v0
+        RT = electrolyte.RT
+
+        Phi = sum(cnode[ic] * electrolyte.v[ic] for ic in cspecies)
+        solvent_frac = max(1.0 - Phi, eps(Float64))
+
+        for ia in 1:nspecies
+            c = sol[ia, ielectrode]
+            v_a = electrolyte.v[ia]
+            size_ratio = v_a / v0
+
+            term_conc = c / bar_c
+
+            if model_type == "DMGL_γ"
+				# DGML Model: Treats the electrolyte as an ideal incompressible mixture.
+                # term_press: Captures the mechanical pressure penalty scaled by the specific volume difference.
+                # Species with v_a > 0 are physically repelled by local pressure gradients (Barodiffusion).
+                # Dimensionless species (v_a = 0) feel pure pressure-correction without steric linkage.
+                term_press  = exp((1.0 - size_ratio) * pnode / (bar_c * RT))
+                term_steric = solvent_frac^(-size_ratio)
+                a_eff_thermo = term_conc * term_press * term_steric
+
+            elseif model_type == "Stefan_γ"
+				# Stefan's Model (Bikerman-Freise): Applies a global lattice-based steric penalty.
+                # All species, regardless of their actual size (even v_a = 0), are subjected to the exact same penalty (1 - Φ)^-1.
+                # This causes the unphysical coupled depletion of point-charge species when supporting cations overcrowd.
+                a_eff_thermo = term_conc * (solvent_frac^(-1.0))
+
+            else
+                error("Invalid model_type. Use 'DGML' or 'Stefan'.")
+            end
+
+            c_scale = c * scale
+            a_eff_scaled = a_eff_thermo * (bar_c * scale)
+
+            conc_electrode[ia, j]     = c
+            gamma_electrode[ia, j]    = a_eff_scaled / max(c_scale, eps(Float64))
+            activity_electrode[ia, j] = a_eff_scaled
+        end
+    end
+
+    fig = Figure(size=(1200, 800))
+
+    ax = Axis(fig[1,1];
+        xlabel = lab_voltage,
+        ylabel = rich(rich("ã", font = :italic), subscript("i")),
+        limits = ((-1.25, -0.50), nothing),
+        yscale = log10
+    )
+
+    if useonly_pH
+        iH = findfirst(isequal("H⁺"), species)
+        iH === nothing && error("H⁺ not found in species list.")
+
+        valid_mask = .!isnan.(activity_electrode[iH, :])
+        x_data = vgrid[valid_mask]
+        y_data = max.(activity_electrode[iH, valid_mask], eps(Float64))
+
+        lines!(ax, x_data, y_data; color=colors[iH], linewidth=5, label=species[iH])
+    else
+        for ia in 1:nspecies
+            valid_mask = .!isnan.(activity_electrode[ia, :])
+            x_data = vgrid[valid_mask]
+            y_data = max.(activity_electrode[ia, valid_mask], eps(Float64))
+
+            if sum(valid_mask) > 0
+                lines!(ax, x_data, y_data; color=colors[ia], linewidth=5, label=species[ia])
+            end
+        end
+    end
+
+    showlegend && axislegend(ax, position=:rt)
+
+    return (
+        fig=fig,
+        species=species,
+        colors=colors,
+        conc_electrode=conc_electrode,
+        gamma_electrode=gamma_electrode,
+        activity_electrode=activity_electrode,
+        vgrid=vgrid,
+    )
 end
 
 

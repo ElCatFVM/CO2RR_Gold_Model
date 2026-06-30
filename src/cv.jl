@@ -187,5 +187,136 @@ function run_pH_sweep(
 end
 
 
+# =====================================================================
+# Added from scripts/row_interaction_script.jl  (only added, nothing removed)
+# Batch 4: extra CV sweep drivers.
+# =====================================================================
+
+# ── moved from cell e50fe651 (sweep)  [dropped dead `reaction_arg` line that
+#    referenced the notebook global `elydata_Gold_unc`; it was unused] ──
+function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+    celldata = deepcopy(model)
+    #celldata.eneutral = eneutral
+    pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
+    return result = LiquidElectrolytes.cvsweep(
+        pnpcell;
+        voltages = sawtooth,
+        nperiods,
+        store_solutions = true,
+		kwargs...
+    )
+
+end
+
+# ── moved from cell 9b8daa64 (cvsweep_compensated_over_L) ──
+function cvsweep_compensated_over_L(
+    model, bcondition, reaction;
+    sawtooth,
+    nperiods = 1,
+    L_values =[100, 500, 1000, 2000, 3000],
+    f_comp = 1.0,  # 1.0 means 100% compensation (ideal overlap)
+    Area = 0.000314,
+    store_solutions = true,
+    solver_kwargs...,
+)
+    results = Dict{Int, Any}()
+
+    for L in L_values
+        @info ">>> Running Physics-Consistent Simulation: L = $(L) μm"
+
+        # --- Mesh Generation ---
+        hmin = 1.0e-4 * μm
+        # Keep hmax reasonable to ensure the bulk potential gradient is captured
+        hmax = (L * μm) / 100.0
+
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+
+        pnpcell = PNPSystem(
+            grid;
+            bcondition = bcondition,
+            reaction = reaction,
+            celldata = celldata
+        )
+
+        # --- Resistance Calculation ---
+        κ = calc_kappa(celldata)
+        R_bulk_theoretical = (L * μm) / (κ * Area)
+
+        # R_compensated will be passed to cvsweep_COMP to 'undo' the voltage drop
+        R_to_apply = R_bulk_theoretical * f_comp
+
+        @info "    Nodes: $(length(X)) | R_bulk: $(round(R_bulk_theoretical, digits=2)) Ω"
+
+        # --- Execute Simulation ---
+        results[L] = LiquidElectrolytes.cvsweep_COMP(
+            pnpcell;
+            voltages = sawtooth,
+            nperiods = nperiods,
+            Area = Area,
+            R_comp = R_to_apply, # This is used in the 'post' function for V_eff calculation
+            store_solutions = store_solutions,
+            # Solver stability settings
+            damp_initial = 0.1,
+            damp_growth = 1.2,
+            Δt_grow = 1.05,
+            max_round = 15,
+            tol_relative = 1.0e-5,
+            solver_kwargs...
+        )
+    end
+
+    return results
+end
+
+# ── moved from cell d91c32c8 (cvsweep_odr_over_L) ──
+function cvsweep_odr_over_L(
+    elydata_odr, grid_dict, bcondition, reaction, sawtooth;
+    nperiods = 1,
+    store_solutions = true,
+    solver_kwargs...
+)
+    results = Dict{Float64, Any}()
+    L_values = sort(collect(keys(grid_dict)))
+
+    for L in L_values
+        grid = grid_dict[L]
+        X    = grid[Coordinates][1, :]
+
+        celldata = deepcopy(elydata_odr)
+        celldata.Ru    = L / conductivity(celldata, celldata.c_bulk)
+        celldata.x_ref = [X[end], 0, 0]
+
+        @info ">>> :ohmicdrop sweep | L = $(L/μm) μm | Ru = $(round(celldata.Ru; digits=3)) Ω"
+
+        pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
+
+        results[L] = LiquidElectrolytes.cvsweep(
+            pnpcell;
+            voltages = sawtooth,
+            nperiods = nperiods,
+            store_solutions = store_solutions,
+            solver_kwargs...
+        )
+    end
+
+    return results
+end
+
+# ── moved from cell 82116926 (blthickness) ──
+function blthickness(grd, celldata, tsol; species = 5)
+    X = grd[XCoordinates]
+    xbl = 0
+    for it in 1:length(tsol.t)
+        u = tsol[species, :, it]
+        i = findlast(c -> abs(c - celldata.c_bulk[species]) > 1.0e-1, u)
+        xbl = X[i]
+    end
+    return xbl
+end
+
+
 
  # module?

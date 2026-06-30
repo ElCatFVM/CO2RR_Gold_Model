@@ -224,8 +224,8 @@ function capsplot(vis, ::Nothing, title)
         markershape = :none,
         label = "(no data)",
         title = title,
-        xlabel = L"φ / (V vs φ_{pzc})",
-        ylabel = L"dlcaps / (μF / cm²)",
+        xlabel = rich(rich("φ", font = :italic), "  (V vs φ", subscript("pzc"), ")"),
+        ylabel = rich(rich("C", font = :italic), subscript("dl"), "  (μF cm", superscript("−2"), ")"),
         xlimits = (-1.1, 1.1),
         ylimits = (-1, 250)
     )
@@ -243,8 +243,8 @@ function capsplot_fixed(
 
     fig = Figure(size = (600, 600))
     ax = Axis(fig[1, 1];
-        xlabel = L"\phi~(\mathrm{V~vs~}\phi_{pzc})",
-        ylabel = L"C_{dl}~(\mu \mathrm{F\,cm^{-2}})",
+        xlabel = rich(rich("φ", font = :italic), "  (V vs φ", subscript("pzc"), ")"),
+        ylabel = rich(rich("C", font = :italic), subscript("dl"), "  (μF cm", superscript("−2"), ")"),
         title = title,
         titlesize = 25,
         xlabelsize = 25,
@@ -335,7 +335,7 @@ function overlay_csv_on_axis!(
     for i in 1:n
         df = dfs[i]
 
-        # x축이 "V vs φ_pzc" 라면 보통 -가 맞습니다 (필요하면 +로 바꾸세요)
+        # if the x-axis is "V vs φ_pzc", a minus sign is usually correct (switch to + if needed)
         x = Float64.(df[!, v]) .+ ϕ_pzc
         yv = Float64.(df[!, y])
 
@@ -372,7 +372,7 @@ function capsplot_with_csv(
 
     overlay_csv_on_axis!(ax, dfs; ϕ_pzc=ϕ_pzc, v=v, y=y, lab=lab, ls=ls, lw=lw)
 
-    # CSV legend도 보고 싶으면 (기존 legend랑 겹치면 position만 조정)
+    # to also show the CSV legend (adjust position if it overlaps the existing legend)
     axislegend(ax; position=:lt, framevisible=false)
 
     return fig
