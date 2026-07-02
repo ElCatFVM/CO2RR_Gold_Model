@@ -84,6 +84,80 @@ end
 
 
 
+function ivsweep_over_L(model, bcondition;
+	voltages,
+ 	L_values = round.(Int, range(80, 1500, length=6)),
+    eneutral = true,
+	solver_control,
+	kwargs...)
+    results = Dict{Int, Any}()
+    kwargs 	 	= merge(solver_control, kwargs) 
+
+	#cell, ivresult
+    for L in L_values
+        hmin = 1.0e-6 * μm
+        hmax = 1.0    * μm
+        X = ExtendableGrids.geomspace(0, L * μm, hmin, hmax)
+        grid = ExtendableGrids.simplexgrid(X)
+
+        celldata = deepcopy(model)
+        #celldata.eneutral = eneutral
+        #celldata.tunnel   = tunnel
+        #celldata.bikerman = bikerman
+
+#        reaction_kw = (model === elydata_Gold) ? (; reaction) : (;)
+    #cell   = PNPSystem(grid; bcondition=pnp_bcondition, reaction=reaction, celldata)
+
+        pnpcell = PNPSystem(grid; bcondition=bcondition, reaction=reaction, celldata=celldata)
+
+        results[L] = ivsweep(pnpcell; voltages, store_solutions=true, kwargs...)
+
+    end
+
+    return results
+end
+
+
+# =====================================================================
+# Added from scripts/row_interaction_script.jl  (only added, nothing removed)
+# Batch 5: pressure column-name helper + IV simulate drivers.
+# simulate_CO2R/_dir referenced the notebook globals `pnp_bcondition`,
+# `reaction`, `solver_control` in their bodies; here they are passed as
+# arguments so the function works inside the package.
+# =====================================================================
+
+# ── moved from cell b767a48f (_pressure_colname) ──
+function _pressure_colname(p)
+    s = @sprintf("%.4g", p)
+    s = replace(s, "." => "p", "-" => "m", "+" => "")
+    return Symbol("pCO2_" * s * "_atm")
+end
+
+# ── moved from cell 06ca7d68 (simulate_CO2R)  [bcondition/reaction/solver_control now args] ──
+function simulate_CO2R(grid, celldata;
+        bcondition,
+        reaction,
+        solver_control = (;),
+        voltages = (-1.5:0.1:0.0) * V,
+        kwargs...)
+    kwargs   = merge(solver_control, kwargs)
+    cell     = PNPSystem(grid; bcondition = bcondition, reaction = reaction, celldata)
+    ivresult = ivsweep(cell; voltages, store_solutions = true, kwargs...)
+    return cell, ivresult
+end
+
+# ── moved from cell 012b426e (simulate_CO2R_dir)  [identical body to simulate_CO2R] ──
+function simulate_CO2R_dir(grid, celldata;
+        bcondition,
+        reaction,
+        solver_control = (;),
+        voltages = (-1.5:0.1:0.0) * V,
+        kwargs...)
+    kwargs   = merge(solver_control, kwargs)
+    cell     = PNPSystem(grid; bcondition = bcondition, reaction = reaction, celldata)
+    ivresult = ivsweep(cell; voltages, store_solutions = true, kwargs...)
+    return cell, ivresult
+end
 
 
  # module?
