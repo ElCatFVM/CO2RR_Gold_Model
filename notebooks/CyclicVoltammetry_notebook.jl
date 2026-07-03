@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.0
 
 using Markdown
 using InteractiveUtils
@@ -10,6 +10,7 @@ begin
     Pkg.activate(joinpath(@__DIR__, ".."))
 	using Revise
     using LiquidElectrolytes
+	using AuCO2RR, AuCO2RR.AuCO2RR_plots
 	using CatmapInterface
 	using Catalyst#: unknowns
 	using VoronoiFVM
@@ -33,16 +34,6 @@ begin
  		CairoMakie.activate!(type="svg")
     end
 end;
-
-# ╔═╡ cd3522a0-904f-4b89-b454-fcd62ed8de52
-begin
-	using AuCO2RR
-	include(joinpath(pkgdir(AuCO2RR), "plots", "AuCO2RR_plots.jl"))
-	using .AuCO2RR_plots
-end
-
-# ╔═╡ 5471cc8c-f4e9-41bb-a0ec-a8c5125a2b4d
-Pkg.status()
 
 # ╔═╡ ea90b4a5-6709-4a85-87de-b71fe87e71f7
 md"""
@@ -171,8 +162,6 @@ end
 
 # ╔═╡ Cell order:
 # ╠═8d20515c-54c6-11f1-aeac-bdc0c7e51b18
-# ╠═cd3522a0-904f-4b89-b454-fcd62ed8de52
-# ╟─5471cc8c-f4e9-41bb-a0ec-a8c5125a2b4d
 # ╟─ea90b4a5-6709-4a85-87de-b71fe87e71f7
 # ╟─4b663702-b895-4a84-b065-0673e287b0ca
 # ╠═0854d2c7-1b61-46b0-aa0a-496cdc8439f2

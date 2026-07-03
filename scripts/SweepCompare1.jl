@@ -1,9 +1,11 @@
-using Pkg
-Pkg.activate(joinpath(@__DIR__, ".."))
+"""
+    SweepCompare1
 
-module sweeps
-    using AuCO2RR
-    using AuCO2RR: AuCO2RR_plots
+Self-contained script which runs independently of the AuCO2RR package project.
+
+Used as second step after Sweeps0 during  refactoring.
+"""
+module SweepCompare1
     using LessUnitful
     using LiquidElectrolytes
     using ExtendableGrids
@@ -139,7 +141,7 @@ module sweeps
     )
 
 
-    @kwdef struct BulkSpecies
+    struct BulkSpecies
         name::String
         z::Int
         D::Float64
@@ -551,13 +553,13 @@ module sweeps
     end
 
     function sweep_IV(;
-        voltages = (-1.5:0.1:0.0) * V,
-        actcoeff = :DGML_γ!,
-        hydrated = true,
-        bcmodel = :Robin,
-        model = :Gold,
-        kwargs...
-    )
+            voltages = (-1.5:0.1:0.0) * V,
+            actcoeff = :DGML_γ!,
+            hydrated = true,
+            bcmodel = :Robin,
+            model = :Gold,
+            kwargs...
+        )
         solver_control = (;
             max_round = 4,
             maxiters = 20,
@@ -576,7 +578,7 @@ module sweeps
         X = ExtendableGrids.geomspace(0, L, hmin, hmax)
         grid = ExtendableGrids.simplexgrid(X)
 
-        γ = getproperty(sweeps, actcoeff)
+        γ = getproperty(SweepCompare1, actcoeff)
 
         modeldata = create_model(
             γ = γ,
@@ -611,7 +613,7 @@ module sweeps
         model_type = actcoeff == :Stefan_γ! ? "Stefan_γ" : "DMGL_γ"
 
         for j in 1:nv
-            sol = tsol.u[j]  
+            sol = tsol.u[j]
 
             unode = view(sol, :, ielectrode)
             pnode = unode[ip]
@@ -680,7 +682,4 @@ module sweeps
 
 end
 
-
-if !isinteractive()
-    sweeps.main()
-end
+abspath(PROGRAM_FILE) == @__FILE__() &&  SweepCompare1.main(ARGS)
