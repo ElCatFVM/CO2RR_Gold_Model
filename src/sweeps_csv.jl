@@ -6,7 +6,7 @@ function ivsweep_csv(;
         specieslayout = GoldModel.SpeciesLayout(),
         reactiondata = GoldModel.ReactionData(),
         voltages = range(-1.25, reactiondata.ϕ_pzc, length = 31) * ufac"V",
-        actcoeff = :DGML_γ!,
+        actcoeff = :DGML,
         hydrated = true,
         bcmodel = :Robin,
         model = :Gold,
@@ -31,10 +31,9 @@ function ivsweep_csv(;
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 
-    γ = getproperty(GoldModel, actcoeff)
 
     modeldata = GoldModel.create_model(
-        γ = γ,
+        γ_select = string(actcoeff),
         use_md_hydrated = hydrated,
         BC_model = bcmodel,
         model = model
@@ -110,32 +109,36 @@ end;
 # =====================================================================
 
 # ── moved from cell a34cdba3 (filename)  [notebook globals → keyword args] ──
-function filename(function_name;
-        L, BC_Select, mode, ionsize, scanrate, nperiods, vmin, vmax)
+function filename(
+        function_name;
+        L, BC_Select, mode, ionsize, scanrate, nperiods, vmin, vmax
+    )
     σ = round(L / ufac"μm")
-    base_cvname = string(function_name, "_σ_", σ, "_", BC_Select, "_", mode,
-                         "_pnp_", ionsize, "_Scanrate_", scanrate,
-                         "_Periods_", nperiods, "_sweep_range_", vmin, "-", vmax, "_cv")
+    base_cvname = string(
+        function_name, "_σ_", σ, "_", BC_Select, "_", mode,
+        "_pnp_", ionsize, "_Scanrate_", scanrate,
+        "_Periods_", nperiods, "_sweep_range_", vmin, "-", vmax, "_cv"
+    )
     return base_cvname
 end
 
 # ── moved from cell 406fb8e5 (export_scanrate_varied_species_csv_long) ──
 function export_scanrate_varied_species_csv_long(
-    saws,
-    scresults;
-    meta,
-    species = 6,  # iohminus index
-    outdir::AbstractString = "../data/output",
-    function_name::AbstractString = "scanrate_varied",
-    current_scale = ufac"cm^2" / ufac"mA",
-    scanrate_scale = 1.0,
-    scanrate_get = saw -> saw.scanrate,
-)
+        saws,
+        scresults;
+        meta,
+        species = 6,  # iohminus index
+        outdir::AbstractString = "../data/output",
+        function_name::AbstractString = "scanrate_varied",
+        current_scale = ufac"cm^2" / ufac"mA",
+        scanrate_scale = 1.0,
+        scanrate_get = saw -> saw.scanrate,
+    )
     @assert length(saws) == length(scresults)
 
     scanrates = Float64[]
-    voltages  = Float64[]
-    values    = Float64[]
+    voltages = Float64[]
+    values = Float64[]
 
     for (saw, rec) in zip(saws, scresults)
         sr = Float64(scanrate_get(saw) * scanrate_scale)
@@ -152,8 +155,8 @@ function export_scanrate_varied_species_csv_long(
 
     df = DataFrame(
         ScanRate = scanrates,
-        Voltage  = voltages,
-        Value    = values,
+        Voltage = voltages,
+        Value = values,
     )
 
     fname = filename(function_name; meta...)
@@ -166,13 +169,13 @@ end
 
 # ── moved from cell 9e44f14b (export_cv_profile_csv) ──
 function export_cv_profile_csv(
-    rec;
-    meta,
-    species = 6,  # iohminus index
-    outdir::AbstractString = "../data/output",
-    function_name::AbstractString = "cv_profile",
-    current_scale = ufac"cm^2" / ufac"mA",
-)
+        rec;
+        meta,
+        species = 6,  # iohminus index
+        outdir::AbstractString = "../data/output",
+        function_name::AbstractString = "cv_profile",
+        current_scale = ufac"cm^2" / ufac"mA",
+    )
     V = rec.voltages
     I = currents(rec, species) .* current_scale
 
@@ -193,16 +196,16 @@ end
 
 # ── moved from cell e6dca43d (export_pressure_varied_species_csv_long) ──
 function export_pressure_varied_species_csv_long(
-    P_recs;
-    meta,
-    species = 6,  # iohminus index
-    outdir::AbstractString = "../data/output",
-    function_name::AbstractString = "pressure_varied",
-    scale = ufac"cm^2" / ufac"mA",
-)
+        P_recs;
+        meta,
+        species = 6,  # iohminus index
+        outdir::AbstractString = "../data/output",
+        function_name::AbstractString = "pressure_varied",
+        scale = ufac"cm^2" / ufac"mA",
+    )
     pressures = Float64[]
-    voltages  = Float64[]
-    values    = Float64[]
+    voltages = Float64[]
+    values = Float64[]
 
     for (p, rec) in P_recs
         V = rec.voltages
@@ -217,8 +220,8 @@ function export_pressure_varied_species_csv_long(
 
     df = DataFrame(
         Pressure = pressures,
-        Voltage  = voltages,
-        Value    = values,
+        Voltage = voltages,
+        Value = values,
     )
 
     fname = filename(function_name; meta...)

@@ -1,9 +1,10 @@
-using Pkg
-Pkg.activate(joinpath(@__DIR__, ".."))
+"""
+    Sweeps0
 
-module sweeps
-    using AuCO2RR
-    using AuCO2RR: AuCO2RR_plots
+Self-contained script which runs independently of the AuCO2RR package project.
+Used as initial step during refactoring
+"""
+module Sweeps0
     using LessUnitful
     using LiquidElectrolytes
     using ExtendableGrids
@@ -137,7 +138,7 @@ module sweeps
     )
 
 
-    @kwdef struct BulkSpecies
+    struct BulkSpecies
         name::String
         z::Int
         D::Float64
@@ -579,13 +580,10 @@ module sweeps
         return cell, ivresult
     end;
 
-end
 
-
-if !isinteractive()
-    using .sweeps
     function main()
-        return sweeps.sweep_IV_DGML_Robin_Gold_hydrated()
+        return sweep_IV_DGML_Robin_Gold_hydrated()
     end
-    main()
 end
+
+abspath(PROGRAM_FILE) == @__FILE__() &&  Sweeps0.main(ARGS)

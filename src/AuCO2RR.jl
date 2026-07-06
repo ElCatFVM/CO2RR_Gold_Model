@@ -22,7 +22,7 @@ export export_scanrate_varied_species_csv_long, export_cv_profile_csv, export_pr
 
 @unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
 
-include(joinpath(@__DIR__, "..", "plots", "AuCO2RR_plots.jl"))
+include("AuCO2RR_plots/AuCO2RR_plots.jl")
 export AuCO2RR_plots
 
 include("cv.jl")
