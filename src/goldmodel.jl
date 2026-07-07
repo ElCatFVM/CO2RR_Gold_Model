@@ -117,7 +117,7 @@ elydata_NaF() = ElectrolyteData(
     v0 = 18.048 * ufac"cm^3" / ufac"mol",
 )
 
-elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteData(;
+elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction = nothing) = ElectrolyteData(;
     nc = size(bulk)[1],
     na = specieslayout.na,
     z = getproperty.(bulk, :z),
@@ -136,6 +136,9 @@ elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteD
     ϕ_pzc = reactiondata.ϕ_pzc,
     ircompensation = ircompensation,
     actcoeff! = γ,
+    # `redoxreaction` must be set at construction (its field is concretely typed and
+    # cannot be reassigned later). Splat it in only when provided.
+    (redoxreaction === nothing ? NamedTuple() : (; redoxreaction))...,
 )
 
 function DGML_γ!(γ, c, p, electrolyte)
@@ -445,14 +448,6 @@ function create_model(;
     @show bulknames
     @show bulkcolors
 
-    if model == :Gold
-        elydata = elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation)
-    elseif model == :Landstorfer_NaClO₄
-        elydata = elydata_NaClO₄
-    elseif model == :Landstorfer_NaF
-        elydata = elydata_NaF
-    end
-
     γ_cache = DiffCache(zeros(specieslayout.nc), 14)
 
     f_buffer! = buffer_system(reactiondata)
@@ -588,27 +583,33 @@ function create_model(;
             bnode,
             data
         )
-        (; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies) = data
+        (; Γ_we, Γ_bulk, ϕ_we, iϕ, ϕ_bulk, ip, p_bulk, c_bulk, cspecies, ircompensation) = data
 
-        if BC_model == :Dirichlet
-            boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - reactiondata.ϕ_pzc))
-        elseif BC_model == :Robin
-            # Use LiquidElectrolytes' potential BC (handles ircompensation and makes
-            # cvsweep record the APPLIED potential ϕ_we in `.voltages`), matching the
-            # row_interaction_script. The raw boundary_robin! below bypassed that and
-            # caused `.voltages` to hold the (compressed) reaction-plane potential.
-            potentialbcondition!(f, u, bnode, data, ϕ_we)
-            # j + cgap*u = cgap*(ϕ_we - ϕ_pzc)   # previous raw-Robin form:
-            # boundary_robin!(f, u, bnode, iϕ, Γ_we, reactiondata.C_gap, reactiondata.C_gap * (ϕ_we - reactiondata.ϕ_pzc))
+        if bnode.region == Γ_we
+            # --- Working-electrode potential BC ---
+            # For :pseudopotentiostat / :ohmicdrop, LiquidElectrolytes' generic
+            if ircompensation == :none
+                if BC_model == :Dirichlet
+                    boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - reactiondata.ϕ_pzc))
+                elseif BC_model == :Robin
+                    potentialbcondition!(f, u, bnode, data, ϕ_we)
+                end
+            end
+
+            # --- Surface (faradaic) reactions ---
+            if ircompensation != :ohmicdrop && model == :Gold
+                we_breactions(f, u, bnode, data)
+            end
         end
-
-
-        if bnode.region == Γ_we && model == :Gold
-            we_breactions(f, u, bnode, data)
-        end
-
 
         return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
+    end
+    if model == :Gold
+        elydata = elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction = we_breactions)
+    elseif model == :Landstorfer_NaClO₄
+        elydata = elydata_NaClO₄
+    elseif model == :Landstorfer_NaF
+        elydata = elydata_NaF
     end
     return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulk = bulk, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
 end
