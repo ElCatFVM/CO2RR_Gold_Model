@@ -61,7 +61,7 @@ function plot_iv_conc(csv_path)
     fig = Figure(size = (700, 500))
 
 
-    vgrid = df[!, :Voltage]  # <- CSV 전압 컬럼명이 다르면 여기만 바꾸세요
+    vgrid = df[!, :Voltage]  # <- if the CSV voltage column name differs, change only this
 
     ax = Axis(
         fig[1, 1];

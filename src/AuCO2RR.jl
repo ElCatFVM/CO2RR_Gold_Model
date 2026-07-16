@@ -28,7 +28,7 @@ export AuCO2RR_plots
 include("cv.jl")
 export sweep_over_L_cv
 # added from row_interaction_script.jl (batch 4: extra CV sweep drivers)
-export sweep, cvsweep_compensated_over_L, cvsweep_odr_over_L, blthickness
+export sweep, cvsweep_compensated_over_L, cvsweep_odr_over_L, blthickness, blthickness_t
 
 
 include("dlcap.jl")

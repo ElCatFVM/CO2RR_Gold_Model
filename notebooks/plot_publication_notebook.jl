@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v1.0.0
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -264,10 +264,10 @@ let
     num_df = DataFrame(num, :auto)
     npairs = size(num_df, 2) ÷ 2
 
-    # 원하는 압력에 해당하는 pair 인덱스만 추출 → [2, 5, 7]
+    # extract only the pair indices for the desired pressures → [2, 5, 7]
     keep = findall(in(wanted), pressures[1:npairs])
 
-    # 3개뿐이니 불연속(distinct) 색상
+    # only 3, so use distinct (discrete) colors
     cols1 = resample_cmap(:winter, npairs)
 
     fig, ax = with_theme(electrochemistry_theme()) do
@@ -803,7 +803,7 @@ let
     )
 
     # --------------------------------------------------
-    # extracted CSV 읽기
+    # read extracted CSV
     # --------------------------------------------------
     df = CSV.read("../data/output/pressure_varied_σ_80.0Robin_DMGL_γ_pnp_All_species_Scanrate_0.05_Periods_1.csv", DataFrame)
 
@@ -896,7 +896,7 @@ let
     )
 
     # --------------------------------------------------
-    # experimental CSV 읽기
+    # read experimental CSV
     # --------------------------------------------------
     raw = CSV.read("../data/Langmuir_CV_data/Figure_3.csv", DataFrame; header=false)
 
@@ -904,9 +904,9 @@ let
     num = map(x -> x === missing ? NaN : parse(Float64, x), sub)
     num_df = DataFrame(num, :auto)
 
-    # Ar sat 제외
+    # exclude Ar sat
     pressures_exp = ["0.1", "0.2", "0.3", "0.5", "0.6", "1.0"]
-    exp_indices = 2:7   # 1번째 pair(Ar sat) 제외
+    exp_indices = 2:7   # exclude the 1st pair (Ar sat)
 
     cols1 = resample_cmap(:winter, length(exp_indices))
 
@@ -942,7 +942,7 @@ let
     )
 
     # --------------------------------------------------
-    # simulation CSV 읽기
+    # read simulation CSV
     # --------------------------------------------------
     df = CSV.read("../data/output/pressure_varied_σ_1000.0Robin_DMGL_γ_pnp_Potassium_only.csv", DataFrame)
 
@@ -1108,7 +1108,7 @@ function capsplot_fixed(
         end
     end
 
-    # 강조 영역 (앞 스타일 유지)
+    # highlight region (keep the earlier style)
     vspan!(ax, -1.30, -0.70, color=(colorant"#87CEFA", 0.25))
     vspan!(ax, -0.20,  0.10, color=(colorant"#F7DC6F", 0.25))
     vspan!(ax,  0.10,  0.90, color=(colorant"#F1948A", 0.25))
@@ -1291,7 +1291,7 @@ let
         return ax
     end
 
-    # 물리량 italic / 약어 roman 라벨
+    # labels: physical quantity italic / abbreviations roman
     lab_phi   = rich(rich("U", font=:italic), "  (V vs. SHE)")
     lab_con   = rich("Interfacial Concentration\n\n\n",
                      rich("c", font=:italic),
@@ -1477,7 +1477,7 @@ let
         return ax
     end
 
-    # 라벨: 물리량 italic / 약어·단위 roman  (concentration)
+    # labels: physical quantity italic / abbreviations·units roman  (concentration)
     lab_con = rich("Interfacial Concentration\n\n",
                    rich("c", font=:italic),
                    subscript(rich("i", font=:italic)), superscript("‡"), "  (M)")
@@ -1505,7 +1505,7 @@ let
         end
     end
 
-    # species 라벨 (rich)
+    # species labels (rich)
     sp_pos = [
         (-1.15, 5),     (-0.875, 1e-8),  (-1.05, 30e-7),  (-1.05, 1e-11),
         (-1.2, 72e-7),    (-0.875, 7e-10), (-1.17, 3.0e-4),
@@ -1586,7 +1586,7 @@ let
     df_sim = CSV.read(raw"../data/E.Acta_Cap_data/Landstorfer_NaClO4_0.005M.csv", DataFrame)  # dash
     df_exp = CSV.read(raw"../data/Valette_Cap_data/NaClO4_0.005M.csv", DataFrame)             # solid
 
-    # 1행 = Voltage, 2행 = dlcaps (row-major)
+    # row 1 = Voltage, row 2 = dlcaps (row-major)
     M_sim = Matrix(df_sim)
     M_exp = Matrix(df_exp)
     V_sim    = Float64.(M_sim[:, 1]);  caps_sim = Float64.(M_sim[:, 2])
@@ -1615,7 +1615,7 @@ let
         return ax
     end
 
-    # 라벨: 물리량 italic / 약어·단위 roman
+    # labels: physical quantity italic / abbreviations·units roman
     lab_phi = rich(rich("U", font=:italic), "  (V vs. SHE)")
     lab_cap = rich("Differential Capacitance\n\n",
                    rich("C", font=:italic),
@@ -1712,7 +1712,7 @@ let
         return ax
     end
 
-    # 라벨: 물리량 italic / 약어·단위 roman
+    # labels: physical quantity italic / abbreviations·units roman
     lab_act = rich("Interfacial Activity\n\n",
                    rich("a", font=:italic),
                    subscript(rich("i", font=:italic)), superscript("‡"))
@@ -1740,7 +1740,7 @@ let
         end
     end
 
-    # species 라벨 (rich)
+    # species labels (rich)
     sp_pos = [
         (-1.15, 30),     (-0.875, 2e-7),  (-1.05, 20e-7),  (-1.1, 0.5e-9),
         (-1.2, 9e-4),    (-0.875, 16e-9), (-1.17, 5000e-4),
@@ -1978,17 +1978,17 @@ let
         return ax
     end
 
-    col_mpnp   = "#2980B9"          # MPNP (solid, 파랑)
-    col_catint = "#999999"          # CatINT (dash, 회색) ── (a)(b)(c)
-    col_dgml   = ("#999999", 0.9)   # (d) 회색 점선
+    col_mpnp   = "#2980B9"          # MPNP (solid, blue)
+    col_catint = "#999999"          # CatINT (dash, gray) ── (a)(b)(c)
+    col_dgml   = ("#999999", 0.9)   # (d) gray dotted
     col_exp    = "#222222"          # Experiment (dot)
     solid_lw = 7.0
     dash_lw  = 4.5
 
-    # ── rich-text 틱라벨 헬퍼 (serif 방지: L"" 대신 rich) ───────
+    # ── rich-text tick-label helper (avoid serif: rich instead of L"") ───────
     powlab(n) = rich("10", superscript(string(n)))
 
-    # ── rich-text 축 라벨: 물리량=italic, 약어/단위=roman ──────
+    # ── rich-text axis labels: quantity=italic, abbreviations/units=roman ──────
     lab_pol  = rich("Partial CO Current\n\n",
                     "|", rich("I", font=:italic), subscript("CO"),
                     "|  (mA cm", superscript("−2"), ")")
@@ -2020,7 +2020,7 @@ let
     df_conc_pr = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv",    DataFrame)
     df_act_pr  = CSV.read(raw"../data/catmap_CO2R_data/voltage-activ.csv",   DataFrame)
     df_pol_pr  = CSV.read(raw"../data/catmap_CO2R_data/Ringe-theorical.csv", DataFrame; header=[:Voltage, :Current])
-    # (a) 실험 데이터 (dot) — TODO: 실제 경로로 교체
+    # (a) experimental data (dot) — TODO: replace with the real path
     df_pol_exp = CSV.read(raw"../data/catmap_CO2R_data/Ringe-experimental.csv", DataFrame; header=[:Voltage, :Current])
 
     species   = ["K⁺","H⁺","HCO₃⁻","CO₃²⁻","CO₂","OH⁻","CO"]
@@ -2028,7 +2028,7 @@ let
                  "#C0392B","#27AE60","#2980B9"]
     sp_pastel = ["#F7C97F","#D3D3D3","#D9C2A7","#666666",
                  "#FF746C","#80EF80","#AFCBFF"]
-    # rich species 라벨 (한 번 정의해서 (b)(c) 양쪽에 사용)
+    # rich species labels (defined once, used in both (b) and (c))
     sp_rich = [
         rich("K", superscript("+")),
         rich("H", superscript("+")),
@@ -2049,7 +2049,7 @@ let
 
     fig = Figure(size = (1400, 1100), figure_padding = (40, 60, 30, 60))
 
-    # (a) Partial CO Current — x라벨 없음
+    # (a) Partial CO Current — no x-label
     ax_pol = Axis(fig[1, 1];
         ylabel = lab_pol,
         limits = (-1.5, -0.4, 1e-10, 100),
@@ -2129,7 +2129,7 @@ let
             color=sp_pastel[ia], linewidth=dash_lw, linestyle=:dash)
     end
 
-    # (d) MPNP(solid, 파랑) 만
+    # (d) MPNP (solid, blue) only
     lines!(ax_cdl, df_cdl[!, :Voltage] .- 0.16,
            df_cdl[!, :Capacitance] / (μF/cm^2);
         color=col_mpnp, linewidth=solid_lw)
@@ -2154,8 +2154,8 @@ let
     text!(ax_cdl, 0.4, 10; text="MPNP",
           color=col_mpnp, fontsize=28, font=:bold,
           align=(:center, :center))
-    # ── species text labels — (b) activity 와 (c) concentration 양쪽 ─
-    sp_pos_con = [          # (좌표는 (c) concentration 기준)
+    # ── species text labels — both (b) activity and (c) concentration ─
+    sp_pos_con = [          # (coordinates are relative to (c) concentration)
         (-1.35,  1e-1),     # K⁺
         (-1.05,  9e-9),     # H⁺
         (-0.8,   2e-4),     # HCO₃⁻
@@ -2169,7 +2169,7 @@ let
         text!(ax_con, x, y; text=sp_rich[ia], color=sp_colors[ia],
               fontsize=32, font=:bold, offset=(0, 0))
     end
-    # (b) activity 에도 동일 라벨 (활동도 스케일에 맞춰 y 위치만 조정)
+    # same labels on (b) activity too (only y positions adjusted to the activity scale)
     sp_pos_act = [
         (-1.35,  3e1),      # K⁺
         (-1.00,  9e-7),     # H⁺
@@ -2251,15 +2251,15 @@ let
     cdl_dgml_color = "#C3A6E0"
     exp_color      = "#555555"
 
-    # ── MPB (solid) — Potassium_only 로 교체 ───────────────────
+    # ── MPB (solid) — replaced with Potassium_only ───────────────────
     df_conc    = CSV.read(raw"../data/output/Concentration_Robin_Stefan_γ_Potassium_only.csv", DataFrame)
     df_pol     = CSV.read(raw"../data/output/Polarization_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
     df_cdl     = CSV.read(raw"../data/output/DLCap_Robin_Stefan_γ_pnp_Potassium_only_1.csv", DataFrame)
     df_act     = CSV.read(raw"../data/output/Activity_Curve_Robin_Stefan_γ_pnp_Potassium_only.csv", DataFrame)
     df_cap_exp      = CSV.read(raw"../data/Valette_Cap_data/NaClO4_0.005M.csv", DataFrame)
     df_cap_exp_dgml = CSV.read(raw"../data/output/DLCap_Robin_DMGL_γ_pnp_All_species_1.csv", DataFrame)
-    # ── CatINT (점선) — 첫 번째와 동일, long-format ────────────
-    # Index 매핑: 1=K⁺ 2=H⁺ 3=HCO₃⁻ 4=CO₃²⁻ 5=CO₂ 6=OH⁻ 7=CO
+    # ── CatINT (dotted) — same as the first, long-format ────────────
+    # Index mapping: 1=K⁺ 2=H⁺ 3=HCO₃⁻ 4=CO₃²⁻ 5=CO₂ 6=OH⁻ 7=CO
     df_conc_pr  = CSV.read(raw"../data/catmap_CO2R_data/voltage-conc.csv",   DataFrame)  # Index,Voltage,Concentration
     df_act_pr   = CSV.read(raw"../data/catmap_CO2R_data/voltage-activ.csv",  DataFrame)  # Index,Voltage,Concentration
     df_pol_pr   = CSV.read(raw"../data/catmap_CO2R_data/Ringe-theorical.csv", DataFrame; header=[:Voltage, :Current])
@@ -2273,16 +2273,16 @@ let
     conc_electrode    = permutedims(Matrix(df_conc[!, Symbol.(species)]))
     act_electrode     = permutedims(Matrix(df_act[!, Symbol.(species)]))
 
-    # (a)(b)(c) 공유 모델 legend: CatINT(dash) / MPB@LiquidElectrolytes.jl(solid)
+    # (a)(b)(c) shared model legend: CatINT(dash) / MPB@LiquidElectrolytes.jl(solid)
     model_elems  = [
         LineElement(color = priv_color, linewidth = 1.8, linestyle = :dash),
         LineElement(color = :black,     linewidth = 3,   linestyle = :solid),
     ]
     model_labels = ["CatINT", "MPB@LiquidElectrolyte.jl"]
 
-    # (d) capacitance legend: dash 없이 alpha+굵기로 구별, 파스텔 3색
-    cdl_mpb_lw  = 7    # 이전 모델: 굵고 연하게
-    cdl_dgml_lw = 3.5  # 현재 모델: 가늘고 진하게
+    # (d) capacitance legend: distinguished by alpha+linewidth (no dash), 3 pastel colors
+    cdl_mpb_lw  = 7    # previous model: thick and light
+    cdl_dgml_lw = 3.5  # current model: thin and dark
     cdl_elems  = [
         LineElement(color = (cdl_mpb_color, 0.55), linewidth = cdl_mpb_lw),
         LineElement(color = (cdl_dgml_color, 1.0), linewidth = cdl_dgml_lw),
@@ -2293,7 +2293,7 @@ let
     xt_bottom = [-1.4, -1.2, -1.0, -0.8, -0.6]
     xt_top    = [-0.8, -0.4,  0.0,  0.4,  0.8]
 
-    # 세로 스택용 figure
+    # figure for the vertical stack
     fig = Figure(size = (900, 1500), figure_padding = (40, 40, 30, 45))
 
     xlabel_str = L"\textbf{Voltage}\ U \; \mathrm{(V \; vs. \; SHE)}"
@@ -2322,7 +2322,7 @@ let
                      [L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"])
     ax_con.xticklabelsvisible = false
 
-    # ── (c) Interfacial Activity  →  fig[3,1]  (x축 라벨 여기에) ─
+    # ── (c) Interfacial Activity  →  fig[3,1]  (x-axis label here) ─
     ax_act = Axis(fig[3, 1];
         xlabel = xlabel_str,
         ylabel = L"a_\alpha^{\ddagger}",
@@ -2335,7 +2335,7 @@ let
                      [L"10^{3}", L"10^{0}", L"10^{-3}", L"10^{-6}", L"10^{-9}"])
 
     # ── (d) Differential Capacitance  →  fig[4,1] ──────────────
-    # x축은 pzc 기준 상대전위 (U - U_pzc), y축 한계 제거(auto)
+    # x-axis is potential relative to pzc (U - U_pzc); remove y-axis limits (auto)
     xlabel_pzc = L"\textbf{Voltage}\ U - U_\mathrm{pzc} \; \mathrm{(V)}"
     ax_cdl = Axis(fig[4, 1];
         xlabel = xlabel_pzc,
@@ -2345,7 +2345,7 @@ let
     xt_cdl = [-0.8, -0.4, 0.0, 0.4, 0.8]
     ax_cdl.xticks = (xt_cdl .- 0.16, [@sprintf("%.1f", x) for x in xt_cdl])
 
-    # 행 높이 비율 2:3:3:2
+    # row height ratio 2:3:3:2
     rowsize!(fig.layout, 1, Relative(2/10))
     rowsize!(fig.layout, 2, Relative(3/10))
     rowsize!(fig.layout, 3, Relative(3/10))
@@ -2363,7 +2363,7 @@ let
             color=colors[ia], linewidth=solid_linewidth)
     end
 
-    # ── CatINT (dashed) — long-format 에서 종별 추출 ───────────
+    # ── CatINT (dashed) — extract per species from long-format ───────────
     for ia in 1:7
         # concentration
         mc = df_conc_pr[!, :Index] .== ia
@@ -2387,11 +2387,11 @@ let
     lines!(ax_pol, df_pol_pr[!, :Voltage], abs.(df_pol_pr[!, :Current]);
         color=priv_color, linewidth=dash_linewidth, linestyle=:dash)
 
-    # ── Differential capacitance — dash 없이 alpha+굵기로 구별 ──
-    # MPB (이전 모델): 굵고 연하게, 뒤에 깔리도록 먼저 그림
+    # ── Differential capacitance — distinguished by alpha+linewidth (no dash) ──
+    # MPB (previous model): thick and light, drawn first so it sits behind
     lines!(ax_cdl, df_cdl[!, :Voltage] .- 0.16, df_cdl[!, :Capacitance] / (μF/cm^2);
         color=(cdl_mpb_color, 0.55), linewidth=cdl_mpb_lw)
-    # DGML (현재 모델): 가늘고 진하게
+    # DGML (current model): thin and dark
     lines!(ax_cdl, df_cap_exp_dgml[!, :Voltage] .- 0.16, df_cap_exp_dgml[!, :Capacitance] / (μF/cm^2);
         color=(cdl_dgml_color, 1.0), linewidth=cdl_dgml_lw)
     # Experiment
@@ -2399,7 +2399,7 @@ let
         color=exp_color, markersize=7)
 
     # ── Legends ────────────────────────────────────────────────
-    # (a) 패널: 공유 모델 (CatINT / MPB)
+    # (a) panel: shared model (CatINT / MPB)
     Legend(fig[1, 1], [model_elems], [model_labels], ["Model"];
         framevisible = false,
         nbanks       = 1,
@@ -2413,7 +2413,7 @@ let
         patchsize    = (40, 20),
     )
 
-    # (d) 패널: MPB / DGML / Experiment
+    # (d) panel: MPB / DGML / Experiment
     Legend(fig[4, 1], [cdl_elems], [cdl_labels], ["Capacitance"];
         framevisible = false,
         nbanks       = 1,
@@ -2427,7 +2427,7 @@ let
         patchsize    = (40, 20),
     )
 
-    # species labels — (b) concentration 패널 (ax_con)
+    # species labels — (b) concentration panel (ax_con)
     text!(ax_con, -1.35,  3e-1;   text=L"\mathrm{K^+}",       color=colors[1], fontsize=24, font=:bold)
     text!(ax_con, -0.90,  9e-9;   text=L"\mathrm{H^+}",       color=colors[2], fontsize=24, font=:bold)
     text!(ax_con, -1.30,  2e-11;  text=L"\mathrm{CO_3^{2-}}", color=colors[4], fontsize=24, font=:bold)
@@ -2436,7 +2436,7 @@ let
     text!(ax_con, -0.90,  9e-10;  text=L"\mathrm{OH^-}",      color=colors[6], fontsize=24, font=:bold)
     text!(ax_con, -1.35,  1e-4; text=L"\mathrm{CO}",        color=colors[7], fontsize=24, font=:bold)
 
-    # 외부 라벨 — 각 패널 왼쪽 (col 0) 세로 회전
+    # outer labels — left of each panel (col 0), rotated vertically
     Label(fig[1, 0], "Partial CO Current";
         rotation = π/2, fontsize = 24, font = :bold, tellheight = false)
     Label(fig[2, 0], "Interfacial Concentration";

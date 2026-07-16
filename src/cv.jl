@@ -305,16 +305,52 @@ function cvsweep_odr_over_L(
     return results
 end
 
-# ── moved from cell 82116926 (blthickness) ──
-function blthickness(grd, celldata, tsol; species = 5)
-    X = grd[XCoordinates]
-    xbl = 0
+# ── moved from cell 82116926 (blthickness), fixed ──
+
+"""
+    blthickness(grid, celldata, tsol; species = 5, atol = 1.0e-1)
+
+Estimate the diffusion boundary-layer thickness of `species` (default 5 = CO₂) from a
+transient solution.
+
+Scans every time snapshot in `tsol` and finds the outermost grid node where the
+concentration deviates from the bulk value `celldata.c_bulk[species]` by more than
+`atol` (mol/m³). Returns the **maximum** such position over all time steps (SI units,
+i.e. meters); 0 if the profile never deviates.
+
+Set `atol` relative to the species: the default 0.1 mol/m³ suits CO₂
+(`c_bulk ≈ 33 mol/m³`), but trace species (OH⁻, H⁺) need a much smaller `atol`.
+"""
+function blthickness(grid, celldata, tsol; species = 5, atol = 1.0e-1)
+    X  = grid[XCoordinates]
+    cb = celldata.c_bulk[species]
+    xbl = zero(eltype(X))
     for it in 1:length(tsol.t)
         u = tsol[species, :, it]
-        i = findlast(c -> abs(c - celldata.c_bulk[species]) > 1.0e-1, u)
-        xbl = X[i]
+        i = findlast(c -> abs(c - cb) > atol, u)
+        i === nothing && continue          # profile already at bulk everywhere
+        xbl = max(xbl, X[i])
     end
     return xbl
+end
+
+"""
+    blthickness_t(grid, celldata, tsol; species = 5, atol = 1.0e-1)
+
+Time-resolved boundary-layer thickness: same criterion as [`blthickness`](@ref) but
+evaluated at every stored time. Returns `(times, δ)`.
+"""
+function blthickness_t(grid, celldata, tsol; species = 5, atol = 1.0e-1)
+    X  = grid[XCoordinates]
+    cb = celldata.c_bulk[species]
+    t  = tsol.t
+    δ  = zeros(eltype(X), length(t))
+    for it in eachindex(t)
+        u = tsol[species, :, it]
+        i = findlast(c -> abs(c - cb) > atol, u)
+        δ[it] = i === nothing ? zero(eltype(X)) : X[i]
+    end
+    return t, δ
 end
 
 

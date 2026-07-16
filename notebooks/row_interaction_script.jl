@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v1.0.1
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -1210,7 +1210,7 @@ function co2_log_contour(results::Dict, grid_dict, bulk;
         colormap = discrete_cmap,
         interpolate = false)
         
-    # f[1, 2] 위치에 컬러바 배치
+    # place the colorbar at f[1, 2]
     cb = Colorbar(f[1, 2], hm; 
                   label = L"\log_{10}(c_{\mathrm{bulk}}) - \log_{10}(c_{\mathrm{CO_2}})", 
                   ticklabelsize = 20, 
@@ -1364,9 +1364,9 @@ function plot_cv_total_current_tot(result, model;
                                    include_capacitive::Bool = true,
                                    scale = cm^2/mA,
                                    sign::Int = 1,
-                                   color_F   = colorant"#F2728A",   # i_F 색
-                                   color_C   = colorant"#5BA8E8",   # i_C 색
-                                   mix_mode::Symbol = :mean,         # :sum 또는 :mean
+                                   color_F   = colorant"#F2728A",   # i_F color
+                                   color_C   = colorant"#5BA8E8",   # i_C color
+                                   mix_mode::Symbol = :mean,         # :sum or :mean
                                    lw = 5)
     n_t = length(result.voltages)
 
@@ -1394,7 +1394,7 @@ function plot_cv_total_current_tot(result, model;
     I_C_scaled = sign .* I_C          .* scale
     I_total    = sign .* (I_F .+ I_C) .* scale
 
-    # ---- Sum color: RGB 합 또는 평균 ----
+    # ---- blended color: RGB sum or average ----
     cF = RGBf(color_F); cC = RGBf(color_C)
     color_tot = mix_mode === :mean ?
         RGBf((cF.r+cC.r)/2, (cF.g+cC.g)/2, (cF.b+cC.b)/2) :
@@ -1415,8 +1415,8 @@ function plot_cv_total_current_tot(result, model;
     end
     f, (ax_a, ax_b, ax_c) = fig
 
-    # ---- (a), (b), (c) 레이블 달기 ----
-    # 플롯이 있는 f[i, 2] 내부에 Label을 얹어 좌측 상단(top-left)으로 정렬합니다.
+    # ---- panel labels (a), (b), (c) ----
+    # Overlay a Label inside each f[i, 2] cell, aligned to the top-left.
     sub_axes = [ax_a, ax_b, ax_c]
     labels = ["(a)", "(b)", "(c)"]
     
@@ -1424,13 +1424,13 @@ function plot_cv_total_current_tot(result, model;
         Label(f[i, 1], labels[i],
               fontsize = 24,
               font = :bold,
-              halign = :left,   # 왼쪽 정렬
-              valign = :top,    # 상단 정렬
-              padding = (15, 0, 0, 15) # 내부 여백 조절 (우, 좌, 하, 상 순서)
+              halign = :left,   # left-aligned
+              valign = :top,    # top-aligned
+              padding = (15, 0, 0, 15) # padding (right, left, bottom, top)
         )
     end
 
-    # ---- 데이터 라인 그리기 ----
+    # ---- draw data lines ----
     lines!(ax_a, result.voltages, I_F_scaled; color = color_F,   linewidth = lw)
     lines!(ax_b, result.voltages, I_C_scaled; color = color_C,   linewidth = lw)
     lines!(ax_c, result.voltages, I_total;    color = color_tot, linewidth = lw)
@@ -1682,14 +1682,14 @@ function plot_cv_scanrate_grid(result_vec, model;
                                mix_mode::Symbol = :mean,
                                lw = 5.5)
 
-    # 단위/라벨 헬퍼: 물리량 italic / 약어·단위 roman
+    # unit/label helper: physical quantity italic / abbreviations·units roman
     unit_i = rich("  (mA cm", superscript("−2"), ")")
     lab_iF   = rich(rich("I", font=:italic), subscript("F"),   unit_i)
     lab_iC   = rich(rich("I", font=:italic), subscript("C"),   unit_i)
     lab_itot = rich(rich("I", font=:italic), subscript("tot"), unit_i)
     lab_U    = rich(rich("U", font=:italic), "  (V vs. SHE)")
 
-    # 1. 테마 및 축 매트릭스 생성
+    # 1. build theme and axis matrix
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1000, 700))
         axes_matrix = Matrix{Axis}(undef, 3, 3)
@@ -1796,11 +1796,11 @@ function plot_cv_scanrate_grid_unc(result_vec, model;
                                color_tot = "#BAC8FF",
                                lw = 5.5)
 
-    # 라벨: 물리량 italic / 약어·단위 roman
+    # labels: physical quantity italic / abbreviations·units roman
     lab_I = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")")
     lab_U = rich(rich("U", font=:italic), "  (V vs. SHE)")
 
-    # 1. 테마 및 축 벡터 생성 (1x3 구조)
+    # 1. build theme and axis vector (1x3 layout)
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1000, 350))
         axes_vec = Vector{Axis}(undef, 3)
@@ -1867,8 +1867,8 @@ end
 # ╔═╡ d3b7d864-bc1b-440a-8ddb-2096bfde0cc5
 function plot_scanrate_sweeps_cv_2(
     sweep_vec, scanrates;
-    electrolyte,                        # Capacitive 전류를 위해 필요
-    redox_species::Dict{Int,Int},       # 모든 Faradaic 스피시즈와 전자 수 (e.g., Dict(1=>2, 2=>1))
+    electrolyte,                        # needed for the capacitive current
+    redox_species::Dict{Int,Int},       # all Faradaic species and their electron counts (e.g. Dict(1=>2, 2=>1))
     include_capacitive::Bool = true,
     scale = cm^2/mA,
     sign::Int = 1,
@@ -1890,13 +1890,13 @@ function plot_scanrate_sweeps_cv_2(
     for (j, rec) in enumerate(sweep_vec)
         n_t = length(rec.voltages)
         
-        # 1. Faradaic 전류 합산
+        # 1. sum Faradaic currents
         I_F = zeros(n_t)
         for (idx, n_e) in redox_species
             I_F .+= n_e .* currents(rec, idx)
         end
 
-        # 2. Capacitive 전류 추가
+        # 2. add capacitive current
         I_C = zeros(n_t)
         if include_capacitive
             if electrolyte.ircompensation == :ohmicdrop
@@ -1904,22 +1904,22 @@ function plot_scanrate_sweeps_cv_2(
                 node_we = 1
                 I_C = [u[icc, node_we] for u in rec.tsol[1:n_t]]
             else
-                # 워닝이 너무 많이 뜨는 것을 방지하기 위해 첫 루프에서만 출력
+                # warn only on the first iteration to avoid spamming
                 j == 1 && @warn "Capacitive current only resolved in :ohmicdrop mode; j_C set to 0."
             end
         end
 
-        # 3. Total Current 계산 (부호 및 스케일 적용)
+        # 3. total current (apply sign and scale)
         I_total = sign .* (I_F .+ I_C) .* scale
 
-        # 플롯 그리기
+        # draw the plot
         lines!(ax, rec.voltages, I_total;
             linewidth = default_lw,
             color     = cols[j]
         )
 
-        # 4. 텍스트 라벨링 위치 조정
-        # 스캔 레이트별로 텍스트가 겹치지 않게 배치하는 기존 로직 유지
+        # 4. adjust text label position
+        # keep the existing logic that spaces scan-rate labels so they don't overlap
         pos_y = if j == 5
             -2.5
         elseif j == 3
@@ -1929,7 +1929,7 @@ function plot_scanrate_sweeps_cv_2(
         end
 
         text!(ax, "$(scanrates[j]) V/s";
-            position = (-1.55, pos_y),   # 전류 크기 변화에 따라 y 위치는 조정이 필요할 수 있습니다.
+            position = (-1.55, pos_y),   # the y position may need adjusting as the current magnitude changes.
             color    = cols[j],
             fontsize = 18,
             font     = :bold
@@ -1966,7 +1966,7 @@ function plot_scanrate_sweeps_cv(
             color     = cols[j]
         )
         #text!(ax, "$(scanrates[j]) V/s";
-        #    #position = (-1.2 - 0.05 * j, 0 - 1.5 * j),   # 위치는 직접 조절
+        #    #position = (-1.2 - 0.05 * j, 0 - 1.5 * j),   # adjust the position manually
         #    color    = cols[j],
         #    fontsize = 24,
         #    font     = :bold
@@ -2045,7 +2045,7 @@ begin
         return f, a
     end
 
-    # 기존 함수의 축 세팅 프레임 그대로 적용
+    # apply the same axis-setting frame as the original function
     ax_cv.limits = ((-1.3, 0.9), (-5.5, 1.8))
     ax_cv.xticks = -1.5:0.3:1.0
     ax_cv.yticks = 1:-1:-5
@@ -2053,23 +2053,23 @@ begin
     plot_objs1 = []
     labels1    = String[]
 
-    # 3. 곡선 그리기 및 프레임 매칭
+    # 3. draw curves and match the frame
     for (k, j) in enumerate(keep)
         xcol, ycol = 2j - 1, 2j
         
-        # 기존 함수의 레전드 텍스트 포맷 맞춤 ("$(p) atm")
+        # match the original function's legend text format ("$(p) atm")
         label_text = "$(pressures[j]) atm" 
         push!(labels1, label_text)
 
-        # 기존 함수에서 전류 데이터를 [I ./ 2]로 스케일 조절해 그렸던 프레임 적용
+        # apply the frame where the original scaled the current data as [I ./ 2]
         line = lines!(ax_cv, num_df[!, xcol], num_df[!, ycol] ;
                       color = cols1[k], 
-                      linewidth = 5) # 시뮬레이션 선 두께 매칭
+                      linewidth = 5) # match the simulation line width
                       
         push!(plot_objs1, line)
     end
 
-    # 4. 기존 함수의 내부 인셋 Legend 매칭 및 위치 미세조정(translate!)
+    # 4. match the original inset Legend and fine-tune position (translate!)
     if n > 0
         leg = Legend(fig_cv[1, 1], title = "Exp", plot_objs1, labels1, L"p_{\mathrm{CO_2}}";
             framevisible = false,
@@ -2096,7 +2096,7 @@ function plot_pressure_varied_sweep_ivc(
 	pastel3 = cgrad([colorant"#FFB3BA", colorant"#A3D8FF"])  
 	cols_sim = [pastel3[t] for t in range(0, 1, length=max(n, 1))]
 
-    # 1. Figure & Axis 생성
+    # 1. create Figure & Axis
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1050, 500))
         a = if limits !== nothing
@@ -2109,18 +2109,18 @@ function plot_pressure_varied_sweep_ivc(
     #ax.limits = ((-1.3, 0.9), (-1, 0.2))
     #ax.xticks = -1.5:0.3:1.0
     #ax.yticks = 0.2:-0.5:-1
-    # 범례 매핑용 컨테이너 생성
+    # create containers for legend mapping
     plot_objs = []
     labels    = String[]
 
-    # 2. 곡선 그리기
+    # 2. draw curves
     for j in 1:n
         p, rec = P_recs[j]
         I = currents(rec, species) .* scale
 
         label_text = "$(p) atm" 
 
-        # lines! 인스턴스를 받아 보관
+        # keep the lines! handle
         hl = lines!(ax, rec.voltages, I ./ 2; 
             color = cols_sim[j], 
             linewidth = sim_linewidth)
@@ -2129,7 +2129,7 @@ function plot_pressure_varied_sweep_ivc(
         push!(labels, label_text)
     end
 
-    # 3. 요청하신 포맷의 내부 Legend 매칭 (틀 안으로 인셋 배치)
+    # 3. match the requested inset Legend format (placed inside the frame)
     if n > 0
         leg = Legend(fig[1, 1], plot_objs, labels, L"p_{\mathrm{CO_2}}";
             framevisible = false,
@@ -2781,7 +2781,7 @@ let
 	scatter!(ax, nodes, fill(0.1, 3); color = :black, markersize = 9)
 
 	xK, xL, xM = nodes
-	dx = (faces[end] - faces[1]) * 0.3   # 라벨 가로 오프셋 (꺾인 정도)
+	dx = (faces[end] - faces[1]) * 0.3   # label horizontal offset (how much it bends)
 
 	text!(ax, xK - dx, 1.25; text = rich("K", font=:italic),
 	      align = (:center, :bottom), fontsize = 22)
@@ -3037,12 +3037,12 @@ let
                     titlesize = 24
                 )
                 
-                # y축 decoration은 첫 번째 열만
+                # y-axis decoration only on the first column
                 if j != 1
                     hideydecorations!(ax, grid = false)
                 end
                 
-                # x축 label은 마지막 행만
+                # x-axis label only on the last row
                 if i == num_plots
                     ax.xlabel = L"\text{time / s}"
                 else
@@ -3054,7 +3054,7 @@ let
                     colormap = discrete_cmap,
                     interpolate = false)
                 
-                # 패널 라벨: (a), (b), ... 열 우선으로
+                # panel labels: (a), (b), ... column-major
                 label_idx = (i - 1) * 3 + j
                 label_char = string(Char(96 + label_idx))
                 Label(f[i, j], "($label_char)", fontsize = 25, font = :bold,
@@ -3063,7 +3063,7 @@ let
             end
         end
         
-        # 공유 colorbar: 오른쪽 열 전체
+        # shared colorbar: entire right column
         cb = Colorbar(f[1:num_plots, 4], last_hm;
                       label = L"\log_{10}(c_{\mathrm{bulk}}) - \log_{10}(c_{\mathrm{CO_2}})",
                       ticklabelsize = 20, labelsize = 20)
@@ -3238,7 +3238,7 @@ end
 	                        xlabel = lab_time, color = parse(Colorant, "#7BB661"))
 	    times = result.tsol.t
 	    nt    = length(times)
-	    cH    = [result.tsol[ihplus, 1, t] / scale for t in 1:nt]   # 표면(node 1) H⁺ 농도 (M)
+	    cH    = [result.tsol[ihplus, 1, t] / scale for t in 1:nt]   # surface (node 1) H⁺ concentration (M)
 	    pH    = -log10.(max.(cH, eps(Float64)))
 	    ax = Axis(panel_pos; xlabel = xlabel, ylabel = rich("pH"))
 	    lines!(ax, times, pH; color = color, linewidth = lw)
@@ -3266,22 +3266,22 @@ function plot_7species_contours(result, X, bulk; scale=mol/dm^3, num_levels=24)
         
         sp_idx = findfirst(s -> s.name == sp_name, bulk)
         if isnothing(sp_idx)
-            @warn "Species '$sp_name'를 bulk에서 찾을 수 없어 이 패널은 건너뜁니다."
+            @warn "Species '$sp_name' not found in bulk; skipping this panel."
             continue
         end
 
-        # 1. 데이터 가져오기 및 하한선(1e-12) 적용
+        # 1. fetch data and apply the lower floor (1e-12)
         @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times)] ./ scale
         
-        # 2. bulk 차이 대신, 순수 농도의 log10 계산
-        # 완전히 0인 값들이 무한대로 터지는 것을 막기 위해 max 사용
+        # 2. compute log10 of the raw concentration (not the bulk difference)
+        # use max to prevent exactly-zero values from blowing up to infinity
         M = log10.(max.(c_matrix, 1e-12))
 
-        # 혹시 모를 비정상 값 필터링
+        # filter out any abnormal values just in case
         replace!(M, Inf => -12.0, -Inf => -12.0, NaN => -12.0)
 
-        # 3. 각 종의 데이터에 맞게 Colorbar 범위 자동 조절
-        # 값이 완전히 균일한 경우(예: 평형 상태 고정)를 대비해 최소 범위를 1.0 확보
+        # 3. auto-scale the Colorbar range to each species' data
+        # guarantee a minimum range of 1.0 in case the values are perfectly uniform (e.g. fixed equilibrium)
         c_min = minimum(M)
         c_max = maximum(M)
         if c_min == c_max
@@ -3289,9 +3289,9 @@ function plot_7species_contours(result, X, bulk; scale=mol/dm^3, num_levels=24)
             c_max += 0.5
         end
 
-        # fig[i, 1] 자리에 Axis 생성
+        # create an Axis at fig[i, 1]
         ax = Axis(fig[i, 1];
-            xlabel = (i == 7) ? "Time (s)" : "", # 맨 아래만 x축 이름 표시
+            xlabel = (i == 7) ? "Time (s)" : "", # show the x-axis name only on the bottom
             ylabel = rich(rich("x", font=:italic), "  (m)"),
             yscale = log10,
             yminorticksvisible = true,
@@ -3300,13 +3300,13 @@ function plot_7species_contours(result, X, bulk; scale=mol/dm^3, num_levels=24)
             title = "$sp_name Concentration Contour" 
         )
 
-        # 히트맵 그리기
+        # draw the heatmap
         hm = heatmap!(ax, times, X .+ 1e-12, M';
             colorrange = (c_min, c_max),
             colormap = discrete_cmap,
             interpolate = false)
 
-        # 컬러바 생성 (라벨을 log10(c) 형태로 변경)
+        # create the colorbar (label changed to log10(c) form)
         Colorbar(fig[i, 2], hm;
             label = rich("log", subscript("10"), "(", rich("c", font=:italic), 
                          subscript(sp_label), " / M)"),
@@ -3406,10 +3406,10 @@ elydata_Gold_unc.ircompfactor
 # ╔═╡ 2f0d56cb-0668-44d8-8cea-cb3b5c4036d2
 function plot_combined_exp_sim_ivc(
     P_recs;
-    redox_species = Dict(ico => 2),  # OH- 1개당 1 electron (CO2RR/HER 둘 다)
+    redox_species = Dict(ico => 2),  # 1 electron per OH- (both CO2RR/HER)
     include_capacitive = true,
     scale = cm^2/mA,
-    sign = 1,                             # cathodic 음수 convention
+    sign = 1,                             # cathodic negative convention
     sim_linewidth::Real = 5
 )
     wanted    = ["0.1", "0.5", "1.0"]
@@ -3463,7 +3463,7 @@ function plot_combined_exp_sim_ivc(
         # Capacitive (only meaningful in :ohmicdrop mode)
         I_C = zeros(n_t)
         if include_capacitive
-            ely = elydata_Gold_unc   # rec 구조에 맞게 조정
+            ely = elydata_Gold_unc   # adjust to match the rec structure
             if ely.ircompensation == :ohmicdrop
                 icc = ely.icc
                 node_we = 1
@@ -3998,7 +3998,7 @@ end
 let
     result = pnpresult_unc
     fig = with_theme(electrochemistry_theme()) do
-        f = Figure(size = (800, 1260))          # 6패널이니 높이 ↑ (1050 → 1260)
+        f = Figure(size = (800, 1260))          # 6 panels, so taller (1050 → 1260)
         ax1, leg1 = panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
         ax2 = panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
         ax3 = panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
@@ -4017,7 +4017,7 @@ let
         hidexdecorations!(ax2, grid = false)
         hidexdecorations!(ax3, grid = false)
         hidexdecorations!(ax4, grid = false)
-        #hidexdecorations!(ax5, grid = false)     # contour도 x라벨 숨김 (ax6만 x축 표시)
+        #hidexdecorations!(ax5, grid = false)     # hide x-labels on the contour too (only ax6 shows the x-axis)
 
         ax3.yticks = LinearTicks(3)
         ax4.yticks = LinearTicks(4)
@@ -4029,7 +4029,7 @@ let
 			if r == 1
 				rowsize!(f.layout, r, 350)
 			else
-            	rowsize!(f.layout, r, Relative(1/6))   # 6등분
+            	rowsize!(f.layout, r, Relative(1/6))   # split into 6
 			end
         end
         f
@@ -4041,7 +4041,7 @@ end
 let
     result = pnpresult_unc
     fig = with_theme(electrochemistry_theme()) do
-        f = Figure(size = (800, 1260))          # 6패널이니 높이 ↑ (1050 → 1260)
+        f = Figure(size = (800, 1260))          # 6 panels, so taller (1050 → 1260)
         ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, bulk;     xlabel = "")
         ax2 = AuCO2RR_plots.panel_time_current!(f, f[2, 2], result, model;      xlabel = "")
         ax3 = AuCO2RR_plots.panel_time_voltage!(f, f[3, 2], result;             xlabel = "")
@@ -4060,7 +4060,7 @@ let
         hidexdecorations!(ax2, grid = false)
         hidexdecorations!(ax3, grid = false)
         hidexdecorations!(ax4, grid = false)
-        #hidexdecorations!(ax5, grid = false)     # contour도 x라벨 숨김 (ax6만 x축 표시)
+        #hidexdecorations!(ax5, grid = false)     # hide x-labels on the contour too (only ax6 shows the x-axis)
 
         ax3.yticks = LinearTicks(3)
         ax4.yticks = LinearTicks(4)
@@ -4072,7 +4072,7 @@ let
 			if r == 1
 				rowsize!(f.layout, r, 350)
 			else
-            	rowsize!(f.layout, r, Relative(1/6))   # 6등분
+            	rowsize!(f.layout, r, Relative(1/6))   # split into 6
 			end
         end
         f
