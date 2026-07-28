@@ -1,6 +1,3 @@
-
-
-
 """
 sweep_over_L_cv(elydata, L_values, bcond, sawtooth, reaction; ...)
 
@@ -10,34 +7,34 @@ For each L: build grid -> PNPSystem -> run cvsweep with a fresh deepcopy of `saw
 Returns Dict{Float64, Any} mapping L -> CVSweepResult (or whatever cvsweep returns).
 """
 function sweep_over_L_cv(
-    elydata,
-    L_values,
-    bcond,
-    sawtooth,
-    reaction;
-    nperiods::Int = 1,
-    eneutral::Bool = false,
-    store_solutions::Bool = true,
-    sweep_kwargs...
-)
+        elydata,
+        L_values,
+        bcond,
+        sawtooth,
+        reaction;
+        nperiods::Int = 1,
+        eneutral::Bool = false,
+        store_solutions::Bool = true,
+        sweep_kwargs...
+    )
     results = Dict{Float64, Any}()
 
     for L in L_values
         hmin = 1.0e-6 * μm
-        hmax = 1.0    * μm
-        X    = ExtendableGrids.geomspace(0, L, hmin, hmax)
+        hmax = 1.0 * μm
+        X = ExtendableGrids.geomspace(0, L, hmin, hmax)
         grid = ExtendableGrids.simplexgrid(X)
 
         celldata = deepcopy(elydata)
         celldata.eneutral = eneutral
 
-        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction = reaction)
+        pnpcell = PNPSystem(grid; bcondition = bcond, celldata = celldata, reaction = reaction)
 
         saw = SawTooth(
             scanrate = sawtooth.scanrate,
-            vmin     = sawtooth.vmin,
-            vmax     = sawtooth.vmax,
-            scanup   = sawtooth.scanup
+            vmin = sawtooth.vmin,
+            vmax = sawtooth.vmax,
+            scanup = sawtooth.scanup
         )
 
         results[L] = cvsweep(
@@ -54,54 +51,54 @@ end
 
 
 function scanrate_varied_sweep(
-    elydata,
-    sawtooth,
-    grid,
-    bcond,
-    reaction;
-    nperiods = 1,
-    scanrates = [0.002, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0, 10.0],
-    eneutral = false,
-    sweep_kwargs...
-)
+        elydata,
+        sawtooth,
+        grid,
+        bcond,
+        reaction;
+        nperiods = 1,
+        scanrates = [0.002, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0, 10.0],
+        eneutral = false,
+        sweep_kwargs...
+    )
     sweep_vec = Vector{Any}(undef, length(scanrates))
-    saws      = Vector{Any}(undef, length(scanrates))
+    saws = Vector{Any}(undef, length(scanrates))
 
     for (i, sr) in pairs(scanrates)
         saw = SawTooth(
             scanrate = sr,
-            vmin     = sawtooth.vmin,
-            vmax     = sawtooth.vmax,
-            scanup   = sawtooth.scanup
+            vmin = sawtooth.vmin,
+            vmax = sawtooth.vmax,
+            scanup = sawtooth.scanup
         )
         saws[i] = saw
         celldata = deepcopy(elydata)
-        celldata.eneutral = eneutral    
+        celldata.eneutral = eneutral
 
-        pnpcell = PNPSystem(grid; bcondition=bcond, celldata=celldata, reaction = reaction)
+        pnpcell = PNPSystem(grid; bcondition = bcond, celldata = celldata, reaction = reaction)
         sweep_vec[i] = cvsweep(pnpcell; voltages = saw, nperiods, store_solutions = true)
     end
 
-    return (scanrates=scanrates, saws=saws, sweeps=sweep_vec)
+    return (scanrates = scanrates, saws = saws, sweeps = sweep_vec)
 end
 
 
 function run_pH_sweep(
-    elydata,
-    sawtooth,
-    grid,
-    bcond,
-    reaction;
-    nperiods = 1,
-    pH_values = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0],
-    hplus_index::Int = 2,
-    ohminus_index::Int = 6,
-    eneutral::Bool = false,
-    counter_index::Union{Nothing,Int} = nothing,
-    Kw::Float64 = 1.0e-14,
-    store_solutions::Bool = true,
-    sweep_kwargs...
-)
+        elydata,
+        sawtooth,
+        grid,
+        bcond,
+        reaction;
+        nperiods = 1,
+        pH_values = [3.0, 4.0, 5.0, 6.0, 6.8, 7.0, 8.0, 9.0],
+        hplus_index::Int = 2,
+        ohminus_index::Int = 6,
+        eneutral::Bool = false,
+        counter_index::Union{Nothing, Int} = nothing,
+        Kw::Float64 = 1.0e-14,
+        store_solutions::Bool = true,
+        sweep_kwargs...
+    )
     npH = length(pH_values)
     results = Vector{NamedTuple}(undef, npH)
 
@@ -120,10 +117,10 @@ function run_pH_sweep(
         @assert length(charges) == nsp "length(charges) != length(c_bulk)"
 
         # --- set H+ / OH- from pH
-        cH  = 10.0^(-pH)
+        cH = 10.0^(-pH)
         cOH = Kw / cH
 
-        ely.c_bulk[hplus_index]  = cH
+        ely.c_bulk[hplus_index] = cH
         ely.c_bulk[ohminus_index] = cOH
 
         # --- enforce electroneutrality by adjusting one counter ion
@@ -151,7 +148,7 @@ function run_pH_sweep(
             if c_counter_new < 0
                 error(
                     "electroneutral correction produced negative concentration " *
-                    "for counter_index=$counter_index at pH=$pH: $c_counter_new"
+                        "for counter_index=$counter_index at pH=$pH: $c_counter_new"
                 )
             end
 
@@ -203,22 +200,22 @@ function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutr
         voltages = sawtooth,
         nperiods,
         store_solutions = true,
-		kwargs...
+        kwargs...
     )
 
 end
 
 # ── moved from cell 9b8daa64 (cvsweep_compensated_over_L) ──
 function cvsweep_compensated_over_L(
-    model, bcondition, reaction;
-    sawtooth,
-    nperiods = 1,
-    L_values =[100, 500, 1000, 2000, 3000],
-    f_comp = 1.0,  # 1.0 means 100% compensation (ideal overlap)
-    Area = 0.000314,
-    store_solutions = true,
-    solver_kwargs...,
-)
+        model, bcondition, reaction;
+        sawtooth,
+        nperiods = 1,
+        L_values = [100, 500, 1000, 2000, 3000],
+        f_comp = 1.0,  # 1.0 means 100% compensation (ideal overlap)
+        Area = 0.000314,
+        store_solutions = true,
+        solver_kwargs...,
+    )
     results = Dict{Int, Any}()
 
     for L in L_values
@@ -248,7 +245,7 @@ function cvsweep_compensated_over_L(
         # R_compensated will be passed to cvsweep_COMP to 'undo' the voltage drop
         R_to_apply = R_bulk_theoretical * f_comp
 
-        @info "    Nodes: $(length(X)) | R_bulk: $(round(R_bulk_theoretical, digits=2)) Ω"
+        @info "    Nodes: $(length(X)) | R_bulk: $(round(R_bulk_theoretical, digits = 2)) Ω"
 
         # --- Execute Simulation ---
         results[L] = LiquidElectrolytes.cvsweep_COMP(
@@ -273,31 +270,33 @@ end
 
 # ── moved from cell d91c32c8 (cvsweep_odr_over_L) ──
 function cvsweep_odr_over_L(
-    elydata_odr, grid_dict, bcondition, reaction, sawtooth;
-    nperiods = 1,
-    store_solutions = true,
-    solver_kwargs...
-)
+        elydata_odr, grid_dict, bcondition, reaction, sawtooth;
+        nperiods = 1,
+        store_solutions = true,
+        ircompensation = :ohmicdrop,
+        solver_kwargs...
+    )
     results = Dict{Float64, Any}()
     L_values = sort(collect(keys(grid_dict)))
 
     for L in L_values
         grid = grid_dict[L]
-        X    = grid[Coordinates][1, :]
+        X = grid[Coordinates][1, :]
 
         celldata = deepcopy(elydata_odr)
-        celldata.Ru    = L / conductivity(celldata, celldata.c_bulk)
-        celldata.x_ref = [X[end], 0, 0]
+        celldata.Ru = L / conductivity(celldata, celldata.c_bulk)
+        celldata.x_ref = [5.0e-9, 0, 0]
+        celldata.ircompensation = ircompensation
 
-        @info ">>> :ohmicdrop sweep | L = $(L/μm) μm | Ru = $(round(celldata.Ru; digits=3)) Ω"
+        @info ">>> :ohmicdrop sweep | L = $(L / μm) μm | Ru = $(round(celldata.Ru; digits = 3)) Ω"
 
-        pnpcell = PNPSystem(grid; bcondition = bcondition, celldata = celldata, reaction = reaction)
-
-        results[L] = LiquidElectrolytes.cvsweep(
+        pnpcell = PNPSystem(grid; bcondition, celldata, reaction)
+        @info "i_ref=$(celldata.i_ref)"
+        @time results[L] = LiquidElectrolytes.cvsweep(
             pnpcell;
             voltages = sawtooth,
-            nperiods = nperiods,
-            store_solutions = store_solutions,
+            nperiods,
+            store_solutions,
             solver_kwargs...
         )
     end
@@ -322,7 +321,7 @@ Set `atol` relative to the species: the default 0.1 mol/m³ suits CO₂
 (`c_bulk ≈ 33 mol/m³`), but trace species (OH⁻, H⁺) need a much smaller `atol`.
 """
 function blthickness(grid, celldata, tsol; species = 5, atol = 1.0e-1)
-    X  = grid[XCoordinates]
+    X = grid[XCoordinates]
     cb = celldata.c_bulk[species]
     xbl = zero(eltype(X))
     for it in 1:length(tsol.t)
@@ -341,10 +340,10 @@ Time-resolved boundary-layer thickness: same criterion as [`blthickness`](@ref) 
 evaluated at every stored time. Returns `(times, δ)`.
 """
 function blthickness_t(grid, celldata, tsol; species = 5, atol = 1.0e-1)
-    X  = grid[XCoordinates]
+    X = grid[XCoordinates]
     cb = celldata.c_bulk[species]
-    t  = tsol.t
-    δ  = zeros(eltype(X), length(t))
+    t = tsol.t
+    δ = zeros(eltype(X), length(t))
     for it in eachindex(t)
         u = tsol[species, :, it]
         i = findlast(c -> abs(c - cb) > atol, u)
@@ -354,5 +353,4 @@ function blthickness_t(grid, celldata, tsol; species = 5, atol = 1.0e-1)
 end
 
 
-
- # module?
+# module?

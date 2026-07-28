@@ -138,7 +138,7 @@ elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction 
     actcoeff! = γ,
     # `redoxreaction` must be set at construction (its field is concretely typed and
     # cannot be reassigned later). Splat it in only when provided.
-    (redoxreaction === nothing ? NamedTuple() : (; redoxreaction))...,
+    redoxreaction = redoxreaction #(redoxreaction === nothing ? NamedTuple() : (; redoxreaction))...,
 )
 
 function DGML_γ!(γ, c, p, electrolyte)
