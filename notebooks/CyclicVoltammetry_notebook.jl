@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.1
 
 using Markdown
 using InteractiveUtils
@@ -35,6 +35,9 @@ begin
     end
 end;
 
+# ╔═╡ 8e524886-b0fb-49b0-b6fa-f3bfcc2a1bd7
+TableOfContents()
+
 # ╔═╡ ea90b4a5-6709-4a85-87de-b71fe87e71f7
 md"""
 ## Setup
@@ -67,7 +70,8 @@ end
 # ╔═╡ d011050d-c66e-4e8a-a173-f55679403a90
 begin
 	sawtooth = SawTooth(
-	        scanrate = 0.05,
+	        scanrate = 1,
+#	        scanrate = 0.05,
 	        vmin     = -1.2, 
 	        vmax     = 0.8,
 	        scanup   = false,
@@ -80,8 +84,8 @@ end
 begin
     #Vmax = 2 * V
     L = 7500 * μm
-    hmin = 1.0e-6 	* μm
-    hmax = 50 * μm
+    hmin = 1.0e-7 	* μm
+    hmax = 0.1*L
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
@@ -90,12 +94,20 @@ end
 # ╔═╡ bcfc1e78-c1e9-4538-890a-35e74bfc4060
 elystruct_unc = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
 
+# ╔═╡ 2fe95a9f-202e-418a-b422-cef1ef013c9d
+md"""
+### Set IR Compensation
+"""
+
+# ╔═╡ 8626e977-a77f-4646-be99-33e713dbf593
+ircompensation=:pseudopotentiostat
+
 # ╔═╡ 0963720a-e310-45b2-92a5-a9e5bc3e6888
 begin
-    elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation = :ohmicdrop)
+    elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation)
     ely_odr = elystruct_odr.elydata
     ely_odr.Ru           = L / LiquidElectrolytes.conductivity(ely_odr, ely_odr.c_bulk)
-    ely_odr.ircompfactor = 0.0      
+    
     elystruct_odr
 end
 
@@ -127,9 +139,6 @@ cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods = nperiods)
 
 # ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
-
-# ╔═╡ 144c4dec-4cdf-440c-94da-38f6fb25742d
-
 
 # ╔═╡ bd9b5c58-0375-4ce2-aa55-c74b921aa050
 let
@@ -174,29 +183,37 @@ let
     fig
 end
 
-# ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
+# ╔═╡ 01f688a7-3265-4bc5-9b74-6eedfc36476d
 begin
 	grid_dict = Dict{Float64, Any}()
 	for Lv in [1000, 2500, 5000, 10000, 15000, 20000] .* μm
-	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-6*μm, Lv*0.02)
+	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-7*μm, Lv*0.1)
 	    grid_dict[Lv] = ExtendableGrids.simplexgrid(Xg)
 	end
-	
+	grid_dict
+end
+
+# ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
+begin
 	results = cvsweep_odr_over_L(
 	    elystruct_odr.elydata,       
 	    grid_dict,
 	    elystruct_odr.bcondition,
 	    elystruct_odr.reaction,
 	    sawtooth;
-	    nperiods = nperiods,
+		ircompensation,
+	    nperiods,
+		Δu_opt=0.025,
+		Δt_min=1.0e-7
 	)
-	
-	
 end
 
 # ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
-AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 7)
-
+let
+	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 6)
+	CairoMakie.save("cv-$(ircompensation).png",fig)
+	fig
+end
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm
@@ -258,7 +275,7 @@ let
             elystruct_odr;     # m  → m.elydata (cspecies, capacitive-term mode)
             include_capacitive = false,   # ★ recommend false when the modes differ (see note below)
 			#xlims = (0, 10),
-            ylims = (-1e-7, 1e-7)
+         #   ylims = (-1e-8, 1e-8)
         )
         f
     end
@@ -267,6 +284,7 @@ end
 
 # ╔═╡ Cell order:
 # ╠═8d20515c-54c6-11f1-aeac-bdc0c7e51b18
+# ╠═8e524886-b0fb-49b0-b6fa-f3bfcc2a1bd7
 # ╟─ea90b4a5-6709-4a85-87de-b71fe87e71f7
 # ╟─4b663702-b895-4a84-b065-0673e287b0ca
 # ╠═0854d2c7-1b61-46b0-aa0a-496cdc8439f2
@@ -275,6 +293,8 @@ end
 # ╠═d011050d-c66e-4e8a-a173-f55679403a90
 # ╠═035cf151-b62a-42ee-8b03-38e68fc4e4b3
 # ╠═bcfc1e78-c1e9-4538-890a-35e74bfc4060
+# ╟─2fe95a9f-202e-418a-b422-cef1ef013c9d
+# ╠═8626e977-a77f-4646-be99-33e713dbf593
 # ╠═0963720a-e310-45b2-92a5-a9e5bc3e6888
 # ╠═f4f59329-e817-495a-9e83-1ab53e7738a9
 # ╠═590a17bd-c98d-4b23-9139-04b550c95efe
@@ -282,9 +302,9 @@ end
 # ╠═e2eb4160-550a-4a07-b4c8-66863aaab46f
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
 # ╠═f77ec140-e091-46c1-8bc6-1c00f3880e83
-# ╠═144c4dec-4cdf-440c-94da-38f6fb25742d
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
+# ╠═01f688a7-3265-4bc5-9b74-6eedfc36476d
 # ╠═cf4713e6-706c-484f-b398-8ba6cc33561b
 # ╠═affdc880-3a70-429a-bcfb-a53cf7ed1f31
 # ╠═6301f323-16d8-4805-bbcf-4a055bca2d59
