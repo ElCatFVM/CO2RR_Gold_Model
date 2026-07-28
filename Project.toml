@@ -1,7 +1,7 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 version = "0.2.0"
+authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -53,8 +53,8 @@ HypertextLiteral = "1"
 Interpolations = "0.16.2"
 Latexify = "0.16"
 LessUnitful = "1"
-LinearSolve = "2, 3"
-LiquidElectrolytes = "2.7"
+LinearSolve = "2, 3, 4, 5"
+LiquidElectrolytes = "2.7.1"
 Makie = "0.24.10"
 ModelingToolkit = "9,10"
 NLsolve = "4"
