@@ -70,7 +70,7 @@ end
 # ╔═╡ d011050d-c66e-4e8a-a173-f55679403a90
 begin
 	sawtooth = SawTooth(
-	        scanrate = 1,
+	        scanrate = 0.05,
 #	        scanrate = 0.05,
 	        vmin     = -1.2, 
 	        vmax     = 0.8,
@@ -96,7 +96,12 @@ elystruct_unc = GoldModel.create_model(;use_md_hydrated = false, γ_select = "St
 
 # ╔═╡ 2fe95a9f-202e-418a-b422-cef1ef013c9d
 md"""
-### Set IR Compensation
+### Set IR compensation mode
+Choose between
+- `:none`: No IR compensation
+- `:pseudopotentiostat`: "measure" voltage at point `x_ref` and and add this to applied voltage at 0
+- `:ohmicdrop`: Estimate voltage to add to applied voltage R_u from current of species `ircompspecies` and uncompensated resistance `Ru`.
+
 """
 
 # ╔═╡ 8626e977-a77f-4646-be99-33e713dbf593
@@ -107,7 +112,8 @@ begin
     elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation)
     ely_odr = elystruct_odr.elydata
     ely_odr.Ru           = L / LiquidElectrolytes.conductivity(ely_odr, ely_odr.c_bulk)
-    
+    ely_odr.ircompspecies = 5
+    ely_odr.ircompnelectrons = 2
     elystruct_odr
 end
 
@@ -187,7 +193,7 @@ end
 begin
 	grid_dict = Dict{Float64, Any}()
 	for Lv in [1000, 2500, 5000, 10000, 15000, 20000] .* μm
-	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-7*μm, Lv*0.1)
+	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-8*μm, Lv*0.1)
 	    grid_dict[Lv] = ExtendableGrids.simplexgrid(Xg)
 	end
 	grid_dict
@@ -203,10 +209,20 @@ begin
 	    sawtooth;
 		ircompensation,
 	    nperiods,
-		Δu_opt=0.025,
-		Δt_min=1.0e-7
+		Δu_opt=0.01,
+		Δt_min=1.0e-8
 	)
 end
+
+# ╔═╡ 5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
+md"""
+## CV PLot
+"""
+
+# ╔═╡ 10f53667-3c87-4be9-90c9-72ff75f8e5ab
+md"""
+IR compensation mode=:$(ircompensation)
+"""
 
 # ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
 let
@@ -214,6 +230,11 @@ let
 	CairoMakie.save("cv-$(ircompensation).png",fig)
 	fig
 end
+
+# ╔═╡ 1ea52fc4-0921-43ea-88e4-04fadee047f9
+[
+	L=>blthickness(grid, elystruct_odr.elydata, results[L].tsol; species=5)/μm
+	for L in sort(keys(grid_dict))]
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm
@@ -306,7 +327,10 @@ end
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
 # ╠═01f688a7-3265-4bc5-9b74-6eedfc36476d
 # ╠═cf4713e6-706c-484f-b398-8ba6cc33561b
+# ╟─5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
+# ╟─10f53667-3c87-4be9-90c9-72ff75f8e5ab
 # ╠═affdc880-3a70-429a-bcfb-a53cf7ed1f31
+# ╠═1ea52fc4-0921-43ea-88e4-04fadee047f9
 # ╠═6301f323-16d8-4805-bbcf-4a055bca2d59
 # ╠═6f56453e-384b-4be6-9298-8101d12d8b79
 # ╠═9bd12311-fbe8-436b-8c14-18edb5744929
