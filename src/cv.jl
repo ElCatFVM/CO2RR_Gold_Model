@@ -285,13 +285,15 @@ function cvsweep_odr_over_L(
 
         celldata = deepcopy(elydata_odr)
         celldata.Ru = L / conductivity(celldata, celldata.c_bulk)
-        celldata.x_ref = [5.0e-9, 0, 0]
+        celldata.x_ref = [10.0e-9, 0, 0]
         celldata.ircompensation = ircompensation
+        celldata.ircompspecies = 5
+        celldata.ircompnelectrons = 2
 
-        @info ">>> :ohmicdrop sweep | L = $(L / μm) μm | Ru = $(round(celldata.Ru; digits = 3)) Ω"
+        @info ">>> :$(ircompensation) sweep | L = $(L / μm) μm | Ru = $(round(celldata.Ru; digits = 3)) Ω"
 
         pnpcell = PNPSystem(grid; bcondition, celldata, reaction)
-        @info "i_ref=$(celldata.i_ref)"
+        @info "i_ref=$(celldata.i_ref), x_ref=$(X[celldata.i_ref])"
         @time results[L] = LiquidElectrolytes.cvsweep(
             pnpcell;
             voltages = sawtooth,
