@@ -1759,7 +1759,7 @@ function plot_cv_current_variedL(
 
     for (i, L) in enumerate(Lkeys)
         I = currents(results[L], sp) .* scale ./ 2
-        @info "L=$L: |voltage over DL - sawtooth|:   $(norm(results[L].dlvoltages - results[L].sawtooth),Inf)"
+        @info "L=$L: |voltage over DL - sawtooth|:   $(norm(results[L].dlvoltages - results[L].sawtooth,Inf))"
         lines!(
             ax, results[L].dlvoltages, I;
             color = cols[i], linewidth = linewidth,
