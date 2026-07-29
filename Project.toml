@@ -36,6 +36,9 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 VoronoiFVM = "82b139dc-5afc-11e9-35da-9b9bdfd336f3"
 
+[sources]
+LiquidElectrolytes = {path = "/home/fuhrmann/Wias/work/julia/dev/LiquidElectrolytes"}
+
 [compat]
 CSV = "0.10"
 CairoMakie = "0.14, 0.15"
@@ -53,8 +56,9 @@ HypertextLiteral = "1"
 Interpolations = "0.16.2"
 Latexify = "0.16"
 LessUnitful = "1"
+LinearAlgebra = "1.13.0"
 LinearSolve = "2, 3, 4, 5"
-LiquidElectrolytes = "2.7.1"
+LiquidElectrolytes = "2.8.0"
 Makie = "0.24.10"
 ModelingToolkit = "9,10"
 NLsolve = "4"
