@@ -233,7 +233,7 @@ end
 
 # ╔═╡ 1ea52fc4-0921-43ea-88e4-04fadee047f9
 [
-	L=>blthickness(grid, elystruct_odr.elydata, results[L].tsol; species=5)/μm
+	L=>blthickness(grid_dict[L], elystruct_odr.elydata, results[L].tsol; species=5, atol=5.0e-2)/μm
 	for L in sort(keys(grid_dict))]
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
