@@ -273,7 +273,7 @@ function cvsweep_odr_over_L(
         elydata_odr, grid_dict, bcondition, reaction, sawtooth;
         nperiods = 1,
         store_solutions = true,
-        ircompensation = :ohmicdrop,
+        unknown_storage = :dense,
         solver_kwargs...
     )
     results = Dict{Float64, Any}()
@@ -281,19 +281,17 @@ function cvsweep_odr_over_L(
 
     for L in L_values
         grid = grid_dict[L]
-        X = grid[Coordinates][1, :]
+        if isa(elydata_odr.ircompensation, OhmicDropEstimation)
+            Ru=L/conductivity(elydata_odr, elydata_odr.c_bulk)
+            celldata=copy(elydata_odr;
+                          ircompensation=copy(elydata_odr.ircompensation;Ru=Ru)
+                          )
+        else
+            celldata=copy(elydata_odr)
+        end
+        @info ">>> :$(celldata.ircompensation) sweep | L = $(L / μm) μm"
 
-        celldata = deepcopy(elydata_odr)
-        celldata.Ru = L / conductivity(celldata, celldata.c_bulk)
-        celldata.x_ref = [10.0e-9, 0, 0]
-        celldata.ircompensation = ircompensation
-        celldata.ircompspecies = 5
-        celldata.ircompnelectrons = 2
-
-        @info ">>> :$(ircompensation) sweep | L = $(L / μm) μm | Ru = $(round(celldata.Ru; digits = 3)) Ω"
-
-        pnpcell = PNPSystem(grid; bcondition, celldata, reaction)
-        @info "i_ref=$(celldata.i_ref), x_ref=$(X[celldata.i_ref])"
+        pnpcell = PNPSystem(grid; bcondition, celldata, reaction, unknown_storage)
         @time results[L] = LiquidElectrolytes.cvsweep(
             pnpcell;
             voltages = sawtooth,

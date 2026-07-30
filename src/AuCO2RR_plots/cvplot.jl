@@ -1015,7 +1015,7 @@ function plot_cv_total_current_tot(
     # ---- Capacitive current ----
     I_C = zeros(n_t)
     if include_capacitive
-        if electrolyte.ircompensation == :ohmicdrop
+        if isa(electrolyte.ircompensation, OhmicDropEstimation())
             icc = electrolyte.icc
             node_we = 1
             I_C = [u[icc, node_we] for u in result.tsol[1:n_t]]
@@ -1171,7 +1171,7 @@ function plot_cv_scanrate_grid(
         end
 
         I_C = zeros(n_t)
-        if include_capacitive && electrolyte.ircompensation == :ohmicdrop
+        if include_capacitive && isa(electrolyte.ircompensation,OhmicDropEstimation)
             icc = electrolyte.icc
             I_C = [u[icc, 1] for u in res.tsol[1:n_t]]
         end
@@ -1266,7 +1266,7 @@ function plot_cv_scanrate_grid_unc(
         end
 
         I_C = zeros(n_t)
-        if include_capacitive && electrolyte.ircompensation == :ohmicdrop
+        if include_capacitive && isa(electrolyte.ircompensation, OhmicDropEstimation)
             icc = electrolyte.icc
             I_C = [u[icc, 1] for u in res.tsol[1:n_t]]
         end
@@ -1320,7 +1320,7 @@ function plot_scanrate_sweeps_cv_2(
         # 2. add capacitive current
         I_C = zeros(n_t)
         if include_capacitive
-            if electrolyte.ircompensation == :ohmicdrop
+            if isa(electrolyte.ircompensation, OhmicDropEstimation)
                 icc = electrolyte.icc
                 node_we = 1
                 I_C = [u[icc, node_we] for u in rec.tsol[1:n_t]]
@@ -1759,7 +1759,7 @@ function plot_cv_current_variedL(
 
     for (i, L) in enumerate(Lkeys)
         I = currents(results[L], sp) .* scale ./ 2
-        @info "L=$L: |voltage over DL - sawtooth|:   $(norm(results[L].dlvoltages - results[L].sawtooth,Inf))"
+        @info "L=$L: |voltage over DL - sawtooth|:   $(norm(results[L].dlvoltages - results[L].sawtooth, Inf))"
         lines!(
             ax, results[L].dlvoltages, I;
             color = cols[i], linewidth = linewidth,
@@ -1949,7 +1949,7 @@ function panel_time_current!(
     I_C = zeros(n_t)
     if include_capacitive
         ely = model
-        if ely.ircompensation == :ohmicdrop
+        if isa(ely.ircompensation, OhmicDropEstimation)
             icc = ely.icc
             node_we = 1
             I_C = [u[icc, node_we] for u in result.tsol[1:(end - 1)]]
@@ -2254,7 +2254,7 @@ function plot_cv_total_current(
     I_C = zeros(n_t)
     if include_capacitive
         ely = model
-        if ely.ircompensation == :ohmicdrop
+        if isa(ely.ircompensation, OhmicDropEstimation)
             icc = ely.icc
             node_we = 1   # working-electrode boundary node (Γ_we = 1)
             I_C = [u[icc, node_we] for u in result.tsol[1:(end - 1)]]
@@ -2353,7 +2353,7 @@ function plot_combined_exp_sim_ivc(
         I_C = zeros(n_t)
         if include_capacitive
             ely = electrolyte
-            if ely.ircompensation == :ohmicdrop
+            if isa(ely.ircompensation , OhmicDropEstimation)
                 icc = ely.icc
                 node_we = 1
                 I_C = [u[icc, node_we] for u in rec.tsol[1:(end - 1)]]
@@ -2390,5 +2390,72 @@ function plot_combined_exp_sim_ivc(
         fontsize = 28, font = :bold, padding = (0, 5, 20, 0)
     )
     rowgap!(fig.layout, 1, 15)
+    return fig
+end
+
+
+function plottsol(
+        grd, celldata, tsol; xsplit = 5ufac"nm",
+        species = celldata.iϕ,
+        limits = nothing,
+        figscale = 1,
+        stride = 1,
+        levels = 5
+    )
+    label = "C/(mol/dm^3)"
+
+    X = grd[XCoordinates]
+    wl = 100
+    hy = 250
+    wr = log10(X[end] * figscale / ufac"nm") * 40
+    figsize = (wl + wr + 200, hy)
+    fig = Figure(size = figsize, fontsize = 5)
+    axl = Axis(
+        fig[1, 1],
+        xlabel = L"x/nm",
+        ylabel = L"t/s",
+    )
+    xlims!(axl, 0, 10)
+    axr = Axis(
+        fig[1, 2],
+        yticksvisible = false,
+        yticklabelsvisible = false,
+        xscale = log10,
+        xlabel = L"x/nm",
+    )
+
+
+    xlims!(axr, 10, X[end] / ufac"nm")
+    #	hidedecorations!(axl)
+    #	hidedecorations!(axr)
+    colorscale = identity
+    colormap = :terrain
+    scale = 1 / ufac"mol/dm^3"
+    if species == celldata.iϕ
+        colorscale = identity
+        colormap = :seismic
+        scale = 1
+    end
+    T = tsol.t
+    nx = length(X)
+    nt = length(T)
+    u = [tsol[species, ix, it] for ix in 1:stride:nx, it in 1:stride:nt ] * scale
+    x = [X[ix] / ufac"nm" for ix in 1:stride:nx, it in 1:stride:nt ]
+    y = [T[it] for ix in 1:stride:nx, it in 1:stride:nt ]
+    if isnothing(limits)
+        limits = extrema(u)
+    end
+    lvs = range(limits..., length = levels)
+
+    contourf!(axl, x, y, u; levels = lvs, colormap, colorscale)
+    cr = contourf!(axr, x, y, u; levels = lvs, colormap, colorscale)
+    Colorbar(fig[1, 3], cr; label)
+
+    colgap!(fig.layout, 2)
+    colsize!(fig.layout, 1, Fixed(wl))
+    colsize!(fig.layout, 2, Fixed(wr))
+    colsize!(fig.layout, 3, Fixed(40))
+    rowsize!(fig.layout, 1, Fixed(hy))
+
     return fig
 end
