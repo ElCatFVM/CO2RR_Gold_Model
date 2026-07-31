@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.1
 
 using Markdown
 using InteractiveUtils
@@ -11,29 +11,27 @@ begin
 	using Revise
     using LiquidElectrolytes
 	using AuCO2RR, AuCO2RR.AuCO2RR_plots
-	using CatmapInterface
-	using Catalyst#: unknowns
 	using VoronoiFVM
 	using LessUnitful
 	using ExtendableGrids, GridVisualize
 	using DelimitedFiles
 	using Interpolations
 	using PlutoUI, HypertextLiteral
-	using PreallocationTools
 	using Latexify
-	using Catalyst
 	using Printf
 	using Test
 	using LinearAlgebra
 	using Colors
 	using FileIO
-	using CSV, DataFrames
 	if isdefined(Main,:PlutoRunner)
         using CairoMakie	
    		default_plotter!(CairoMakie)
  		CairoMakie.activate!(type="svg")
     end
 end;
+
+# ╔═╡ 8e524886-b0fb-49b0-b6fa-f3bfcc2a1bd7
+TableOfContents()
 
 # ╔═╡ ea90b4a5-6709-4a85-87de-b71fe87e71f7
 md"""
@@ -68,6 +66,7 @@ end
 begin
 	sawtooth = SawTooth(
 	        scanrate = 0.05,
+#	        scanrate = 0.05,
 	        vmin     = -1.2, 
 	        vmax     = 0.8,
 	        scanup   = false,
@@ -79,28 +78,59 @@ end
 # ╔═╡ 035cf151-b62a-42ee-8b03-38e68fc4e4b3
 begin
     #Vmax = 2 * V
-    L = 7500 * μm
-    hmin = 1.0e-6 	* μm
-    hmax = 50 * μm
+    L = 1000 * μm
+    hmin = 1.0e-7 	* μm
+    hmax = 0.1*L
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
 end
 
 # ╔═╡ bcfc1e78-c1e9-4538-890a-35e74bfc4060
-elystruct_unc = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
+elystruct_unc = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = NoIRCompensation())
+
+# ╔═╡ 530ed232-5e1a-4c0a-85c2-6bea12824c71
+σ=conductivity(elystruct_unc.elydata, elystruct_unc.elydata.c_bulk)
+
+# ╔═╡ 2fe95a9f-202e-418a-b422-cef1ef013c9d
+md"""
+### Set IR compensation mode
+Choose between
+- `:none`: No IR compensation
+- `:pseudopotentiostat`: "measure" voltage at point `x_ref` and and add this to applied voltage at 0
+- `:ohmicdrop`: Estimate voltage to add to applied voltage R_u from current of species `ircompspecies` and uncompensated resistance `Ru`.
+
+"""
+
+# ╔═╡ 8626e977-a77f-4646-be99-33e713dbf593
+begin
+    ircomp=:ohmicdrop
+    
+if  ircomp==:none
+        ircompensation=NoIRCompensation()
+elseif ircomp==:pseudopotentiostat
+        ircompensation=PseudoPotentiostat()
+elseif ircomp==:ohmicdrop
+    ircompensation=OhmicDropEstimation(
+                          Ru = L / σ,
+                          species=5,
+                          ne=2,
+        factor=0.99
+    )
+else
+    error("wrong value of ircompensation: $ircomp")
+end
+end
 
 # ╔═╡ 0963720a-e310-45b2-92a5-a9e5bc3e6888
+
 begin
-    elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation = :ohmicdrop)
-    ely_odr = elystruct_odr.elydata
-    ely_odr.Ru           = L / LiquidElectrolytes.conductivity(ely_odr, ely_odr.c_bulk)
-    ely_odr.ircompfactor = 0.0      
+    elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation)
     elystruct_odr
 end
 
 # ╔═╡ f4f59329-e817-495a-9e83-1ab53e7738a9
-function sweep(model, grid, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
+function sweep(model, grid, sawtooth; nperiods = 1,kwargs...)
     celldata = deepcopy(model.elydata)   # copy the electrolyte → each run is independent
     pnpcell = PNPSystem(grid; bcondition = model.bcondition, celldata = celldata, reaction = model.reaction)
     return result = cvsweep(
@@ -127,9 +157,6 @@ cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods = nperiods)
 
 # ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
-
-# ╔═╡ 144c4dec-4cdf-440c-94da-38f6fb25742d
-
 
 # ╔═╡ bd9b5c58-0375-4ce2-aa55-c74b921aa050
 let
@@ -174,29 +201,80 @@ let
     fig
 end
 
-# ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
+# ╔═╡ 59ec47b9-2a47-4350-b708-ca7a980bbdb2
+md"""
+## CV Solution
+"""
+
+# ╔═╡ 01f688a7-3265-4bc5-9b74-6eedfc36476d
 begin
 	grid_dict = Dict{Float64, Any}()
 	for Lv in [1000, 2500, 5000, 10000, 15000, 20000] .* μm
-	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-6*μm, Lv*0.02)
+	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-7*μm, Lv*0.1)
 	    grid_dict[Lv] = ExtendableGrids.simplexgrid(Xg)
 	end
-	
+	grid_dict
+end
+
+# ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
+begin
 	results = cvsweep_odr_over_L(
 	    elystruct_odr.elydata,       
 	    grid_dict,
 	    elystruct_odr.bcondition,
 	    elystruct_odr.reaction,
 	    sawtooth;
-	    nperiods = nperiods,
+		unknown_storage=:dense,
+	    nperiods,
+		Δu_opt=0.025,
+	#	Δt_min=1.0e-8,
+	#	damp_initial=0.5
 	)
-	
-	
 end
 
-# ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
-AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 7)
+# ╔═╡ 5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
+md"""
+## CV PLot
+"""
 
+# ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
+let
+	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 6)
+	CairoMakie.save("cv-$(ircomp).png",fig)
+	fig
+end
+
+# ╔═╡ 2f128f25-d629-44b5-bcb7-d3b9d59362ea
+Lmax=sort(keys(grid_dict))[end]
+
+# ╔═╡ 0fb39632-67a5-4780-a3d4-71c51bd9a3c3
+function fixed(fig)
+    @htl("""
+    <div style="
+        display: inline-block;
+        align-self: flex-start;
+        flex: 0 0 auto;
+    ">
+        $(fig)
+    </div>
+    """)
+end
+
+# ╔═╡ b5abb13d-b6e4-4a47-a4b0-d099588b1b60
+plots=[AuCO2RR_plots.plottsol(grid_dict[L],
+					   elystruct_odr.elydata, 
+					   results[L].tsol;
+							  figscale=L/Lmax,
+							  stride=3, # xscale=log10 is slow
+					   species=5, levels=15)|>fixed for L in sort(keys(grid_dict))];
+
+# ╔═╡ c2e9573b-2105-4930-9f17-5a3bf3fe7058
+PlutoUI.ExperimentalLayout.vbox(plots)
+
+# ╔═╡ 1ea52fc4-0921-43ea-88e4-04fadee047f9
+[
+	L=>blthickness(grid_dict[L], elystruct_odr.elydata, results[L].tsol; species=5, atol=5.0e-2)/μm
+	for L in sort(keys(grid_dict))]
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm
@@ -258,7 +336,7 @@ let
             elystruct_odr;     # m  → m.elydata (cspecies, capacitive-term mode)
             include_capacitive = false,   # ★ recommend false when the modes differ (see note below)
 			#xlims = (0, 10),
-            ylims = (-1e-7, 1e-7)
+         #   ylims = (-1e-8, 1e-8)
         )
         f
     end
@@ -267,6 +345,7 @@ end
 
 # ╔═╡ Cell order:
 # ╠═8d20515c-54c6-11f1-aeac-bdc0c7e51b18
+# ╠═8e524886-b0fb-49b0-b6fa-f3bfcc2a1bd7
 # ╟─ea90b4a5-6709-4a85-87de-b71fe87e71f7
 # ╟─4b663702-b895-4a84-b065-0673e287b0ca
 # ╠═0854d2c7-1b61-46b0-aa0a-496cdc8439f2
@@ -275,6 +354,9 @@ end
 # ╠═d011050d-c66e-4e8a-a173-f55679403a90
 # ╠═035cf151-b62a-42ee-8b03-38e68fc4e4b3
 # ╠═bcfc1e78-c1e9-4538-890a-35e74bfc4060
+# ╠═530ed232-5e1a-4c0a-85c2-6bea12824c71
+# ╟─2fe95a9f-202e-418a-b422-cef1ef013c9d
+# ╠═8626e977-a77f-4646-be99-33e713dbf593
 # ╠═0963720a-e310-45b2-92a5-a9e5bc3e6888
 # ╠═f4f59329-e817-495a-9e83-1ab53e7738a9
 # ╠═590a17bd-c98d-4b23-9139-04b550c95efe
@@ -282,11 +364,18 @@ end
 # ╠═e2eb4160-550a-4a07-b4c8-66863aaab46f
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
 # ╠═f77ec140-e091-46c1-8bc6-1c00f3880e83
-# ╠═144c4dec-4cdf-440c-94da-38f6fb25742d
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
+# ╟─59ec47b9-2a47-4350-b708-ca7a980bbdb2
+# ╠═01f688a7-3265-4bc5-9b74-6eedfc36476d
 # ╠═cf4713e6-706c-484f-b398-8ba6cc33561b
+# ╟─5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
 # ╠═affdc880-3a70-429a-bcfb-a53cf7ed1f31
+# ╠═2f128f25-d629-44b5-bcb7-d3b9d59362ea
+# ╠═0fb39632-67a5-4780-a3d4-71c51bd9a3c3
+# ╠═b5abb13d-b6e4-4a47-a4b0-d099588b1b60
+# ╠═c2e9573b-2105-4930-9f17-5a3bf3fe7058
+# ╠═1ea52fc4-0921-43ea-88e4-04fadee047f9
 # ╠═6301f323-16d8-4805-bbcf-4a055bca2d59
 # ╠═6f56453e-384b-4be6-9298-8101d12d8b79
 # ╠═9bd12311-fbe8-436b-8c14-18edb5744929

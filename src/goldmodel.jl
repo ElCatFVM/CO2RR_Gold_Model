@@ -72,6 +72,7 @@ Base.@kwdef struct ReactionData
     C_gap::Float64 = 20 * ufac"μF / cm^2"
     ϕ_pzc::Float64 = 0.16 * ufac"V"
     v0::Float64 = ph"N_A" * (8.2 * 1.0e-1 * ufac"nm")^3 #18.048 * ufac"cm^3/mol"# # 1 / (55.4 * ufac"M") #
+    xref::Float64=10* ufac"nm" # reference electrode position
 end
 
 function make_species_dict(specieslayout)
@@ -117,7 +118,7 @@ elydata_NaF() = ElectrolyteData(
     v0 = 18.048 * ufac"cm^3" / ufac"mol",
 )
 
-elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction = nothing) = ElectrolyteData(;
+elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteData(;
     nc = size(bulk)[1],
     na = specieslayout.na,
     z = getproperty.(bulk, :z),
@@ -135,10 +136,8 @@ elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction 
     C_gap = reactiondata.C_gap,
     ϕ_pzc = reactiondata.ϕ_pzc,
     ircompensation = ircompensation,
+    xref=[reactiondata.xref],
     actcoeff! = γ,
-    # `redoxreaction` must be set at construction (its field is concretely typed and
-    # cannot be reassigned later). Splat it in only when provided.
-    (redoxreaction === nothing ? NamedTuple() : (; redoxreaction))...,
 )
 
 function DGML_γ!(γ, c, p, electrolyte)
@@ -169,7 +168,7 @@ Base.@kwdef struct BulkSpecies
     name::String = ""
     z::Int = 0
     D::Float64 = 1.0e-9 * ufac"m^2/s"
-    c_bulk::Union{Nothing, Float64} = nothing 
+    c_bulk::Union{Nothing, Float64} = nothing
     κ::Float64 = 0
     a::Float64 = 1.0 # Å
     v::Float64 = v = ph"N_A" * (a * 1.0e-1 * ufac"nm")^3
@@ -270,7 +269,7 @@ function create_model(;
         use_md_hydrated = true,
         BC_model = :Robin,
         model = :Gold,
-        ircompensation = :none,
+        ircompensation = NoIRCompensation(),
         specieslayout = SpeciesLayout(),
         reactiondata = ReactionData()
     )
@@ -362,13 +361,13 @@ function create_model(;
         a_K = 8.2;  κ_K = 0
     elseif use_md_hydrated == false && γ == Stefan_γ!
         println("Same_size_MPB_Stefan")
-        a_HCO3  = 8.2      ;  κ_HCO3    = 0
-        a_CO3   = 8.2      ;  κ_CO3     = 0
-        a_CO2   = 8.2      ;  κ_CO2     = 0
-        a_OH    = 8.2      ;  κ_OH      = 0
-        a_H     = 8.2      ;  κ_H       = 0
-        a_CO    = 8.2      ;  κ_CO      = 0
-        a_K     = 8.2      ;  κ_K       = 0
+        a_HCO3 = 8.2      ;  κ_HCO3 = 0
+        a_CO3 = 8.2      ;  κ_CO3 = 0
+        a_CO2 = 8.2      ;  κ_CO2 = 0
+        a_OH = 8.2      ;  κ_OH = 0
+        a_H = 8.2      ;  κ_H = 0
+        a_CO = 8.2      ;  κ_CO = 0
+        a_K = 8.2      ;  κ_K = 0
     else
         error("undefined case:  use_md_hydrated = $(use_md_hydrated), γ=$(γ)")
     end
@@ -485,7 +484,7 @@ function create_model(;
             bnode,
             data
         )
-        (; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, ε, cspecies, actcoeff!) = data
+        (; ip, iϕ, v0, v, M0, M, κ, RT, nc, pscale, p_bulk, ϕ_we, iϕ_we, ε, cspecies, actcoeff!) = data
 
         γ = get_tmp(γ_cache, u[1])
         actcoeff!(γ, u, u[ip], data)
@@ -493,10 +492,15 @@ function create_model(;
         γ_co2 = γ[specieslayout.ico2]
         γ_co = γ[specieslayout.ico]
 
+        if isactive(data.ircompensation)
+            ϕ_we_set = u[iϕ_we]
+        else
+            ϕ_we_set = ϕ_we
+        end
         #ρ = F .* sum(z[k] .* u[k] for k in 1:cspecies)
 
         if BC_model == :Robin
-            σ = reactiondata.C_gap * (data.ϕ_we - reactiondata.ϕ_pzc - u[data.iϕ])
+            σ = reactiondata.C_gap * (ϕ_we_set - reactiondata.ϕ_pzc - u[data.iϕ])
         else
             σ = calc_QBL_local(u, data)
         end
@@ -516,7 +520,7 @@ function create_model(;
         ps[paramsidx[Symbolics.rename(odesys.γCO2_aq, :γCO2_aq)]] = γ_co2
         ps[paramsidx[Symbolics.rename(odesys.aH2O_g, :aH2O_g)]] = reactiondata.aH₂O
         ps[paramsidx[Symbolics.rename(odesys.ϕ, :ϕ)]] = u[iϕ]
-        ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we
+        ps[paramsidx[Symbolics.rename(odesys.ϕ_we, :ϕ_we)]] = ϕ_we_set
         ps[paramsidx[Symbolics.rename(odesys.local_pH, :local_pH)]] = local_pH
         ps[paramsidx[Symbolics.rename(odesys.γCO_aq, :γCO_aq)]] = γ_co
         ps[paramsidx[Symbolics.rename(odesys.βCOOHΔH2OΔele_t, :βCOOHΔH2OΔele_t)]] = 0.59
@@ -543,7 +547,6 @@ function create_model(;
         #if ϕ_we == -0.9
         #	println(u[isurfacestart:isurfaceend])
         #end
-
 
         #            global coeff = u[isurfacestart:isurfaceend]
         # conversion from turnover frequency (appropriate for change in coverage) to
@@ -588,7 +591,7 @@ function create_model(;
         if bnode.region == Γ_we
             # --- Working-electrode potential BC ---
             # For :pseudopotentiostat / :ohmicdrop, LiquidElectrolytes' generic
-            if ircompensation == :none
+            if !isactive(ircompensation)
                 if BC_model == :Dirichlet
                     boundary_dirichlet!(f, u, bnode, species = iϕ, region = Γ_we, value = (ϕ_we - reactiondata.ϕ_pzc))
                 elseif BC_model == :Robin
@@ -597,21 +600,24 @@ function create_model(;
             end
 
             # --- Surface (faradaic) reactions ---
-            if ircompensation != :ohmicdrop && model == :Gold
+            if !isa(ircompensation,OhmicDropEstimation) && model == :Gold
                 we_breactions(f, u, bnode, data)
             end
         end
 
         return bulkbcondition(f, u, bnode, data; region = Γ_bulk)
     end
-    if model == :Gold
-        elydata = elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation; redoxreaction = we_breactions)
+if model == :Gold
+    if isa(ircompensation, OhmicDropEstimation)
+        ircompensation=copy(ircompensation; redoxreaction=we_breactions)
+    end
+    elydata = elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation)
     elseif model == :Landstorfer_NaClO₄
         elydata = elydata_NaClO₄
     elseif model == :Landstorfer_NaF
         elydata = elydata_NaF
     end
-    return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulk = bulk, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
+return (bcondition = pnp_bcondition, reaction = reaction, elydata = elydata, bulk = bulk, bulknames = bulknames, bulkcolors = bulkcolors, species_dict = species_dict)
 end
 
 end
