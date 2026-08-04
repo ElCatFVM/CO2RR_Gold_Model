@@ -483,7 +483,11 @@ end
 
 function plot_scanrate_sweeps(
         sweep_vec, scanrates;
-        species = iohminus,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         fig_size = (1600, 900),
         scale = cm^2 / mA,
         legend_title = "Scan Rates (V/s)",
@@ -493,7 +497,10 @@ function plot_scanrate_sweeps(
         default_lw = 1,
     )
     fig = Figure(size = fig_size)
-    ax = Axis(fig[1, 1], ylabel = lab_current, xlabel = lab_voltage)
+
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(sweep_vec) ? lab_voltage : cv_abscissa(sweep_vec[1]; kind = abscissa)[2]
+    ax = Axis(fig[1, 1], ylabel = lab_current, xlabel = xlab)
 
     n = length(sweep_vec)
     cols = [
@@ -518,8 +525,9 @@ function plot_scanrate_sweeps(
             lw_j = highlight_lw
         end
 
-        I = currents(rec, species) .* scale
-        line = lines!(ax, rec.voltages, I; linewidth = lw_j, color = color_j)
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
+        line = lines!(ax, U, I; linewidth = lw_j, color = color_j)
         push!(plot_objs, line)
     end
 
@@ -1092,42 +1100,32 @@ end
 # ── moved from cell 9949de26 (plot_cv_total_current_tot) ──
 function plot_cv_total_current_tot(
         result, m;
-        redox_species::Dict{Int, Int},
-        co_idx,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        redox_species = nothing,      # back-compat: Dict(species => n_e), first entry wins
+        co_idx = nothing,
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        sign::Int = 1,
         color_F = colorant"#F2728A",   # i_F color
         color_C = colorant"#5BA8E8",   # i_C color
         mix_mode::Symbol = :mean,         # :sum or :mean
         lw = 5
     )
-    electrolyte = m.elydata
-    n_t = length(result.voltages)
-
-    # ---- Faradaic current (total, sum over redox species) ----
-    I_F = zeros(n_t)
-    for (idx, n_e) in redox_species
-        I_F .+= n_e .* currents(result, idx)
+    sp, ne = if redox_species === nothing
+        species, n_e
+    else
+        first(pairs(redox_species))
     end
 
-    # ---- Capacitive current ----
-    I_C = zeros(n_t)
-    if include_capacitive
-        if isa(electrolyte.ircompensation, OhmicDropEstimation())
-            icc = electrolyte.icc
-            node_we = 1
-            I_C = [u[icc, node_we] for u in result.tsol[1:n_t]]
-        else
-            @warn "Capacitive current only resolved in :ohmicdrop mode " *
-                "(current mode: :$(electrolyte.ircompensation)); j_C set to 0."
-        end
-    end
+    # ---- Faradaic and capacitive current, from the shared definitions ----
+    I_F = faradaic_current(result; species = sp, n_e = ne, sgn = sgn)
+    I_C = include_capacitive ? capacitive_current(result) : zero(I_F)
 
-    # ---- Scale and sign ----
-    I_F_scaled = sign .* I_F .* scale
-    I_C_scaled = sign .* I_C .* scale
-    I_total = sign .* (I_F .+ I_C) .* scale
+    # ---- Scale ----
+    I_F_scaled = I_F .* scale
+    I_C_scaled = I_C .* scale
+    I_total = (I_F .+ I_C) .* scale
 
     # ---- blended color: RGB average or sum ----
     cF = RGBf(color_F); cC = RGBf(color_C)
@@ -1182,18 +1180,21 @@ end
 # ── moved from cell 02a78c8d (plot_cv_scanrate_grid) ──
 function plot_cv_scanrate_grid(
         result_vec, m;
-        redox_species::Dict{Int, Int},
-        co_idx,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        abscissa = :applied,
+        redox_species = nothing,   # back-compat: Dict(species => n_e), first entry wins
+        co_idx = nothing,
         scanrates = [0.05, 0.5, 5.0],
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        sign::Int = 1,
         color_F = colorant"#F2728A",
         color_C = colorant"#5BA8E8",
         mix_mode::Symbol = :mean,
         lw = 5.5
     )
-    electrolyte = m.elydata
+    sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
     unit_i = rich("  (mA cm", superscript("−2"), ")")
     lab_iF = rich(rich("I", font = :italic), subscript("F"), unit_i)
@@ -1264,24 +1265,17 @@ function plot_cv_scanrate_grid(
         res = result_vec[col]
         n_t = length(res.voltages)
 
-        I_F = zeros(n_t)
-        for (idx, n_e) in redox_species
-            I_F .+= n_e .* currents(res, idx)
-        end
+        I_F = faradaic_current(res; species = sp, n_e = ne, sgn = sgn)
+        I_C = include_capacitive ? capacitive_current(res) : zero(I_F)
 
-        I_C = zeros(n_t)
-        if include_capacitive && isa(electrolyte.ircompensation,OhmicDropEstimation)
-            icc = electrolyte.icc
-            I_C = [u[icc, 1] for u in res.tsol[1:n_t]]
-        end
+        I_F_scaled = I_F .* scale
+        I_C_scaled = I_C .* scale
+        I_total = (I_F .+ I_C) .* scale
 
-        I_F_scaled = sign .* I_F .* scale
-        I_C_scaled = sign .* I_C .* scale
-        I_total = sign .* (I_F .+ I_C) .* scale
-
-        lines!(axes_matrix[1, col], res.voltages, I_F_scaled; color = color_F, linewidth = lw)
-        lines!(axes_matrix[2, col], res.voltages, I_C_scaled; color = color_C, linewidth = lw)
-        lines!(axes_matrix[3, col], res.voltages, I_total; color = color_tot, linewidth = lw)
+        U, _ = cv_abscissa(res; kind = abscissa)
+        lines!(axes_matrix[1, col], U, I_F_scaled; color = color_F, linewidth = lw)
+        lines!(axes_matrix[2, col], U, I_C_scaled; color = color_C, linewidth = lw)
+        lines!(axes_matrix[3, col], U, I_total; color = color_tot, linewidth = lw)
     end
 
     rowgap!(f.layout, 15)
@@ -1302,16 +1296,19 @@ end
 # ── moved from cell 08756476 (plot_cv_scanrate_grid_unc) ──
 function plot_cv_scanrate_grid_unc(
         result_vec, m;
-        redox_species::Dict{Int, Int},
-        co_idx,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        abscissa = :applied,
+        redox_species = nothing,   # back-compat: Dict(species => n_e), first entry wins
+        co_idx = nothing,
         scanrates = [0.05, 0.5, 5.0],
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        sign::Int = 1,
         color_tot = "#BAC8FF",
         lw = 5.5
     )
-    electrolyte = m.elydata
+    sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
     lab_I = rich(rich("I", font = :italic), "  (mA cm", superscript("−2"), ")")
     lab_U = rich(rich("U", font = :italic), "  (V vs. SHE)")
@@ -1359,19 +1356,12 @@ function plot_cv_scanrate_grid_unc(
         res = result_vec[col]
         n_t = length(res.voltages)
 
-        I_F = zeros(n_t)
-        for (idx, n_e) in redox_species
-            I_F .+= n_e .* currents(res, idx)
-        end
+        I_F = faradaic_current(res; species = sp, n_e = ne, sgn = sgn)
+        I_C = include_capacitive ? capacitive_current(res) : zero(I_F)
 
-        I_C = zeros(n_t)
-        if include_capacitive && isa(electrolyte.ircompensation, OhmicDropEstimation)
-            icc = electrolyte.icc
-            I_C = [u[icc, 1] for u in res.tsol[1:n_t]]
-        end
-
-        I_total = sign .* (I_F .+ I_C) .* scale
-        lines!(axes_vec[col], res.voltages, I_total; color = color_tot, linewidth = lw)
+        I_total = (I_F .+ I_C) .* scale
+        U, _ = cv_abscissa(res; kind = abscissa)
+        lines!(axes_vec[col], U, I_total; color = color_tot, linewidth = lw)
     end
 
     colgap!(f.layout, 25)
@@ -1386,13 +1376,16 @@ end
 # ── moved from cell d3b7d864 (plot_scanrate_sweeps_cv_2) ──
 function plot_scanrate_sweeps_cv_2(
         sweep_vec, scanrates, m;
-        redox_species::Dict{Int, Int},       # all Faradaic species and their electron counts (e.g. Dict(1=>2, 2=>1))
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        abscissa = :applied,
+        redox_species = nothing,   # back-compat: Dict(species => n_e), first entry wins
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        sign::Int = 1,
         default_lw = 2
     )
-    electrolyte = m.elydata
+    sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
     n = length(sweep_vec)
     pastel2 = cgrad([colorant"#D5F011", colorant"#16D8FF"])
     cols = [pastel2[t] for t in range(0, 1, length = max(n, 1))]
@@ -1408,31 +1401,16 @@ function plot_scanrate_sweeps_cv_2(
     end
 
     for (j, rec) in enumerate(sweep_vec)
-        n_t = length(rec.voltages)
+        I_F = faradaic_current(rec; species = sp, n_e = ne, sgn = sgn)
+        I_C = include_capacitive ? capacitive_current(rec) : zero(I_F)
+        n_t = length(I_F)
 
-        # 1. sum Faradaic currents
-        I_F = zeros(n_t)
-        for (idx, n_e) in redox_species
-            I_F .+= n_e .* currents(rec, idx)
-        end
-
-        # 2. add capacitive current
-        I_C = zeros(n_t)
-        if include_capacitive
-            if isa(electrolyte.ircompensation, OhmicDropEstimation)
-                icc = electrolyte.icc
-                node_we = 1
-                I_C = [u[icc, node_we] for u in rec.tsol[1:n_t]]
-            else
-                j == 1 && @warn "Capacitive current only resolved in :ohmicdrop mode; j_C set to 0."
-            end
-        end
-
-        # 3. total current (apply sign and scale)
-        I_total = sign .* (I_F .+ I_C) .* scale
+        # 3. total current
+        I_total = (I_F .+ I_C) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
 
         lines!(
-            ax, rec.voltages, I_total;
+            ax, U, I_total;
             linewidth = default_lw,
             color = cols[j]
         )

@@ -80,7 +80,7 @@ begin
     #Vmax = 2 * V
     L = 1000 * μm
     hmin = 1.0e-6 	* μm
-    hmax = 0.05*L
+    hmax = 0.1*L
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
@@ -123,15 +123,10 @@ end
 end
 
 # ╔═╡ 0963720a-e310-45b2-92a5-a9e5bc3e6888
+
 begin
     elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation)
     elystruct_odr
-end
-
-# ╔═╡ a6561efa-29d5-498d-a66f-b8fffe1bc293
-begin
-    elystruct_irc = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation = PseudoPotentiostat())
-    elystruct_irc
 end
 
 # ╔═╡ f4f59329-e817-495a-9e83-1ab53e7738a9
@@ -155,16 +150,10 @@ pnpcell_odr = PNPSystem(grid; bcondition = elystruct_odr.bcondition, celldata = 
 pnpcell_unc = PNPSystem(grid; bcondition = elystruct_unc.bcondition, celldata = elystruct_unc.elydata, reaction = elystruct_unc.reaction)
 
 # ╔═╡ e2eb4160-550a-4a07-b4c8-66863aaab46f
-# ╠═╡ show_logs = false
 cv_odr = sweep(elystruct_odr, grid, sawtooth; nperiods = nperiods)
 
 # ╔═╡ 47515ef3-b6aa-49d0-b4fc-b471cb947aa1
-# ╠═╡ show_logs = false
 cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods = nperiods)
-
-# ╔═╡ ba48cb67-a7af-4d65-b65f-b55d9c29f54c
-# ╠═╡ show_logs = false
-cv_irc = sweep(elystruct_irc, grid, sawtooth; nperiods = nperiods)
 
 # ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
@@ -233,6 +222,14 @@ begin
 	grid_dict
 end
 
+# ╔═╡ 9ad659de-b8cc-4ddc-8575-1c71a79e9690
+begin
+    gL   = sort(collect(keys(grid_dict)))[1]      # 1000 μm (부동소수 키 매칭 회피)
+    saw0 = SawTooth(scanrate = 0.05, vmin = -1.2, vmax = 0.0,
+                    scanup = false, vstart = 0.0; tstart = 0.0)
+    cv_v0 = sweep(elystruct_odr, grid_dict[gL], saw0; nperiods)
+end
+
 # ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
 begin
 	results = cvsweep_odr_over_L(
@@ -278,20 +275,26 @@ function fixed(fig)
 end
 
 # ╔═╡ b5abb13d-b6e4-4a47-a4b0-d099588b1b60
+#=╠═╡
 plots=[AuCO2RR_plots.plottsol(grid_dict[L],
 					   elystruct_odr.elydata, 
 					   results[L].tsol;
 							  figscale=L/Lmax,
 							  stride=3, # xscale=log10 is slow
 					   species=5, levels=15)|>fixed for L in sort(keys(grid_dict))];
+  ╠═╡ =#
 
 # ╔═╡ c2e9573b-2105-4930-9f17-5a3bf3fe7058
+#=╠═╡
 PlutoUI.ExperimentalLayout.vbox(plots)
+  ╠═╡ =#
 
 # ╔═╡ 1ea52fc4-0921-43ea-88e4-04fadee047f9
+#=╠═╡
 [
 	L=>blthickness(grid_dict[L], elystruct_odr.elydata, results[L].tsol; species=5, atol=5.0e-2)/μm
 	for L in sort(keys(grid_dict))]
+  ╠═╡ =#
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm
@@ -368,7 +371,7 @@ md"""
 # ╔═╡ 535e8412-7e45-4be2-9533-b1ee1245d3e1
 begin
     scanrates = [0.005, 0.01, 0.02, 0.05, 0.1]
-    SR_vec = [sweep(elystruct_odr, grid,
+    SR_vec = [sweep(elystruct_odr, grid_dict[gL],
                     SawTooth(scanrate = sr, vmin = -1.2, vmax = 0.8,
                              scanup = false, vstart = 0.0; tstart = 0.0);
                     nperiods, Δu_opt = 0.025) for sr in scanrates]
@@ -386,7 +389,7 @@ md"""
 # ╔═╡ 2333ae9c-0f59-4a87-90ed-bc5e8fba9f76
 begin
     cvfun = ely -> LiquidElectrolytes.cvsweep(
-        PNPSystem(grid; bcondition = elystruct_odr.bcondition,
+        PNPSystem(grid_dict[gL]; bcondition = elystruct_odr.bcondition,
                   celldata = ely, reaction = elystruct_odr.reaction,
                   unknown_storage = :dense);
         voltages = sawtooth, nperiods, store_solutions = true, Δu_opt = 0.025)
@@ -414,16 +417,15 @@ AuCO2RR_plots.pressure_varied_cvsweep(P_recs)
 # ╟─2fe95a9f-202e-418a-b422-cef1ef013c9d
 # ╠═8626e977-a77f-4646-be99-33e713dbf593
 # ╠═0963720a-e310-45b2-92a5-a9e5bc3e6888
-# ╠═a6561efa-29d5-498d-a66f-b8fffe1bc293
 # ╠═f4f59329-e817-495a-9e83-1ab53e7738a9
 # ╠═590a17bd-c98d-4b23-9139-04b550c95efe
 # ╠═1e59ac64-17d4-42a0-befc-32961332c4c7
 # ╠═e2eb4160-550a-4a07-b4c8-66863aaab46f
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
-# ╠═ba48cb67-a7af-4d65-b65f-b55d9c29f54c
 # ╠═f77ec140-e091-46c1-8bc6-1c00f3880e83
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
 # ╠═3ad8349a-f95f-4ba8-98c4-b404f98137aa
+# ╠═9ad659de-b8cc-4ddc-8575-1c71a79e9690
 # ╠═36238c29-eea8-47b4-b5a3-17905b3483a8
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
 # ╟─59ec47b9-2a47-4350-b708-ca7a980bbdb2
