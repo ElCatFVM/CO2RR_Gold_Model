@@ -773,7 +773,11 @@ end
 
 function plot_pressure_varied_sweep(
         P_recs;
-        species = iohminus,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         fig_size = (1600, 900),
         scale = cm^2 / mA,
         limits = nothing,
@@ -786,17 +790,20 @@ function plot_pressure_varied_sweep(
     )
     fig = Figure(size = fig_size)
 
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
+
     ax = if limits !== nothing
         Axis(
             fig[1, 1],
-            xlabel = lab_voltage,
+            xlabel = xlab,
             ylabel = lab_current,
             limits = limits
         )
     else
         Axis(
             fig[1, 1],
-            xlabel = lab_voltage,
+            xlabel = xlab,
             ylabel = lab_current
         )
     end
@@ -860,9 +867,10 @@ function plot_pressure_varied_sweep(
     for j in 1:n
         p, rec = P_recs[j]
         label = "$(p)\t pCO2(atm)"
-        I = currents(rec, species) .* scale
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
 
-        line = lines!(ax, rec.voltages, I; color = cols_sim[j], linewidth = sim_linewidth)
+        line = lines!(ax, U, I; color = cols_sim[j], linewidth = sim_linewidth)
         push!(plots, line)
         push!(labels, "Theoretical | $label")
     end
@@ -873,24 +881,32 @@ end
 
 function pressure_varied_cvsweep(
         P_recs;
-        species = iohminus,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         fig_size = (1600, 900),
         scale = cm^2 / mA,
         limits = nothing,
     )
     fig = Figure(size = fig_size)
     sim_linewidth = 3
+
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
+
     ax = if limits !== nothing
         Axis(
             fig[1, 1],
-            xlabel = lab_voltage,
+            xlabel = xlab,
             ylabel = lab_current,
             limits = limits
         )
     else
         Axis(
             fig[1, 1],
-            xlabel = lab_voltage,
+            xlabel = xlab,
             ylabel = lab_current
         )
     end
@@ -907,9 +923,10 @@ function pressure_varied_cvsweep(
     for j in 1:n
         p, rec = P_recs[j]
         label = "$(p)\t pCO2(atm)"
-        I = currents(rec, species) .* scale
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
 
-        line = lines!(ax, rec.voltages, I; color = cols_sim[j], linewidth = sim_linewidth)
+        line = lines!(ax, U, I; color = cols_sim[j], linewidth = sim_linewidth)
         push!(plots, line)
         push!(labels, "Theoretical | $label")
     end
@@ -1863,7 +1880,11 @@ end
 # ── moved from cell ed4451bd (plot_pressure_varied_sweep_ivc) ──
 function plot_pressure_varied_sweep_ivc(
         P_recs;
-        species = iohminus,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         scale = cm^2 / mA,
         limits = nothing,
         sim_linewidth::Real = 5
@@ -1872,12 +1893,15 @@ function plot_pressure_varied_sweep_ivc(
     pastel3 = cgrad([colorant"#FFB3BA", colorant"#A3D8FF"])
     cols_sim = [pastel3[t] for t in range(0, 1, length = max(n, 1))]
 
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
+
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1050, 500))
         a = if limits !== nothing
-            Axis(f[1, 1], xlabel = lab_voltage, ylabel = lab_current, limits = limits)
+            Axis(f[1, 1], xlabel = xlab, ylabel = lab_current, limits = limits)
         else
-            Axis(f[1, 1], xlabel = lab_voltage, ylabel = lab_current)
+            Axis(f[1, 1], xlabel = xlab, ylabel = lab_current)
         end
         return f, a
     end
@@ -1887,12 +1911,14 @@ function plot_pressure_varied_sweep_ivc(
 
     for j in 1:n
         p, rec = P_recs[j]
-        I = currents(rec, species) .* scale
+        # the stoichiometric factor lives in `n_e` now; there is no stray /2 here
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
 
         label_text = "$(p) atm"
 
         hl = lines!(
-            ax, rec.voltages, I ./ 2;
+            ax, U, I;
             color = cols_sim[j],
             linewidth = sim_linewidth
         )
@@ -2012,40 +2038,20 @@ end
 # ── moved from cell 13a0e5da (panel_time_current!)  [ely = elydata_Gold_unc → ely = model] ──
 function panel_time_current!(
         fig, panel_pos, result, m;
-        redox_species = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        redox_species = nothing,       # back-compat: overrides `species` when given
         include_capacitive = true,
         scale = cm^2 / mA,
-        sign = -1,
         color_gradient = true,
         lw = 4,
         xlabel = lab_time
     )
-    model = m.elydata
+    ax = Axis(panel_pos; xlabel = xlabel, ylabel = lab_current)
 
-    ax = Axis(
-        panel_pos; xlabel = xlabel,
-        ylabel = rich(rich("I", font = :italic), "  (mA cm", superscript("−2"), ")")
-    )
-
-    redox = Dict(model.cspecies[ico2] => 2)
-
-    n_t = length(result.times)
-    I_F = zeros(n_t)
-    for (idx, n_e) in redox
-        I_F .+= n_e .* currents(result, idx)
-    end
-
-    I_C = zeros(n_t)
-    if include_capacitive
-        ely = model
-        if isa(ely.ircompensation, OhmicDropEstimation)
-            icc = ely.icc
-            node_we = 1
-            I_C = [u[icc, node_we] for u in result.tsol[1:(end - 1)]]
-        end
-    end
-
-    I = sign .* (I_F .+ I_C) .* scale
+    sp = redox_species === nothing ? species : redox_species
+    I = cv_current(result; species = sp, n_e, sgn, include_capacitive) .* scale
 
     cols = color_gradient ? :skyblue : :black
     lines!(ax, result.times, I; color = cols, linewidth = lw)

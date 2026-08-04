@@ -65,7 +65,7 @@ end
 # ╔═╡ d011050d-c66e-4e8a-a173-f55679403a90
 begin
 	sawtooth = SawTooth(
-	        scanrate = 0.05,
+	        scanrate = 0.5,
 #	        scanrate = 0.05,
 	        vmin     = -1.2, 
 	        vmax     = 0.8,
@@ -228,12 +228,14 @@ begin
 end
 
 # ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	results = cvsweep_odr_over_L(
-	    elystruct_unc.elydata,       
+	    elystruct_odr.elydata,       
 	    grid_dict,
-	    elystruct_unc.bcondition,
-	    elystruct_unc.reaction,
+	    elystruct_odr.bcondition,
+	    elystruct_odr.reaction,
 	    sawtooth;
 		unknown_storage=:dense,
 	    nperiods,
@@ -242,6 +244,7 @@ begin
 	#	damp_initial=0.5
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
 md"""
@@ -249,11 +252,13 @@ md"""
 """
 
 # ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
+#=╠═╡
 let
-	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 7)
+	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr)
 	CairoMakie.save("cv-$(ircomp).png",fig)
 	fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 2f128f25-d629-44b5-bcb7-d3b9d59362ea
 Lmax=sort(keys(grid_dict))[end]
@@ -272,20 +277,26 @@ function fixed(fig)
 end
 
 # ╔═╡ b5abb13d-b6e4-4a47-a4b0-d099588b1b60
+#=╠═╡
 plots=[AuCO2RR_plots.plottsol(grid_dict[L],
 					   elystruct_odr.elydata, 
 					   results[L].tsol;
 							  figscale=L/Lmax,
 							  stride=3, # xscale=log10 is slow
 					   species=5, levels=15)|>fixed for L in sort(keys(grid_dict))];
+  ╠═╡ =#
 
 # ╔═╡ c2e9573b-2105-4930-9f17-5a3bf3fe7058
+#=╠═╡
 PlutoUI.ExperimentalLayout.vbox(plots)
+  ╠═╡ =#
 
 # ╔═╡ 1ea52fc4-0921-43ea-88e4-04fadee047f9
+#=╠═╡
 [
 	L=>blthickness(grid_dict[L], elystruct_odr.elydata, results[L].tsol; species=5, atol=5.0e-2)/μm
 	for L in sort(keys(grid_dict))]
+  ╠═╡ =#
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm

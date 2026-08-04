@@ -558,7 +558,7 @@ function create_model(;
         S = reactiondata.S
         f[specieslayout.ico2] *= S
         f[specieslayout.ico] *= S
-
+        #f[specieslayout.iohminus] *= S
         # f is a sink. r_oh > 0 → OH⁻ consumed (anodic); r_oh < 0 → OH⁻ produced (cathodic).
         # Neither H⁺ (1.6e-7 M) nor OH⁻ (6.3e-8 M) can sustain the ~1e-4 mol/m²/s proton
         # turnover of this step — H₂O (55.5 M) is the actual reservoir. So always book the
