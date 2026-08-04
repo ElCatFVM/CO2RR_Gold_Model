@@ -935,6 +935,88 @@ const ico2 = 5
 const iohminus = 6
 const ico = 7
 
+# =====================================================================
+# Single source of truth for "the current" and "the voltage" in the CV plots.
+#
+# These used to be open-coded at every call site, and the sites disagreed on all
+# four of: which species the flux is read from, the electron count, the sign, and
+# whether the capacitive term is included — while all labelling the result
+# identically. Route every CV figure through these so that two figures with the
+# same axis label really do show the same quantity.
+# =====================================================================
+
+const lab_voltage_rp = rich(rich("U", font = :italic), subscript("rp"), "  (V vs. SHE)")
+const lab_voltage_dl = rich(rich("U", font = :italic), subscript("dl"), "  (V)")
+
+"""
+    faradaic_current(result; species = ico, n_e = 2, sgn = 1)
+
+Faradaic current density at the working electrode, from the boundary flux of `species`.
+
+`species` must take part in **no homogeneous reaction**, otherwise its boundary flux also
+carries buffer-driven transport, which is not current. In the Gold CO2RR model CO (`ico`)
+is the only such species — CO₂, HCO₃⁻, CO₃²⁻, OH⁻ and H⁺ are all buffer-active (see
+`buffer_system` in `goldmodel.jl`), and K⁺ is a spectator carrying no faradaic current at
+all. Measured on this model `currents(., ico2)` runs roughly 2x the faradaic rate, because
+every reduced CO₂ releases 2 OH⁻ which consume further CO₂ through CO₂ + OH⁻ ⇌ HCO₃⁻.
+
+`n_e` is the electron count per molecule of `species` (2 for CO and CO₂, 1 for OH⁻).
+`sgn` fixes the display convention: CO and OH⁻ are produced while CO₂ is consumed, so
+their fluxes come out with opposite signs.
+"""
+faradaic_current(result; species = ico, n_e = 2, sgn = 1) =
+    sgn .* n_e .* currents(result, species)
+
+"""
+    capacitive_current(result)
+
+Capacitive current density at the working electrode, or zeros when the result carries
+none.
+
+Reads `result.j_cap`, as the rest of this file does. Do not reach for the `icc` unknown
+instead: it only exists when `ircompensation isa OhmicDropEstimation`, so that route
+silently evaluates to zero in every other compensation mode and makes currents from
+different modes incomparable without any warning.
+"""
+capacitive_current(result) =
+    hasproperty(result, :j_cap) ? result.j_cap : zeros(length(result.times))
+
+"""
+    cv_current(result; include_capacitive = false, kwargs...)
+
+[`faradaic_current`](@ref) plus, optionally, [`capacitive_current`](@ref).
+`kwargs` are forwarded to [`faradaic_current`](@ref).
+"""
+function cv_current(result; include_capacitive = false, kwargs...)
+    I = faradaic_current(result; kwargs...)
+    include_capacitive || return I
+    return I .+ capacitive_current(result)
+end
+
+"""
+    cv_abscissa(result; kind = :applied)
+
+Voltage axis for a CV plot, together with a label naming which voltage it is.
+
+Three different voltages live in these results and they are not interchangeable:
+`:applied` is the programmed protocol (`result.sawtooth`), `:reaction_plane` is
+`result.voltages`, and `:dl` is `result.dlvoltages`, the drop across the double layer.
+Compare against experiment on `:applied` — that is the potential a potentiostat controls.
+"""
+function cv_abscissa(result; kind = :applied)
+    if kind === :applied
+        hasproperty(result, :sawtooth) ||
+            error("result has no `sawtooth` field; use kind = :reaction_plane or :dl")
+        return result.sawtooth, lab_voltage
+    elseif kind === :reaction_plane
+        return result.voltages, lab_voltage_rp
+    elseif kind === :dl
+        return result.dlvoltages, lab_voltage_dl
+    else
+        error("unknown abscissa kind: $kind (use :applied, :reaction_plane or :dl)")
+    end
+end
+
 # ── moved from cell 7bfe397e (CV_dsp_cap_result) ──
 function CV_dsp_cap_result(result, m; scale = cm^2 / mA, show_diff = false)
     fig, ax = with_theme(electrochemistry_theme()) do
@@ -1725,14 +1807,21 @@ end
 # ── moved from cell a2264942 (plot_cv_current_variedL) ──
 function plot_cv_current_variedL(
         results, m;
-        species = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         scale = cm^2 / mA,
         color_gradient = true,
         linewidth = 3.5,
         title = ""
     )
-    model = m.elydata
-    sp = (species === nothing) ? model.cspecies[1] : species
+    Lkeys = sort(collect(keys(results)))
+    n = length(Lkeys)
+
+    # label comes from the abscissa choice, so the axis always names what it shows
+    _, xlab = cv_abscissa(results[first(Lkeys)]; kind = abscissa)
 
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 400))
@@ -1740,28 +1829,28 @@ function plot_cv_current_variedL(
             f[1, 1];
             title = title,
             ylabel = lab_current,
-            xlabel = lab_voltage
+            xlabel = xlab
         )
         return f, a
     end
 
-    Lkeys = sort(collect(keys(results)))
-    n = length(Lkeys)
-
-    cols = [
-        RGBf(
-                0.6 + 0.3 * (i - 1) / max(n - 1, 1),
-                0.8 - 0.2 * (i - 1) / max(n - 1, 1),
-                0.7 - 0.2 * (i - 1) / max(n - 1, 1)
-            ) for i in 1:n
-    ]
-
+    cols = if color_gradient
+        [
+            RGBf(
+                    0.6 + 0.3 * (i - 1) / max(n - 1, 1),
+                    0.8 - 0.2 * (i - 1) / max(n - 1, 1),
+                    0.7 - 0.2 * (i - 1) / max(n - 1, 1)
+                ) for i in 1:n
+        ]
+    else
+        fill(RGBf(0.13, 0.13, 0.13), n)
+    end
 
     for (i, L) in enumerate(Lkeys)
-        I = currents(results[L], sp) .* scale ./ 2
-        @info "L=$L: |voltage over DL - sawtooth|:   $(norm(results[L].dlvoltages - results[L].sawtooth, Inf))"
+        I = cv_current(results[L]; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(results[L]; kind = abscissa)
         lines!(
-            ax, results[L].dlvoltages, I;
+            ax, U, I;
             color = cols[i], linewidth = linewidth,
             label = @sprintf("%g μm", L / μm)
         )

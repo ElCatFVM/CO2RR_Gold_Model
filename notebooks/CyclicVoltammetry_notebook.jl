@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v1.0.1
+# v1.0.3
 
 using Markdown
 using InteractiveUtils
@@ -201,6 +201,9 @@ let
     fig
 end
 
+# ╔═╡ 36238c29-eea8-47b4-b5a3-17905b3483a8
+extrema(currents(cv_odr, 7) ./ currents(cv_odr, 5))   # CO / CO₂
+
 # ╔═╡ 59ec47b9-2a47-4350-b708-ca7a980bbdb2
 md"""
 ## CV Solution
@@ -209,20 +212,28 @@ md"""
 # ╔═╡ 01f688a7-3265-4bc5-9b74-6eedfc36476d
 begin
 	grid_dict = Dict{Float64, Any}()
-	for Lv in [1000, 2500, 5000, 10000, 15000, 20000] .* μm
+	for Lv in [1000, 5000, 10000, 15000] .* μm
 	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-7*μm, Lv*0.1)
 	    grid_dict[Lv] = ExtendableGrids.simplexgrid(Xg)
 	end
 	grid_dict
 end
 
+# ╔═╡ 9ad659de-b8cc-4ddc-8575-1c71a79e9690
+begin
+    gL   = sort(collect(keys(grid_dict)))[1]      # 1000 μm (부동소수 키 매칭 회피)
+    saw0 = SawTooth(scanrate = 0.05, vmin = -1.2, vmax = 0.0,
+                    scanup = false, vstart = 0.0; tstart = 0.0)
+    cv_v0 = sweep(elystruct_odr, grid_dict[gL], saw0; nperiods)
+end
+
 # ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
 begin
 	results = cvsweep_odr_over_L(
-	    elystruct_odr.elydata,       
+	    elystruct_unc.elydata,       
 	    grid_dict,
-	    elystruct_odr.bcondition,
-	    elystruct_odr.reaction,
+	    elystruct_unc.bcondition,
+	    elystruct_unc.reaction,
 	    sawtooth;
 		unknown_storage=:dense,
 	    nperiods,
@@ -239,7 +250,7 @@ md"""
 
 # ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
 let
-	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 6)
+	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr; species = 7)
 	CairoMakie.save("cv-$(ircomp).png",fig)
 	fig
 end
@@ -365,6 +376,8 @@ end
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
 # ╠═f77ec140-e091-46c1-8bc6-1c00f3880e83
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
+# ╠═9ad659de-b8cc-4ddc-8575-1c71a79e9690
+# ╠═36238c29-eea8-47b4-b5a3-17905b3483a8
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
 # ╟─59ec47b9-2a47-4350-b708-ca7a980bbdb2
 # ╠═01f688a7-3265-4bc5-9b74-6eedfc36476d

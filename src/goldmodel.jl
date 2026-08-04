@@ -509,6 +509,9 @@ function create_model(;
         #        σ = surface_charge(u, data, user_input_model.BC_Select)
         local_pH = -log10(u[specieslayout.ihplus] * γ[specieslayout.ihplus] / ufac"(mol / dm^3)")
 
+        #a_ohminus = u[specieslayout.iohminus] * γ[specieslayout.iohminus] / ufac"(mol / dm^3)"
+        #local_pH  = 14 + log10(a_ohminus)
+
 
         #for (p, default_value) in odesys.defaults
         #	ps[paramsidx[p]] = default_value
@@ -554,9 +557,21 @@ function create_model(;
         # by S = number of free catalyst sites in mole per unit area
         S = reactiondata.S
         f[specieslayout.ico2] *= S
-        f[specieslayout.iohminus] *= S
         f[specieslayout.ico] *= S
-        f[specieslayout.ikplus] *= S
+
+        # f is a sink. r_oh > 0 → OH⁻ consumed (anodic); r_oh < 0 → OH⁻ produced (cathodic).
+        # Neither H⁺ (1.6e-7 M) nor OH⁻ (6.3e-8 M) can sustain the ~1e-4 mol/m²/s proton
+        # turnover of this step — H₂O (55.5 M) is the actual reservoir. So always book the
+        # stoichiometry on the species being *produced*; the dilute ions re-equilibrate
+        # afterwards through the buffer network. Branch-free (max/min instead of `if`) so the
+        # sparsity tracer can walk both paths.
+        r_oh  = f[specieslayout.iohminus] * S
+        r_pos = max(r_oh, zero(r_oh))     # anodic  part → H⁺ produced
+        r_neg = min(r_oh, zero(r_oh))     # cathodic part → OH⁻ produced
+
+        f[specieslayout.iohminus] = r_neg
+        f[specieslayout.ihplus]  -= r_pos
+        
         return
     end
 
