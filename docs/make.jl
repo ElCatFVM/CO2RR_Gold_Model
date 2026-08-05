@@ -14,7 +14,7 @@ const PKG_VERSION = VersionNumber(
 const DOC_VERSION_LABEL = "dev ($(PKG_VERSION))"
 
 # GitHub Pages URL where the documentation is published
-const DOCS_URL = "https://ElCatFVM.github.io/Capacitance_Code/"
+const DOCS_URL = "https://xuminsu.github.io/Capacitance_Code/"
 
 function mkdocs()
     DocMeta.setdocmeta!(
