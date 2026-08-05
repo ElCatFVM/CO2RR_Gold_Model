@@ -50,6 +50,16 @@ function sweep_over_L_cv(
 end
 
 
+"""
+    scanrate_varied_sweep(elydata, sawtooth, grid, bcond, reaction; scanrates, ...)
+
+CV at each scan rate in `scanrates`. Returns `(scanrates, saws, sweeps)`.
+
+!!! warning "Shadowed"
+    `iv.jl` defines this name too and is included later, so **that** definition is the one
+    in scope. This one also rebuilds the `SawTooth` without `vstart`/`tstart` and does not
+    forward `sweep_kwargs` to `cvsweep`.
+"""
 function scanrate_varied_sweep(
         elydata,
         sawtooth,
@@ -83,6 +93,16 @@ function scanrate_varied_sweep(
 end
 
 
+"""
+    run_pH_sweep(elydata, sawtooth, grid, bcond, reaction; pH_values, eneutral, counter_index, ...)
+
+CV at each bulk pH in `pH_values`.
+
+Sets H⁺ and OH⁻ from the pH and the water constant `Kw`. With `eneutral = true` the species
+at `counter_index` is adjusted to restore bulk electroneutrality, and the run errors rather
+than continuing if that would need a negative concentration. Returns one named tuple per pH
+carrying the concentrations used and the sweep record.
+"""
 function run_pH_sweep(
         elydata,
         sawtooth,
@@ -191,6 +211,12 @@ end
 
 # ── moved from cell e50fe651 (sweep)  [dropped dead `reaction_arg` line that
 #    referenced the notebook global `elydata_Gold_unc`; it was unused] ──
+"""
+    sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, kwargs...)
+
+One cyclic voltammogram. Copies the electrolyte so the caller's model is untouched, builds
+a `PNPSystem` and runs `cvsweep`. `kwargs` go straight to the solver.
+"""
 function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutral = true, tunnel = false, bikerman = true, kwargs...)
     celldata = deepcopy(model)
     #celldata.eneutral = eneutral
@@ -206,6 +232,15 @@ function sweep(model, grid, bcondition, reaction, sawtooth; nperiods = 1, eneutr
 end
 
 # ── moved from cell 9b8daa64 (cvsweep_compensated_over_L) ──
+"""
+    cvsweep_compensated_over_L(model, bcondition, reaction; sawtooth, L_values, f_comp, Area, ...)
+
+CV over boundary-layer thickness with the ohmic drop compensated.
+
+Builds a grid per `L`, computes the bulk resistance from the conductivity and `Area`, and
+passes `f_comp × R_bulk` to `cvsweep_COMP`. `f_comp = 1` is full compensation. Returns
+`Dict(L => result)` keyed by `L` in μm.
+"""
 function cvsweep_compensated_over_L(
         model, bcondition, reaction;
         sawtooth,
@@ -269,6 +304,15 @@ function cvsweep_compensated_over_L(
 end
 
 # ── moved from cell d91c32c8 (cvsweep_odr_over_L) ──
+"""
+    cvsweep_odr_over_L(elydata_odr, grid_dict, bcondition, reaction, sawtooth; ...)
+
+CV over boundary-layer thickness on pre-built grids.
+
+Takes `grid_dict = Dict(L => grid)` rather than building meshes itself. When the
+electrolyte carries an `OhmicDropEstimation`, the uncompensated resistance is rescaled per
+`L` as `Ru = L / κ`. Returns `Dict(L => result)`.
+"""
 function cvsweep_odr_over_L(
         elydata_odr, grid_dict, bcondition, reaction, sawtooth;
         nperiods = 1,

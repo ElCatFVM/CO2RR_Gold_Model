@@ -1,5 +1,17 @@
 """
-Placeholder for a short summary about {PKGNAME}.
+Continuum simulation of CO₂ reduction on gold.
+
+A one-dimensional generalised Poisson–Nernst–Planck electrolyte — finite ion size,
+solvation, activity coefficients — coupled to a CatMAP microkinetic surface mechanism.
+Seven transported species run from the electrode at `x = 0` out to a bulk reservoir at
+`x = L`, linked by a five-reaction carbonate buffer in the volume and by the CO₂-reduction
+microkinetics at the boundary.
+
+Produces cyclic voltammograms, current–voltage curves, double-layer capacitance and
+space/time concentration and pH profiles.
+
+Submodules: [`GoldModel`](@ref) builds the electrolyte and boundary conditions,
+`AuCO2RR_plots` holds the figure layer.
 """
 module AuCO2RR
 using LiquidElectrolytes

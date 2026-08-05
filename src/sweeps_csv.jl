@@ -1,6 +1,20 @@
+"Path into `data/sweepcompare`, where the exported sweep CSVs live."
 sweepcomparedir(args...) = datadir("sweepcompare", args...)
 
 
+"""
+    ivsweep_csv(; specieslayout, reactiondata, voltages, actcoeff, hydrated, bcmodel, model, kwargs...)
+
+Run an IV sweep and write voltage and current to a CSV under [`sweepcomparedir`](@ref).
+
+The filename encodes the model options, so repeated runs with different `actcoeff` /
+`hydrated` / `bcmodel` settings land in separate files — see [`filename`](@ref).
+
+!!! warning "The current column is the OH⁻ flux"
+    OH⁻ takes part in the buffer network, so its boundary flux is not purely faradaic, and
+    it is also the species whose stoichiometry the electrode reaction re-routes. The
+    plotting layer uses CO instead; this export has not followed.
+"""
 # CSV generating sweeps
 function ivsweep_csv(;
         specieslayout = GoldModel.SpeciesLayout(),
@@ -109,6 +123,12 @@ end;
 # =====================================================================
 
 # ── moved from cell a34cdba3 (filename)  [notebook globals → keyword args] ──
+"""
+    filename(function_name; L, BC_Select, mode, ionsize, scanrate, nperiods, vmin, vmax)
+
+Result filename encoding the sweep parameters, so runs that differ only in model options
+do not overwrite one another. `L` is converted to μm.
+"""
 function filename(
         function_name;
         L, BC_Select, mode, ionsize, scanrate, nperiods, vmin, vmax
@@ -123,6 +143,12 @@ function filename(
 end
 
 # ── moved from cell 406fb8e5 (export_scanrate_varied_species_csv_long) ──
+"""
+    export_scanrate_varied_species_csv_long(saws, scresults; meta, species, outdir, ...)
+
+Long-format CSV of one species' concentration and current against scan rate: one row per
+(scan rate, sample) rather than one column per scan rate.
+"""
 function export_scanrate_varied_species_csv_long(
         saws,
         scresults;
@@ -168,6 +194,12 @@ function export_scanrate_varied_species_csv_long(
 end
 
 # ── moved from cell 9e44f14b (export_cv_profile_csv) ──
+"""
+    export_cv_profile_csv(...)
+
+CSV of one voltammogram's spatial profile — concentration against position at the stored
+times.
+"""
 function export_cv_profile_csv(
         rec;
         meta,
@@ -195,6 +227,12 @@ function export_cv_profile_csv(
 end
 
 # ── moved from cell e6dca43d (export_pressure_varied_species_csv_long) ──
+"""
+    export_pressure_varied_species_csv_long(...)
+
+Long-format CSV of one species' concentration and current against CO₂ partial pressure.
+Column names come from [`_pressure_colname`](@ref).
+"""
 function export_pressure_varied_species_csv_long(
         P_recs;
         meta,

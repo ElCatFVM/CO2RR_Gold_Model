@@ -1,3 +1,12 @@
+"""
+    capscalc(sys, Au_Check; molarities, vrange)
+
+Double-layer capacitance over `vrange` for each bulk molarity in `molarities`.
+
+`Au_Check` selects the composition: `true` uses the seven-species carbonate mixture from
+the built-in `conc_map`, `false` scales a plain reference electrolyte. Returns one
+`(voltages, dlcaps)` record per molarity.
+"""
 function capscalc(sys, Au_Check::Bool; molarities= molarities = [0.005, 0.02, 0.1], vrange = range(-1, 1, length = 201))
     result = []
     

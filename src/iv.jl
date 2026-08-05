@@ -1,5 +1,18 @@
 
 
+"""
+    pressure_varied_sweep(elydata_base, sweepfun; Pvec, ispec, base_value, scale, kwargs...)
+
+Sweep one species' bulk concentration over a list of pressures.
+
+For each `p` in `Pvec` it sets `c_bulk[ispec] = base_value * scale(p)` — Henry's law when
+`scale` is `identity` and `base_value` is the saturated concentration — and calls
+`sweepfun(ely; kwargs...)`. Returns `(p, result)` pairs, the shape the pressure plots
+expect.
+
+`sweepfun` decides whether this is a CV or an IV study: pass a closure that builds a
+`PNPSystem` and calls `cvsweep` to get pressure-resolved voltammograms.
+"""
 function pressure_varied_sweep(
     elydata_base, sweepfun;
     Pvec,
@@ -18,11 +31,19 @@ function pressure_varied_sweep(
 end
 
 
+"""
+    sweep_over_L_cv(model; L_values, bcond, sweepfun, eneutral, reaction, store_solutions)
+
+Sweep over boundary-layer thickness with a caller-supplied `sweepfun`, building a grid per
+`L` (μm). Returns `Dict(L => result)`.
+
+Overrides the `cv.jl` definition of the same name — `iv.jl` is included later.
+"""
 function sweep_over_L_cv(
     model;
     L_values,
     bcond,
-    sweepfun,                
+    sweepfun,
     eneutral = true,
     reaction = nothing,
     store_solutions = true,
@@ -55,6 +76,13 @@ end
 
 
 
+"""
+    scanrate_varied_sweep(elydata, user_input_cv; scanrates, sweepfun, sweep_kwargs...)
+
+Run `sweepfun` once per scan rate in `scanrates`.
+
+Overrides the `cv.jl` definition of the same name — `iv.jl` is included later.
+"""
 function scanrate_varied_sweep(
     elydata,
     user_input_cv;
@@ -84,6 +112,12 @@ end
 
 
 
+"""
+    ivsweep_over_L(model, bcondition; voltages, L_values, solver_control, kwargs...)
+
+Steady-state IV curve at each boundary-layer thickness in `L_values` (μm), building a grid
+per `L`. Returns `Dict(L => ivresult)`.
+"""
 function ivsweep_over_L(model, bcondition;
 	voltages,
  	L_values = round.(Int, range(80, 1500, length=6)),
@@ -127,6 +161,12 @@ end
 # =====================================================================
 
 # ── moved from cell b767a48f (_pressure_colname) ──
+"""
+    _pressure_colname(p)
+
+CSV column name for a CO₂ partial pressure, e.g. `0.25` → `:pCO2_0p25_atm`. Decimal points
+become `p` and minus signs `m` so the result is a valid identifier.
+"""
 function _pressure_colname(p)
     s = @sprintf("%.4g", p)
     s = replace(s, "." => "p", "-" => "m", "+" => "")
@@ -134,6 +174,11 @@ function _pressure_colname(p)
 end
 
 # ── moved from cell 06ca7d68 (simulate_CO2R)  [bcondition/reaction/solver_control now args] ──
+"""
+    simulate_CO2R(grid, celldata; bcondition, reaction, solver_control, voltages, kwargs...)
+
+One IV sweep on a given grid and electrolyte. Returns `(cell, ivresult)`.
+"""
 function simulate_CO2R(grid, celldata;
         bcondition,
         reaction,
@@ -147,6 +192,12 @@ function simulate_CO2R(grid, celldata;
 end
 
 # ── moved from cell 012b426e (simulate_CO2R_dir)  [identical body to simulate_CO2R] ──
+"""
+    simulate_CO2R_dir(grid, celldata; bcondition, reaction, solver_control, voltages, kwargs...)
+
+As [`simulate_CO2R`](@ref); kept as a separate entry point for the directory-scanning
+scripts. The bodies are currently identical.
+"""
 function simulate_CO2R_dir(grid, celldata;
         bcondition,
         reaction,

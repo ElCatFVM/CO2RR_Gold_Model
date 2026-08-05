@@ -9,6 +9,31 @@ using Catalyst
 using DelimitedFiles
 using DrWatson
 
+"""
+    SpeciesLayout()
+
+Index of every unknown in the solution vector, plus the two contiguous slices that carry
+the reaction terms.
+
+Ordering is load-bearing: the buffer and microkinetic rate laws are handed *ranges*
+(`ibufferstart:ibufferend` = 2:6 and `isurfacestart:isurfaceend` = 5:10), not named
+entries, so reordering the species silently rewires both.
+
+| Index | Species | Buffer | Surface |
+|:--|:--|:--|:--|
+| 1 | K⁺ | — | — |
+| 2 | H⁺ | ✓ | — |
+| 3 | HCO₃⁻ | ✓ | — |
+| 4 | CO₃²⁻ | ✓ | — |
+| 5 | CO₂ | ✓ | ✓ |
+| 6 | OH⁻ | ✓ | ✓ |
+| 7 | CO | — | ✓ |
+| 8–10 | CO\\*, COOH\\*, CO₂\\* | — | ✓ (coverages) |
+
+Indices 5–7 are aqueous concentrations while 8–10 are dimensionless coverages, so the
+`5:10` slice mixes two unit systems. Only the aqueous entries get multiplied by the site
+density afterwards.
+"""
 Base.@kwdef struct SpeciesLayout
     # species not involved in reactions
     ikplus::Int = 1
@@ -35,6 +60,18 @@ Base.@kwdef struct SpeciesLayout
 end
 
 
+"""
+    ReactionData()
+
+Physical constants of the cell: buffer rate constants, bulk conditions and electrode
+parameters.
+
+Rate constants are named by route and direction — `kb…` alkaline, `ka…` acidic, `kw…`
+water — with `e` equilibrium, `f` forward, `r` reverse. Reverse constants are derived
+(`kbr2 = kbf2 / kbe2`), so the routes stay thermodynamically consistent.
+
+`S` is the catalytic site density and scales the whole faradaic current linearly.
+"""
 Base.@kwdef struct ReactionData
     # bulk constants
     pH::Float64 = 6.8
@@ -75,6 +112,11 @@ Base.@kwdef struct ReactionData
     xref::Float64=10* ufac"nm" # reference electrode position
 end
 
+"""
+    make_species_dict(specieslayout)
+
+Display name (`"OH⁻"`, `"CO₂"`, …) to species index.
+"""
 function make_species_dict(specieslayout)
     return Dict(
         "K⁺" => specieslayout.ikplus,
@@ -90,6 +132,12 @@ function make_species_dict(specieslayout)
     )
 end
 
+"""
+    make_species_dict_catmap(specieslayout)
+
+CatMAP name (`"OH_g"`, `"CO2_aq"`, …) to species index. Sets the order of the state vector
+handed to the microkinetic rate law.
+"""
 function make_species_dict_catmap(specieslayout)
     return Dict(
         "OH_g" => specieslayout.iohminus,
@@ -101,6 +149,7 @@ function make_species_dict_catmap(specieslayout)
     )
 end
 
+"Two-species NaClO₄ reference electrolyte, used for capacitance benchmarks."
 elydata_NaClO₄() = ElectrolyteData(
     z = [-1, 1],
     κ = [15.0, 25.0],
@@ -108,6 +157,7 @@ elydata_NaClO₄() = ElectrolyteData(
     ε = 26.0,
 )
 
+"Two-species NaF reference electrolyte, with its own radii and molar volume."
 elydata_NaF() = ElectrolyteData(
     z = [-1, 1],
     κ = [25.0, 25.0],
@@ -118,6 +168,12 @@ elydata_NaF() = ElectrolyteData(
     v0 = 18.048 * ufac"cm^3" / ufac"mol",
 )
 
+"""
+    elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation)
+
+Assemble the `ElectrolyteData` for the gold cell from the species list, the activity model
+`γ`, the constants in `reactiondata` and the chosen IR-compensation mode.
+"""
 elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteData(;
     nc = size(bulk)[1],
     na = specieslayout.na,
@@ -140,10 +196,16 @@ elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteD
     actcoeff! = γ,
 )
 
+"Activity coefficients from the Dreyer–Guhlke–Müller–Landstorfer model: solvation and volume exclusion."
 function DGML_γ!(γ, c, p, electrolyte)
     return LiquidElectrolytes.DGML_gamma!(γ, c, p, electrolyte)
 end
 
+"""
+Activity coefficients from pure volume exclusion: every species gets the same factor
+`1 / (1 - Σ vᵢcᵢ)`. No solvation term, so ion identity enters only through the molar
+volumes.
+"""
 function Stefan_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
@@ -153,6 +215,7 @@ function Stefan_γ!(γ, c, p, electrolyte)
     return γ
 end
 
+"Volume exclusion applied to K⁺ only; every other species stays ideal."
 function Potassium_γ!(γ, c, p, electrolyte)
     (; Mrel, tildev, v0, RT, v0, cspecies, rexp, c_bulk, v, nc) = electrolyte
     c0, barc = c0_barc(c, electrolyte)
@@ -164,6 +227,14 @@ function Potassium_γ!(γ, c, p, electrolyte)
 end
 
 
+"""
+    BulkSpecies(; name, z, D, c_bulk, κ, a, v, M, color)
+
+One transported species: charge number, diffusivity, bulk concentration, effective radius
+`a` (Å), solvation number `κ`, molar volume, molar mass and plot colour.
+
+`v` and `M` default to values derived from `a`, so setting the radius is usually enough.
+"""
 Base.@kwdef struct BulkSpecies
     name::String = ""
     z::Int = 0
@@ -177,6 +248,12 @@ Base.@kwdef struct BulkSpecies
 
 end
 
+"""
+    make_eneutral(bulk_species; name, z, D, κ, a, v, M, color)
+
+Build the counter-ion at whatever concentration makes the bulk electroneutral:
+`c = -Σ zᵢcᵢ / z` over the species already in `bulk_species`. Used for K⁺.
+"""
 function make_eneutral(
         bulk_species::Vector{BulkSpecies}
         ; name, z, D, κ = 0.0, a = 8.2, v = ph"N_A" * (a * 1.0e-1 * ufac"nm")^3,
@@ -188,6 +265,30 @@ function make_eneutral(
     return BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
 end
 
+raw"""
+    buffer_system(reactiondata) -> f_buffer!
+
+Build the carbonate buffer rate law that acts at every node.
+
+Five reversible reactions, with activity coefficients entering each rate:
+
+```math
+\begin{aligned}
+\ce{CO2 + OH^- &<=> HCO3^-} \\
+\ce{HCO3^- + OH^- &<=> CO3^{2-}} \\
+\ce{CO2 &<=> HCO3^- + H^+} \\
+\ce{HCO3^- &<=> CO3^{2-} + H^+} \\
+\ce{$\emptyset$ &<=> H^+ + OH^-}
+\end{aligned}
+```
+
+The alkaline and acidic routes are thermodynamically consistent but kinetically
+independent, so the network can sit far from the water equilibrium locally — as it does at
+a driven electrode.
+
+The returned function expects the `ibufferstart:ibufferend` slice of the unknowns, i.e.
+species 2–6 in the order H⁺, HCO₃⁻, CO₃²⁻, CO₂, OH⁻.
+"""
 function buffer_system(reactiondata)
     @variables t
     @species HCO₃⁻(t), CO₃²⁻(t), CO₂(t), OH⁻(t), H⁺(t)
@@ -211,23 +312,37 @@ function buffer_system(reactiondata)
 end
 
 
-"""
-A microkinetic modeling approach is taken:
+raw"""
+    surface_reaction(specieslayout) -> (f_microkinetics!, paramsidx, odesys)
 
-The reaction mechanism for the \$CO_2\$ reduction is divided into four elementary reactions at the electrode surface:
+Build the CO₂-reduction rate law from the CatMAP input.
 
-1. Adsorption of \$CO_2\$ molecules at the oxygen atoms
-\${CO_2}_{(aq)} + * \rightleftharpoons {CO_2 *}_{(ad)}\$
+Parses `data/catmap_CO2R_data/catmap_CO2R_template.mkm`, converts the reaction network to
+an `ODESystem`, liquidises the aqueous species and emits a generated function. `paramsidx`
+maps each symbolic parameter — surface charge, activity coefficients, potential, local pH —
+to its slot in the parameter vector that `f_microkinetics!` expects.
 
-2. First proton-coupled electron transfer
-\${CO_2*}_{(ad)} + H_2O_{(l)} + e^- \rightleftharpoons COOH*_{(ad)} + OH^-_{(aq)}\$
+Four elementary steps at the electrode surface:
 
-3. Second proton-coupled electron transfer
-\$COOH*_{(ad)} + e^- \rightleftharpoons CO*_{(ad)} + OH^{-}_{(aq)}\$
-with the transition state: \$*CO-OH^{TS}\$
+```math
+\begin{aligned}
+\ce{CO2 (aq) + \, * &<=> CO2* (ad)} \\
+\ce{CO2* (ad) + H2O (l) + e^- &<=> COOH* (ad) + OH^- (aq)} \\
+\ce{COOH* (ad) + e^- &<=> CO* (ad) + OH^- (aq)} \\
+\ce{CO* (ad) &<=> CO (aq) + \, *}
+\end{aligned}
+```
 
-4. Desorption of \$CO\$
-\$*CO_{(ad)} \rightleftharpoons CO_{(aq)} + *\$
+Step 3 proceeds through the transition state $\ce{*CO-OH}$.
+
+The state vector is ordered by [`make_species_dict_catmap`](@ref), and the returned rate is
+a **turnover frequency per catalytic site**, not a flux — the caller multiplies the aqueous
+entries by the site density `S`.
+
+!!! note "Why `raw`"
+    In a plain docstring `\r` is a string escape, so `\rightleftharpoons` silently becomes
+    a carriage return followed by `ightleftharpoons`. Keep this and any other math-bearing
+    docstring in this file `raw`.
 """
 function surface_reaction(specieslayout)
     catmap_params = CatmapInterface.parse_catmap_input(datadir("catmap_CO2R_data", "catmap_CO2R_template.mkm"))
@@ -246,6 +361,14 @@ function surface_reaction(specieslayout)
 end
 
 
+"""
+    calc_QBL_local(u, data; tolϕ = 1.0e-12)
+
+Surface charge from the local pressure, `Q = sign(Δϕ) √(2(1+ε)ε₀Δp)`.
+
+Used when `BC_model` is not `:Robin`, i.e. when there is no Helmholtz gap capacitance to
+give the charge directly.
+"""
 function calc_QBL_local(u, data; tolϕ = 1.0e-12)
     (; ip, iϕ, ε_0, pscale, ε) = data
 
@@ -264,6 +387,27 @@ function calc_QBL_local(u, data; tolϕ = 1.0e-12)
 end
 
 
+"""
+    create_model(; γ_select, use_md_hydrated, BC_model, model, ircompensation,
+                   specieslayout, reactiondata)
+
+Assemble the whole cell. This is the entry point everything else builds on.
+
+Picks the activity model and the ion radii, builds the seven-species list with K⁺ sized to
+keep the bulk electroneutral, and closes over the volume and electrode reactions.
+
+| Keyword | Choices |
+|:--|:--|
+| `γ_select` | `"DGML"`, `"Stefan"`, `"Potassium"` |
+| `use_md_hydrated` | `true` for MD hydrated radii and solvation numbers, `false` for bare or equal-size ions |
+| `BC_model` | `:Robin` (Helmholtz gap capacitance), `:Dirichlet`, or neither |
+| `ircompensation` | `NoIRCompensation()`, `OhmicDropEstimation(...)`, `PseudoPotentiostat()` |
+
+Returns `(bcondition, reaction, elydata, bulk, bulknames, bulkcolors, species_dict)`.
+
+The combination of `γ_select` and `use_md_hydrated` selects a radius set and prints which
+one was chosen; an unhandled combination is an error rather than a silent default.
+"""
 function create_model(;
         γ_select = "DGML",
         use_md_hydrated = true,
