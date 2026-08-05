@@ -866,7 +866,7 @@ function plot_pressure_varied_sweep(
     # 2) Simulation curves (existing logic)
     # ------------------------------------------------------------
     n = length(P_recs)
-    cols_sim = [RGB(1 - t, 0, t) for t in LinRange(0, 1, max(n, 1))]
+    cols_sim = [CMAP_PRESSURE[t] for t in LinRange(0, 1, max(n, 1))]
 
     for j in 1:n
         p, rec = P_recs[j]
@@ -922,7 +922,7 @@ function pressure_varied_cvsweep(
     # 2) Simulation curves (existing logic)
     # ------------------------------------------------------------
     n = length(P_recs)
-    cols_sim = [RGB(1 - t, 0, t) for t in LinRange(0, 1, max(n, 1))]
+    cols_sim = [CMAP_PRESSURE[t] for t in LinRange(0, 1, max(n, 1))]
 
     for j in 1:n
         p, rec = P_recs[j]
@@ -2268,7 +2268,140 @@ function panel_time_ph!(
 end
 
 # ── moved from cell ac2bef83 (plot_7species_contours) ──
-function plot_7species_contours(result, X, m; scale = mol / dm^3, num_levels = 24)
+raw"""
+    plot_potential_split(result, m; scanrate, kwargs...)
+
+Where the applied potential actually goes: three panels from a single CV run.
+
+| Panel | Shows |
+|:--|:--|
+| (a) | $\phi_\mathrm{we}(t)$ and $\phi(0)(t)$ on one axis — the gap between them is the drop across the compact layer |
+| (b) | $\phi(0)$ against $\phi_\mathrm{we}$ — the potential divider, slope $C_\mathrm{gap}/(C_\mathrm{gap}+C_\mathrm{d})$ |
+| (c) | $C = j_\mathrm{cap}/v$ against $\phi_\mathrm{we}$ — the capacitance that sets that slope |
+
+The three explain one another: the diffuse capacitance in (c) is smallest near the PZC,
+which is where the divider in (b) is steepest, which is where the two curves in (a) run
+closest together.
+
+`scanrate` in V/s is needed for panel (c) because a CV gives capacitance as
+$C = j_\mathrm{cap} / v$. Pass the same value used to build the sawtooth.
+
+!!! note "Panel (c) is only meaningful where no faradaic current flows"
+    `j_cap` is separated out by the solver, but once the surface reaction turns over the
+    coverages change and a capacitance reading stops being interpretable. `mask_faradaic`
+    greys out the window where `|I_F|` exceeds `faradaic_tol` (mA cm⁻²) rather than
+    silently plotting through it.
+"""
+function plot_potential_split(
+        result, m;
+        scanrate,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        current_scale = cm^2 / mA,
+        cap_scale = cm^2 / (1.0e-6),      # F/m² -> μF/cm²
+        mask_faradaic = true,
+        faradaic_tol = 0.05,
+        fig_size = (1250, 420),
+        lw = LW_LINE,
+        titlefontsize = 26, labelsize = 24
+    )
+    ϕ_pzc = m.elydata.ϕ_pzc
+
+    hasproperty(result, :sawtooth) ||
+        error("result carries no `sawtooth`; plot_potential_split needs the applied protocol")
+
+    U_we = result.sawtooth            # applied
+    U_rp = result.voltages            # reaction plane
+    t = result.times
+
+    I_F = faradaic_current(result; species, n_e, sgn) .* current_scale
+    C = capacitive_current(result) ./ scanrate .* cap_scale
+
+    quiet = mask_faradaic ? abs.(I_F) .<= faradaic_tol : trues(length(I_F))
+
+    fig = Figure(size = fig_size)
+
+    # (a) both potentials against time
+    ax_a = Axis(
+        fig[1, 1];
+        xlabel = lab_time, ylabel = lab_voltage, title = "(a) applied vs. reaction plane",
+    titlesize = titlefontsize)
+    l1 = lines!(ax_a, t, U_we; color = :black, linewidth = lw)
+    l2 = lines!(ax_a, t, U_rp; color = "#C0392B", linewidth = lw)
+    axislegend(
+        ax_a, [l1, l2],
+        [rich(rich("ϕ", font = :italic), subscript("we")),
+         rich(rich("ϕ", font = :italic), subscript("0"))];
+        position = :lt, framevisible = false, labelsize
+    )
+
+    # (b) the divider itself
+    ax_b = Axis(
+        fig[1, 2];
+        xlabel = lab_voltage, ylabel = rich(rich("ϕ", font = :italic), "(0)  (V)"),
+        title = "(b) potential divider", titlesize = titlefontsize, limits = ((-1.3, 0.8), (-1.3, 0.8))
+    )
+    # y = x is the no-loss reference: if the whole applied potential reached the reaction
+    # plane the curve would lie on it, so the vertical gap to it *is* the potential lost to
+    # the electrolyte. Without the line that gap cannot be read off the panel.
+    ablines!(ax_b, 0, 1; color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)
+    lines!(ax_b, U_we, U_rp; color = "#C0392B", linewidth = lw)
+    vlines!(ax_b, [ϕ_pzc]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+    text!(ax_b, ϕ_pzc, -0.5; text = rich(rich("ϕ", font = :italic), subscript("pzc")), fontsize = 26, rotation = -pi/2)
+    axislegend(
+        ax_b,
+        [LineElement(color = "#C0392B", linewidth = lw),
+         LineElement(color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)],
+        ["divider", "no loss"];
+        position = :lt, framevisible = false, labelsize
+    )
+
+    # (c) capacitance from the capacitive current
+    ax_c = Axis(
+        fig[1, 3];
+        xlabel = lab_voltage,
+        ylabel = rich(rich("C", font = :italic), "  (μF cm", superscript("−2"), ")"),
+        title = "(c) capacitance", titlesize = titlefontsize
+    )
+    Cq = [q ? c : NaN for (q, c) in zip(quiet, C)]
+    lines!(ax_c, U_we, Cq; color = "#2980B9", linewidth = lw)
+    if mask_faradaic && any(.!quiet)
+        # show, rather than hide, the window that was excluded
+        Cf = [q ? NaN : c for (q, c) in zip(quiet, C)]
+        lines!(ax_c, U_we, Cf; color = (:gray, 0.45), linewidth = lw, linestyle = :dot)
+    end
+    vlines!(ax_c, [ϕ_pzc]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+    text!(ax_c, ϕ_pzc, -0.5; text = rich(rich("ϕ", font = :italic), subscript("pzc")), fontsize = 26, rotation = -pi/2)
+
+    colgap!(fig.layout, 30)
+    return fig
+end
+
+"""
+    plot_7species_contours(result, X, m; layout = (2, 4), colorrange = nothing, ...)
+
+log₁₀ concentration of every transported species over distance and time, one panel each.
+
+Laid out as `layout = (rows, cols)` with the leftover cell taken by a **shared** colorbar.
+Seven species in a 2×4 grid leaves exactly one free slot, which is why that is the default:
+a single column of seven panels is far too tall for a page, and splitting into two figures
+loses the side-by-side comparison.
+
+The colour scale is shared across panels, so a colour means the same concentration
+everywhere in the figure and species can be read against one another. Pass `colorrange` to
+pin it, e.g. across several figures. Concentrations below `10^floor_exp` are clamped, which
+also absorbs the zeros and any negative excursion.
+"""
+function plot_7species_contours(
+        result, X, m;
+        scale = mol / dm^3,
+        num_levels = 24,
+        layout = (2, 4),
+        colorrange = nothing,
+        floor_exp = -12,
+        fig_size = (1250, 560),
+    )
     bulk = m.bulk
     target_species = [
         ("K⁺", rich("K", superscript("+"))),
@@ -2277,61 +2410,87 @@ function plot_7species_contours(result, X, m; scale = mol / dm^3, num_levels = 2
         ("OH⁻", rich("OH", superscript("−"))),
         ("HCO₃⁻", rich("HCO", subscript("3"), superscript("−"))),
         ("CO₃²⁻", rich("CO", subscript("3"), superscript("2−"))),
-        ("CO", rich("CO", superscript("−"))),
+        ("CO", rich("CO")),
     ]
-    fig = Figure(size = (750, 1500))
     times = result.tsol.t
     discrete_cmap = cgrad(:jet, num_levels, categorical = true)
 
-    for i in 1:7
-        sp_name, sp_label = target_species[i]
-
+    # Build every log field first: a shared colour range cannot be known until all of
+    # them exist.
+    panels = Any[]
+    for (sp_name, sp_label) in target_species
         sp_idx = findfirst(s -> s.name == sp_name, bulk)
         if isnothing(sp_idx)
             @warn "Species '$sp_name' not found in bulk; skipping this panel."
             continue
         end
-
         @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times)] ./ scale
+        M = log10.(max.(c_matrix, 10.0^floor_exp))
+        replace!(M, Inf => float(floor_exp), -Inf => float(floor_exp), NaN => float(floor_exp))
+        push!(panels, (sp_label, M))
+    end
+    isempty(panels) && error("none of the target species were found in `m.bulk`")
 
-        M = log10.(max.(c_matrix, 1.0e-12))
+    crange = if colorrange === nothing
+        lo = minimum(minimum(p[2]) for p in panels)
+        hi = maximum(maximum(p[2]) for p in panels)
+        lo == hi ? (lo - 0.5, hi + 0.5) : (lo, hi)
+    else
+        colorrange
+    end
 
-        replace!(M, Inf => -12.0, -Inf => -12.0, NaN => -12.0)
+    nrow, ncol = layout
+    npanel = length(panels)
+    fig = Figure(size = fig_size)
+    axs = Axis[]
+    local hm
 
-        c_min = minimum(M)
-        c_max = maximum(M)
-        if c_min == c_max
-            c_min -= 0.5
-            c_max += 0.5
-        end
+    for (k, (sp_label, M)) in enumerate(panels)
+        row, col = fldmod1(k, ncol)
+        # bottom of its column: either the last row, or nothing sits below it
+        is_bottom = (k + ncol > npanel)
 
         ax = Axis(
-            fig[i, 1];
-            xlabel = (i == 7) ? "Time (s)" : "",
-            ylabel = rich(rich("x", font = :italic), "  (m)"),
+            fig[row, col];
+            xlabel = is_bottom ? lab_time : "",
+            ylabel = col == 1 ? rich(rich("x", font = :italic), "  (m)") : "",
             yscale = log10,
             yminorticksvisible = true,
             yminorticks = IntervalsBetween(9),
-            yticks = (10.0 .^ (-12:3:-6), [powlab(-12), powlab(-9), powlab(-6)]),
-            title = "$sp_name Concentration Contour"
+            yticks = (
+                10.0 .^ (floor_exp:3:(floor_exp + 6)),
+                [powlab(floor_exp), powlab(floor_exp + 3), powlab(floor_exp + 6)],
+            ),
+            title = sp_label,
         )
+        is_bottom || hidexdecorations!(ax; grid = false)
+        col == 1 || hideydecorations!(ax; grid = false, ticks = false)
 
         hm = heatmap!(
             ax, times, X .+ 1.0e-12, M';
-            colorrange = (c_min, c_max),
+            colorrange = crange,
             colormap = discrete_cmap,
-            interpolate = false
+            interpolate = false,
         )
-
-        Colorbar(
-            fig[i, 2], hm;
-            label = rich(
-                "log", subscript("10"), "(", rich("c", font = :italic),
-                subscript(sp_label), " / M)"
-            ),
-            ticklabelsize = 14, labelsize = 14
-        )
+        push!(axs, ax)
     end
+
+    length(axs) > 1 && linkaxes!(axs...)
+
+    # Shared colorbar in the leftover cell; falls back to an extra column if the layout
+    # happens to be exactly full.
+    cbar_label = rich(
+        "log", subscript("10"), "(", rich("c", font = :italic), " / M)"
+    )
+    if npanel < nrow * ncol
+        crow, ccol = fldmod1(npanel + 1, ncol)
+        Colorbar(fig[crow, ccol], hm; label = cbar_label, vertical = true, width = 18)
+    else
+        Colorbar(fig[:, ncol + 1], hm; label = cbar_label, vertical = true, width = 18)
+    end
+
+    colgap!(fig.layout, 12)
+    rowgap!(fig.layout, 12)
     return fig
 end
 
