@@ -78,24 +78,24 @@ stays empty. Writing them by hand gives the same result without deploying.
 Delete this call once `deploydocs` is enabled — it would otherwise overwrite what the real
 deployment produced.
 """
-function write_version_selector(builddir)
-    label = DOC_VERSION_LABEL
-    write(
-        joinpath(builddir, "siteinfo.js"),
-        """
-        var DOCUMENTER_CURRENT_VERSION = "$(label)";
-        """
-    )
-    write(
-        joinpath(builddir, "versions.js"),
-        """
-        var DOC_VERSIONS = ["$(label)"];
-        var DOCUMENTER_NEWEST = "$(label)";
-        var DOCUMENTER_STABLE = "$(label)";
-        """
-    )
-    return nothing
-end
+#function write_version_selector(builddir)
+#    label = DOC_VERSION_LABEL
+#    write(
+#        joinpath(builddir, "siteinfo.js"),
+#        """
+#        var DOCUMENTER_CURRENT_VERSION = "$(label)";
+#        """
+#    )
+#    write(
+#        joinpath(builddir, "versions.js"),
+#        """
+#        var DOC_VERSIONS = ["$(label)"];
+#        var DOCUMENTER_NEWEST = "$(label)";
+#        var DOCUMENTER_STABLE = "$(label)";
+#        """
+#    )
+#    return nothing
+#end
 
 mkdocs()
 write_version_selector(joinpath(@__DIR__, "build"))
@@ -103,10 +103,10 @@ write_version_selector(joinpath(@__DIR__, "build"))
 # Skip deployment from the REPL; only CI publishes to gh-pages.
 # Enable once a GitHub remote exists — and drop `write_version_selector` above,
 # since deploydocs writes versions.js / siteinfo.js itself.
-# if !isinteractive()
-#     deploydocs(
-#         repo = "github.com/USER/Capacitance_Code.git",
-#         devbranch = "main",
-#         versions = ["stable" => "v^", "dev" => "dev", "v#.#"],
-#     )
-# end
+ if !isinteractive()
+     deploydocs(
+         repo = "github.com/USER/Capacitance_Code.git",
+         devbranch = "main",
+         versions = ["stable" => "v^", "dev" => "dev", "v#.#"],
+     )
+ end
