@@ -57,6 +57,24 @@ const CMAP_SCANRATE = cgrad([RGB(0.2, 0.8, 0.8), RGB(0.8, 0.3, 0.1)])
 "Muted red → blue sequence for CO₂ partial-pressure families."
 const CMAP_PRESSURE = cgrad([colorant"#F2A6A6", colorant"#A9C6EE"])
 
+# --------------------------------------------------------------------------
+# Font sizes. Axis labels and ticks were already set here; panel titles and
+# legends were not, so they fell back to Makie's defaults and came out far
+# smaller than everything around them.
+# --------------------------------------------------------------------------
+
+"Axis label and tick label size."
+const FS_LABEL = 25
+
+"Panel title size — a step below the axis labels so it reads as a caption."
+const FS_TITLE = 22
+
+"Legend title size."
+const FS_LEGEND_TITLE = 22
+
+"Legend entry size."
+const FS_LEGEND = 20
+
 function electrochemistry_theme()
     Theme(
         # Global font family: every textual element (ticks, titles, legends and
@@ -75,10 +93,12 @@ function electrochemistry_theme()
             ytickwidth = 2.0,
             xticksize = 8,
             yticksize = 8,
-            xlabelsize = 25,
-            ylabelsize = 25,
-            xticklabelsize = 25,
-            yticklabelsize = 25,
+            titlesize = FS_TITLE,
+            titlefont = :bold,
+            xlabelsize = FS_LABEL,
+            ylabelsize = FS_LABEL,
+            xticklabelsize = FS_LABEL,
+            yticklabelsize = FS_LABEL,
             xgridvisible = false,
             ygridvisible = false,
             xlabelpadding = 10,
@@ -96,6 +116,9 @@ function electrochemistry_theme()
         ),
         Legend = (
             framevisible = false,
+            titlesize = FS_LEGEND_TITLE,
+            titlefont = :bold,
+            labelsize = FS_LEGEND,
         ),
         Colorbar = (
             labelsize = 20,

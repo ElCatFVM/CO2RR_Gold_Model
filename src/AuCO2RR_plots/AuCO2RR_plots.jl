@@ -23,7 +23,7 @@ export CV_dsp_cap_result, CV_total_current, plot_cv_total_current_tot, plot_scan
 export plot_co2_profiles, co2_log_contour, plot_activity_time_electrode, CV_overlay_currents, plot_cv_current_variedL, plot_pressure_varied_sweep_ivc, plot_cv_current_dict, panel_conc_time!, panel_time_current!, panel_time_voltage!, panel_co2_log_contour!, panel_time_ph!, plot_7species_contours, panel_log_contour!, QoverK, plot_cv_total_current, plot_combined_exp_sim_ivc, powlab
 # single source of truth for the CV current / voltage definitions
 export faradaic_current, capacitive_current, cv_current, cv_abscissa
-export pressure_varied_cvsweep_split, plot_scanrate_sweeps_split
+export pressure_varied_cvsweep_split, plot_scanrate_sweeps_split, plot_potential_split
 
 
 include("capsplot.jl")
