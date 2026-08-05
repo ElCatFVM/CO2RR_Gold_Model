@@ -4,3 +4,4 @@ Manifest*.toml
 *.jpg
 *.Identifier
 data/output/
+docs/build/

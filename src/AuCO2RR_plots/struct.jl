@@ -16,6 +16,47 @@
 "Sans-serif family shared by every figure (matches row_interaction_script's `sans_font`)."
 const PLOT_FONT_FAMILY = "DejaVu Sans"
 
+# --------------------------------------------------------------------------
+# Line widths.
+#
+# These used to be open-coded at every plotting function, which left seven
+# different values (1, 2, 3, 3.5, 4, 5, 5.5) in circulation under six different
+# keyword names — two panels of the *same* multi-panel figure could disagree.
+# Default every width keyword to one of these instead of to a bare number, and
+# reach for a new constant rather than a literal when a new role appears.
+# --------------------------------------------------------------------------
+
+"Width of a data series. Also the `Lines` default of [`electrochemistry_theme`](@ref)."
+const LW_LINE = 4
+
+"Width of an emphasised series in an overlay; must stay visibly above `LW_LINE`."
+const LW_HIGHLIGHT = 6
+
+"Width of experimental reference data drawn behind the simulation."
+const LW_EXP = 2
+
+"Width of dashed guides — `vlines!`, `hlines!`, boundary-layer markers."
+const LW_GUIDE = 2
+
+# --------------------------------------------------------------------------
+# Colour sequences for a swept family of curves (scan rate, L, pressure, …).
+#
+# Index them as `CMAP[t]` with `t in range(0, 1, length = n)` so a family always
+# spans the full sequence regardless of how many members it has.
+# --------------------------------------------------------------------------
+
+"""
+Teal → orange sequence for scan-rate families.
+
+Equivalent to the `RGB(0.2 + 0.6t, 0.8 - 0.5t, 0.8 - 0.7t)` ramp that
+[`plot_scanrate_sweeps`](@ref) used to build inline — that expression is linear in `t`,
+so a two-stop gradient reproduces it exactly.
+"""
+const CMAP_SCANRATE = cgrad([RGB(0.2, 0.8, 0.8), RGB(0.8, 0.3, 0.1)])
+
+"Muted red → blue sequence for CO₂ partial-pressure families."
+const CMAP_PRESSURE = cgrad([colorant"#F2A6A6", colorant"#A9C6EE"])
+
 function electrochemistry_theme()
     Theme(
         # Global font family: every textual element (ticks, titles, legends and
@@ -51,7 +92,7 @@ function electrochemistry_theme()
             # specific count is needed.
         ),
         Lines = (
-            linewidth = 3,
+            linewidth = LW_LINE,
         ),
         Legend = (
             framevisible = false,

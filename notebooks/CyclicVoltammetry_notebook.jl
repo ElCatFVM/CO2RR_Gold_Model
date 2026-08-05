@@ -171,7 +171,7 @@ AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
 
 # ╔═╡ bd9b5c58-0375-4ce2-aa55-c74b921aa050
 let
-    result = cv_odr
+    result = cv_unc
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 1260))       
         ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, elystruct_odr;     xlabel = "")
@@ -256,7 +256,7 @@ md"""
 
 # ╔═╡ affdc880-3a70-429a-bcfb-a53cf7ed1f31
 let
-	fig=AuCO2RR_plots.plot_cv_current_variedL(results, elystruct_odr)
+	fig=plot_cv_current_variedL(results, elystruct_odr)
 	CairoMakie.save("cv-$(ircomp).png",fig)
 	fig
 end
@@ -374,9 +374,11 @@ begin
                     nperiods, Δu_opt = 0.025) for sr in scanrates]
 end
 
-# ╔═╡ 4c520a35-1109-472d-a800-d42133a7ef94
-AuCO2RR_plots.plot_scanrate_sweeps(SR_vec, scanrates)
+# ╔═╡ d7b50e64-d0c9-4551-a732-a7a1dea445a4
+plot_scanrate_sweeps(SR_vec, scanrates)
 
+# ╔═╡ 4c520a35-1109-472d-a800-d42133a7ef94
+plot_scanrate_sweeps_split(SR_vec, scanrates)
 
 # ╔═╡ d291fbb9-0cc4-4f6b-a7ed-4e3f103f4d11
 md"""
@@ -395,9 +397,11 @@ begin
                                    Pvec = [0.2, 0.4, 0.6, 0.8, 1.0], ispec = 5)
 end
 
-# ╔═╡ ad3c4119-cd97-4933-820f-84eee96cbc07
-AuCO2RR_plots.pressure_varied_cvsweep(P_recs)
+# ╔═╡ bde0975f-957f-4e8c-8c15-59e7f1a09400
+pressure_varied_cvsweep(P_recs)
 
+# ╔═╡ ad3c4119-cd97-4933-820f-84eee96cbc07
+pressure_varied_cvsweep_split(P_recs)
 
 # ╔═╡ Cell order:
 # ╠═8d20515c-54c6-11f1-aeac-bdc0c7e51b18
@@ -441,7 +445,9 @@ AuCO2RR_plots.pressure_varied_cvsweep(P_recs)
 # ╠═9bd12311-fbe8-436b-8c14-18edb5744929
 # ╠═743e985e-1fa3-426f-b2c0-cdb52517443d
 # ╠═535e8412-7e45-4be2-9533-b1ee1245d3e1
+# ╠═d7b50e64-d0c9-4551-a732-a7a1dea445a4
 # ╠═4c520a35-1109-472d-a800-d42133a7ef94
 # ╠═d291fbb9-0cc4-4f6b-a7ed-4e3f103f4d11
 # ╠═2333ae9c-0f59-4a87-90ed-bc5e8fba9f76
+# ╠═bde0975f-957f-4e8c-8c15-59e7f1a09400
 # ╠═ad3c4119-cd97-4933-820f-84eee96cbc07

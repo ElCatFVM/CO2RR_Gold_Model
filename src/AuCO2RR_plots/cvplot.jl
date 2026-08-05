@@ -72,35 +72,37 @@ end
 """
     plot_cv_current(result, model; species=nothing, fig_size=(650, 400), scale=cm^2/mA)
 
-Plot `currents(result, species) .* scale` versus `result.voltages`.
-If `species` is `nothing`, use `model.cspecies[1]`.
-Returns `fig`.
+Plot [`cv_current`](@ref) against [`cv_abscissa`](@ref). Returns `fig`.
+
+The old default read the flux of `model.cspecies[1]`, i.e. K⁺ — a spectator that carries
+no faradaic current at all. The default is now CO with two electrons.
 """
 function plot_cv_current(
         result, m;
-        species = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         fig_size = (650, 400),
         scale = cm^2 / mA,
         color_gradient = true
     )
-    model = m.elydata
-
-    sp = (species === nothing) ? model.cspecies[1] : species
+    I = cv_current(result; species, n_e, sgn, include_capacitive) .* scale
+    U, xlab = cv_abscissa(result; kind = abscissa)
 
     fig = Figure(size = fig_size)
     ax = Axis(
         fig[1, 1],
         ylabel = lab_current,
-        xlabel = lab_voltage
+        xlabel = xlab
     )
 
-    I = currents(result, sp) .* scale
-
     if color_gradient
-        cols = RGBf.(range(0, 1, length(result.voltages)), 0.0, 0.0)
-        lines!(ax, result.voltages, I; color = cols)
+        cols = RGBf.(range(0, 1, length(U)), 0.0, 0.0)
+        lines!(ax, U, I; color = cols)
     else
-        lines!(ax, result.voltages, I)
+        lines!(ax, U, I)
     end
 
     return fig
@@ -398,7 +400,7 @@ function plot_pH_varied_sweep(
         ivres = hasproperty(rec, :ivresult) ? getproperty(rec, :ivresult) : rec
         I = currents(ivres, species) .* scale
 
-        plt = lines!(ax, ivres.voltages, I; color = cols[j], linewidth = 3)
+        plt = lines!(ax, ivres.voltages, I; color = cols[j], linewidth = LW_LINE)
         push!(plots, plt)
         push!(labels, "pH = $(pH)")
     end
@@ -488,13 +490,13 @@ function plot_scanrate_sweeps(
         sgn = 1,
         include_capacitive = false,
         abscissa = :applied,
-        fig_size = (1600, 900),
+        fig_size = (800, 400),
         scale = cm^2 / mA,
         legend_title = "Scan Rates (V/s)",
         highlight_index = nothing,
         highlight_color = RGB(1, 0.2, 0.2),
-        highlight_lw = 4,
-        default_lw = 1,
+        highlight_lw = LW_HIGHLIGHT,
+        default_lw = LW_LINE,
     )
     fig = Figure(size = fig_size)
 
@@ -503,13 +505,7 @@ function plot_scanrate_sweeps(
     ax = Axis(fig[1, 1], ylabel = lab_current, xlabel = xlab)
 
     n = length(sweep_vec)
-    cols = [
-        RGB(
-                0.2 + 0.6 * (i / n),
-                0.3 + 0.5 * (1 - i / n),
-                0.8 - 0.7 * (i / n)
-            ) for i in 1:n
-    ]
+    cols = [CMAP_SCANRATE[t] for t in range(0, 1, length = max(n, 1))]
 
     plot_objs = Any[]
     labels = String[]
@@ -655,11 +651,11 @@ function plot_conc_profile_with_delta(
     conc = vec(tsol[ispec, 1:nplot, t_index])
     yvals = map(c -> (c > 0 ? log10(c) : NaN), conc)
 
-    lines!(ax, xx, yvals; color = colors[ispec], linewidth = 2, label = species[ispec])
+    lines!(ax, xx, yvals; color = colors[ispec], linewidth = LW_LINE, label = species[ispec])
 
     δ_here = x_at_frac(tsol, ispec, t_index, xx, c_bulk, frac)
     if isfinite(δ_here)
-        vlines!(ax, [δ_here]; linestyle = :dash, linewidth = 2)
+        vlines!(ax, [δ_here]; linestyle = :dash, linewidth = LW_GUIDE)
         ytop = maximum(filter(isfinite, yvals))
         text!(
             ax, δ_here, ytop;
@@ -793,8 +789,8 @@ function plot_pressure_varied_sweep(
         fig3_csv::Union{Nothing, AbstractString} = "../data/Langmuir_CV_data/Figure_3.csv",
         exp_title::AbstractString = "Experimental",
         exp_alpha::Real = 0.55,
-        exp_linewidth::Real = 2,
-        sim_linewidth::Real = 3,
+        exp_linewidth::Real = LW_EXP,
+        sim_linewidth::Real = LW_LINE,
     )
     fig = Figure(size = fig_size)
 
@@ -894,12 +890,12 @@ function pressure_varied_cvsweep(
         sgn = 1,
         include_capacitive = false,
         abscissa = :applied,
-        fig_size = (1600, 900),
+        fig_size = (800, 400),
         scale = cm^2 / mA,
         limits = nothing,
     )
     fig = Figure(size = fig_size)
-    sim_linewidth = 3
+    sim_linewidth = LW_LINE
 
     # axis label follows the abscissa choice, so it always names what it shows
     xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
@@ -942,6 +938,127 @@ function pressure_varied_cvsweep(
     Legend(fig[1, 2], plots, labels, "Overlay"; framevisible = true)
     return fig
 end
+
+"""
+    pressure_varied_cvsweep_split(P_recs; ured = (-1.3, -0.6), uox = (0.0, 1.0), kwargs...)
+
+Same data as [`pressure_varied_cvsweep`](@ref), drawn as a **broken voltage axis**: the
+reductive window `ured` in `fig[1, 1]` and the oxidative window `uox` in `fig[1, 2]`,
+butted together with the flat region between them omitted. A single black rule marks the
+seam.
+
+Two things make the anodic feature unreadable on one plain axis: the reduction peak is
+one to two orders of magnitude taller, and roughly half the sweep is featureless
+baseline. Cutting the baseline out and giving each window its own current axis fixes
+both — the left tick labels belong to the reductive panel, the right ones to the
+oxidative panel. `anodic_gain` scales the oxidative branch further when auto-scaling is
+not enough; any gain other than 1 is written into the panel title, so a magnified branch
+cannot be mistaken for a raw one.
+
+By default the panel widths are proportional to the voltage spans they cover, so both
+panels share the same volts-per-centimetre and the pair reads as one axis with a piece
+removed. Pass `widths` to override.
+
+Samples outside a panel's window become `NaN` rather than being dropped, which preserves
+each curve's sample order and lets Makie break the line instead of joining across a gap.
+
+!!! warning
+    The two panels share neither a current scale nor a continuous voltage axis, so
+    heights and slopes are **not** comparable across the seam. Quote `anodic_gain`, both
+    windows and both y-ranges in any caption.
+
+`kwargs` are the usual current/abscissa controls — see [`cv_current`](@ref) and
+[`cv_abscissa`](@ref).
+"""
+function pressure_varied_cvsweep_split(
+        P_recs;
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
+        scale = cm^2 / mA,
+        ured = (-1.3, -0.6),
+        uox = (0.0, 1.0),
+        anodic_gain = 1.0,
+        widths = nothing,
+        fig_size = (1100, 460),
+        lw = LW_LINE,
+        legend_title = "Overlay",
+        label_fmt = p -> "$(p)\t pCO2(atm)",
+        colormap = CMAP_PRESSURE,
+        xticks_red = LinearTicks(3),
+        xticks_ox = LinearTicks(3),
+    )
+    n = length(P_recs)
+    cols_sim = [colormap[t] for t in range(0, 1, length = max(n, 1))]
+
+    xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
+    ox_title = anodic_gain == 1 ? "oxidation" : @sprintf("oxidation  (×%g)", anodic_gain)
+
+    fig = Figure(size = fig_size)
+    # Only the left panel carries the current label — the unit is the same on both
+    # sides, and the voltage label is a single centred `Label` under the pair, so the
+    # broken axis reads as one axis instead of two fully decorated plots.
+    ax_red = Axis(fig[1, 1]; ylabel = lab_current, title = "reduction", xticks = xticks_red)
+    ax_ox = Axis(
+        fig[1, 2];
+        title = ox_title, yaxisposition = :right, xticks = xticks_ox,
+    )
+    # One black rule at the seam: keep the left panel's right spine, drop the right
+    # panel's left spine. Leaving both on would draw a double-width wall.
+    ax_ox.leftspinevisible = false
+
+    plots = Any[]
+    labels = String[]
+
+    for j in 1:n
+        p, rec = P_recs[j]
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
+
+        I_red = [ured[1] <= u <= ured[2] ? x : NaN for (u, x) in zip(U, I)]
+        I_ox = [uox[1] <= u <= uox[2] ? x * anodic_gain : NaN for (u, x) in zip(U, I)]
+
+        line = lines!(ax_red, U, I_red; color = cols_sim[j], linewidth = lw)
+        lines!(ax_ox, U, I_ox; color = cols_sim[j], linewidth = lw)
+
+        push!(plots, line)
+        push!(labels, label_fmt(p))
+    end
+
+    xlims!(ax_red, ured...)
+    xlims!(ax_ox, uox...)
+
+    Legend(fig[1, 3], plots, labels, legend_title; framevisible = true)
+
+    # one voltage label centred under both panels, matching the theme's axis-label style
+    Label(fig[2, 1:2], xlab; fontsize = 25, font = :bold, padding = (0, 0, 0, 6))
+
+    # equal volts-per-unit-width on both sides unless told otherwise
+    w = widths === nothing ? (ured[2] - ured[1], uox[2] - uox[1]) : widths
+    colsize!(fig.layout, 1, Auto(w[1]))
+    colsize!(fig.layout, 2, Auto(w[2]))
+    colgap!(fig.layout, 1, 0)      # butt the two panels together
+    rowgap!(fig.layout, 1, 4)
+    return fig
+end
+
+"""
+    plot_scanrate_sweeps_split(sweep_vec, scanrates; kwargs...)
+
+Broken-axis version of [`plot_scanrate_sweeps`](@ref), with the same reduction/oxidation
+split as [`pressure_varied_cvsweep_split`](@ref) — which is the shared implementation;
+only the legend labelling differs. All of its keywords apply here too.
+"""
+plot_scanrate_sweeps_split(sweep_vec, scanrates; colormap = CMAP_SCANRATE, kwargs...) =
+    pressure_varied_cvsweep_split(
+    collect(zip(scanrates, sweep_vec));
+    legend_title = "Scan Rates (V/s)",
+    label_fmt = sr -> "$(sr) V/s",
+    colormap = colormap,
+    kwargs...
+)
 
 
 # =====================================================================
@@ -1086,8 +1203,8 @@ function CV_total_current(result, m; species = nothing, scale = cm^2 / mA)
         return f, a
     end
 
-    #i_F   = currents(result, sp) .* scale
-    i_cap = result.j_cap .* scale
+    #i_F   = faradaic_current(result; species = sp) .* scale
+    i_cap = capacitive_current(result) .* scale
     #i_tot = i_F .+ i_cap
 
     # lines!(ax, result.voltages, i_F;   color = :magenta,  label = L"i_F")
@@ -1110,7 +1227,7 @@ function plot_cv_total_current_tot(
         color_F = colorant"#F2728A",   # i_F color
         color_C = colorant"#5BA8E8",   # i_C color
         mix_mode::Symbol = :mean,         # :sum or :mean
-        lw = 5
+        lw = LW_LINE
     )
     sp, ne = if redox_species === nothing
         species, n_e
@@ -1192,15 +1309,19 @@ function plot_cv_scanrate_grid(
         color_F = colorant"#F2728A",
         color_C = colorant"#5BA8E8",
         mix_mode::Symbol = :mean,
-        lw = 5.5
+        lw = LW_LINE
     )
     sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
+    # These three differ from the shared `lab_current` (struct.jl) only by the
+    # F / C / tot subscript, so they are built from the same pieces.
     unit_i = rich("  (mA cm", superscript("−2"), ")")
     lab_iF = rich(rich("I", font = :italic), subscript("F"), unit_i)
     lab_iC = rich(rich("I", font = :italic), subscript("C"), unit_i)
     lab_itot = rich(rich("I", font = :italic), subscript("tot"), unit_i)
-    lab_U = rich(rich("U", font = :italic), "  (V vs. SHE)")
+    # The voltage label has to follow `abscissa`; hardcoding it would label a
+    # double-layer or reaction-plane potential as if it were the applied one.
+    lab_U = isempty(result_vec) ? lab_voltage : cv_abscissa(result_vec[1]; kind = abscissa)[2]
 
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1000, 700))
@@ -1306,12 +1427,13 @@ function plot_cv_scanrate_grid_unc(
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
         color_tot = "#BAC8FF",
-        lw = 5.5
+        lw = LW_LINE
     )
     sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
-    lab_I = rich(rich("I", font = :italic), "  (mA cm", superscript("−2"), ")")
-    lab_U = rich(rich("U", font = :italic), "  (V vs. SHE)")
+    # shared labels from struct.jl; the voltage one follows `abscissa`
+    lab_I = lab_current
+    lab_U = isempty(result_vec) ? lab_voltage : cv_abscissa(result_vec[1]; kind = abscissa)[2]
 
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (1000, 350))
@@ -1383,19 +1505,22 @@ function plot_scanrate_sweeps_cv_2(
         redox_species = nothing,   # back-compat: Dict(species => n_e), first entry wins
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        default_lw = 2
+        default_lw = LW_LINE
     )
     sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
     n = length(sweep_vec)
     pastel2 = cgrad([colorant"#D5F011", colorant"#16D8FF"])
     cols = [pastel2[t] for t in range(0, 1, length = max(n, 1))]
 
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(sweep_vec) ? lab_voltage : cv_abscissa(sweep_vec[1]; kind = abscissa)[2]
+
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (850, 550))
         a = Axis(
             f[1, 1],
             ylabel = lab_current,
-            xlabel = lab_voltage
+            xlabel = xlab
         )
         return f, a
     end
@@ -1438,28 +1563,36 @@ end
 # ── moved from cell ae50302f (plot_scanrate_sweeps_cv) ──
 function plot_scanrate_sweeps_cv(
         sweep_vec, scanrates;
-        species = iohminus,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         scale = cm^2 / mA,
-        default_lw = 4
+        default_lw = LW_LINE
     )
     n = length(sweep_vec)
     pastel2 = cgrad([colorant"#D5F011", colorant"#16D8FF"])
     cols = [pastel2[t] for t in range(0, 1, length = max(n, 1))]
+
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(sweep_vec) ? lab_voltage : cv_abscissa(sweep_vec[1]; kind = abscissa)[2]
 
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (850, 550))
         a = Axis(
             f[1, 1],
             ylabel = lab_current,
-            xlabel = lab_voltage
+            xlabel = xlab
         )
         return f, a
     end
 
     for (j, rec) in enumerate(sweep_vec)
-        I = currents(rec, species) .* scale
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(rec; kind = abscissa)
         lines!(
-            ax, rec.voltages, I;
+            ax, U, I;
             linewidth = default_lw,
             color = cols[j]
         )
@@ -1473,7 +1606,7 @@ function plot_scanrate_sweeps_cap(
         sweep_vec, scanrates;
         #species=iohminus,
         scale = cm^2 / mA,
-        default_lw = 4
+        default_lw = LW_LINE
     )
     n = length(sweep_vec)
 
@@ -1592,7 +1725,7 @@ function plot_co2_profiles(
             interpolate = false
         )
 
-        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = 2)
+        vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = LW_GUIDE)
 
         Colorbar(fig[idx, 2], hm, label = rich("log", subscript("10"), "(", rich("c", font = :italic), subscript(rich("CO", subscript("2"))), ")"))
     end
@@ -1752,20 +1885,24 @@ end
 function CV_overlay_currents(
         results, m;
         labels = nothing,
-        species = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        abscissa = :applied,
         scale = cm^2 / mA,
         linestyles = [:solid, :dash, :dot]
     )
-    model = m.elydata
-    sp = (species === nothing) ? model.cspecies[1] : species
     labels = labels === nothing ? ["result $i" for i in 1:length(results)] : labels
+
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(results) ? lab_voltage : cv_abscissa(first(results); kind = abscissa)[2]
 
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (620, 460))
         a = Axis(
             f[1, 1],
             ylabel = lab_current,
-            xlabel = lab_voltage
+            xlabel = xlab
         )
         return f, a
     end
@@ -1777,20 +1914,21 @@ function CV_overlay_currents(
     for (k, result) in enumerate(results)
         ls = linestyles[mod1(k, length(linestyles))]
 
-        i_F = currents(result, sp) .* scale
-        i_cap = result.j_cap .* scale
+        i_F = faradaic_current(result; species, n_e, sgn) .* scale
+        i_cap = capacitive_current(result) .* scale
         i_tot = i_F .+ i_cap
+        U, _ = cv_abscissa(result; kind = abscissa)
 
         lines!(
-            ax, result.voltages, i_F; color = col_F, linestyle = ls,
+            ax, U, i_F; color = col_F, linestyle = ls,
             label = rich(rich("i", font = :italic), subscript("F"), " (", string(labels[k]), ")")
         )
         lines!(
-            ax, result.voltages, i_cap; color = col_cap, linestyle = ls,
+            ax, U, i_cap; color = col_cap, linestyle = ls,
             label = rich(rich("i", font = :italic), subscript("cap"), " (", string(labels[k]), ")")
         )
         lines!(
-            ax, result.voltages, i_tot; color = col_tot, linestyle = ls,
+            ax, U, i_tot; color = col_tot, linestyle = ls,
             label = rich(rich("i", font = :italic), subscript("tot"), " (", string(labels[k]), ")")
         )
     end
@@ -1809,7 +1947,7 @@ function plot_cv_current_variedL(
         abscissa = :applied,
         scale = cm^2 / mA,
         color_gradient = true,
-        linewidth = 3.5,
+        linewidth = LW_LINE,
         title = ""
     )
     Lkeys = sort(collect(keys(results)))
@@ -1865,7 +2003,7 @@ function plot_pressure_varied_sweep_ivc(
         abscissa = :applied,
         scale = cm^2 / mA,
         limits = nothing,
-        sim_linewidth::Real = 5
+        sim_linewidth::Real = LW_LINE
     )
     n = length(P_recs)
     pastel3 = cgrad([colorant"#FFB3BA", colorant"#A3D8FF"])
@@ -1924,15 +2062,20 @@ end
 # ── moved from cell 6f6e779c (plot_cv_current_dict) ──
 function plot_cv_current_dict(
         result_dict, m;
-        species = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
         scale = 1.0,
         title = "",
-        linewidth = 3
+        linewidth = LW_LINE
     )
-    model = m.elydata
-    sp = (species === nothing) ? model.cspecies[1] : species
-
     sorted_keys = sort(collect(keys(result_dict)))
+
+    # axis label follows the abscissa choice, so it always names what it shows
+    xlab = isempty(sorted_keys) ? lab_voltage :
+        cv_abscissa(result_dict[first(sorted_keys)]; kind = abscissa)[2]
 
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (400, 300))
@@ -1940,16 +2083,18 @@ function plot_cv_current_dict(
             f[1, 1];
             title = title,
             ylabel = lab_current,
-            xlabel = lab_voltage
+            xlabel = xlab
         )
         return f, a
     end
 
     for (i, key) in enumerate(sorted_keys)
         result = result_dict[key]
-        I = currents(result, sp) .* scale ./ 2
+        # the stoichiometric factor lives in `n_e` now; there is no stray /2 here
+        I = cv_current(result; species, n_e, sgn, include_capacitive) .* scale
+        U, _ = cv_abscissa(result; kind = abscissa)
         lines!(
-            ax, result.voltages, I;
+            ax, U, I;
             linewidth = linewidth,
             label = @sprintf("L = %g μm", key / μm)
         )
@@ -1961,7 +2106,7 @@ end
 
 # ── moved from cell 13a0e5da (panel_conc_time!) ──
 function panel_conc_time!(
-        fig, panel_pos, result, m; nspecies = 7, scale = mol / dm^3, lw = 4,
+        fig, panel_pos, result, m; nspecies = 7, scale = mol / dm^3, lw = LW_LINE,
         xlabel = lab_time, legend_pos = nothing
     )
     bulk = m.bulk
@@ -2023,7 +2168,7 @@ function panel_time_current!(
         include_capacitive = true,
         scale = cm^2 / mA,
         color_gradient = true,
-        lw = 4,
+        lw = LW_LINE,
         xlabel = lab_time
     )
     ax = Axis(panel_pos; xlabel = xlabel, ylabel = lab_current)
@@ -2041,7 +2186,7 @@ end
 # Pass `sawtooth` to plot the APPLIED protocol U_we(t) (the full vmin..vmax ramp).
 # Without it, `result.voltages` is plotted, which here is the reaction-plane
 # (electrode node) potential — compressed by the gap capacitance, not the sawtooth.
-function panel_time_voltage!(fig, panel_pos, result; sawtooth = nothing, lw = 5, xlabel = lab_time)
+function panel_time_voltage!(fig, panel_pos, result; sawtooth = nothing, lw = LW_LINE, xlabel = lab_time)
     ax = Axis(
         panel_pos; xlabel = xlabel,
         ylabel = rich(rich("U", font = :italic), "  (V vs. SHE)")
@@ -2110,7 +2255,7 @@ end
 
 # ── moved from cell 13a0e5da (panel_time_ph!) ──
 function panel_time_ph!(
-        fig, panel_pos, result; ihplus = 2, scale = mol / dm^3, lw = 5,
+        fig, panel_pos, result; ihplus = 2, scale = mol / dm^3, lw = LW_LINE,
         xlabel = lab_time, color = parse(Colorant, "#7BB661")
     )
     times = result.tsol.t
@@ -2242,7 +2387,7 @@ end
 
 # ── moved from cell 34857db0 (QoverK)  [+ electrolyte kwarg] ──
 function QoverK(
-        fig, panel_pos, result, m; scale = mol / dm^3, lw = 4,
+        fig, panel_pos, result, m; scale = mol / dm^3, lw = LW_LINE,
         xlabel = lab_time, legend_pos = nothing
     )
     bulk = m.bulk
@@ -2278,7 +2423,7 @@ function QoverK(
         yminorticksvisible = true,
         yminorticks = IntervalsBetween(27)
     )
-    hlines!(ax, [1.0e0]; color = :black, linestyle = :dash, linewidth = 2)
+    hlines!(ax, [1.0e0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
 
     l1 = lines!(
         ax, times, max.(Qt_hco3 ./ EqK_hco3, eps(Float64));
@@ -2307,38 +2452,22 @@ end
 # ── moved from cell f506e83f (plot_cv_total_current)  [ely = elydata_Gold_odr → ely = model] ──
 function plot_cv_total_current(
         result, m;
-        redox_species::Dict{Int, Int},
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        redox_species = nothing,   # back-compat: Dict(species => n_e), first entry wins
         include_capacitive::Bool = true,
         scale = cm^2 / mA,
-        sign::Int = 1,
         color_gradient::Bool = true
     )
-    model = m.elydata
+    sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
-    n_t = length(result.voltages)
+    I_F = faradaic_current(result; species = sp, n_e = ne, sgn = sgn)
+    I_C = include_capacitive ? capacitive_current(result) : zero(I_F)
+    n_t = length(I_F)
 
-    # ---- Faradaic current: sum over all redox species ----
-    I_F = zeros(n_t)
-    for (idx, n_e) in redox_species
-        I_F .+= n_e .* currents(result, idx)
-    end
-
-    # ---- Capacitive current: icc boundary species (only :ohmicdrop) ----
-    I_C = zeros(n_t)
-    if include_capacitive
-        ely = model
-        if isa(ely.ircompensation, OhmicDropEstimation)
-            icc = ely.icc
-            node_we = 1   # working-electrode boundary node (Γ_we = 1)
-            I_C = [u[icc, node_we] for u in result.tsol[1:(end - 1)]]
-        else
-            @warn "Capacitive current only resolved in :ohmicdrop mode " *
-                "(current mode: :$(ely.ircompensation)); j_C set to 0."
-        end
-    end
-
-    # ---- Total current with sign convention and unit scaling ----
-    I_total = sign .* (I_F .+ I_C) .* scale
+    # ---- Total current with unit scaling ----
+    I_total = (I_F .+ I_C) .* scale
 
     fig, ax = with_theme(electrochemistry_theme()) do
         f = Figure(size = (540, 440))
@@ -2367,7 +2496,7 @@ function plot_combined_exp_sim_ivc(
         include_capacitive = true,
         scale = cm^2 / mA,
         sign = 1,
-        sim_linewidth::Real = 5
+        sim_linewidth::Real = LW_LINE
     )
     electrolyte = m.elydata
     wanted = ["0.1", "0.5", "1.0"]
