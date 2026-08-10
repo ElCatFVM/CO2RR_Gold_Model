@@ -35,6 +35,12 @@ export double_layer_capacitance, plot_ircomp_compare, plot_cv_summary
 export panel_time_current_diff!
 export lab_time, lab_voltage, lab_current, lab_current_co, lab_pressure, lab_scanrate
 export lab_current_F, lab_current_C, lab_current_tot
+export lab_current_abs, lab_distance, lab_conc_surface, lab_activity_surface
+export lab_capacitance, SPECIES_COLORS
+# CSV-driven polarization panels
+export species_columns, panel_polarization!, panel_species_vs_voltage!, panel_dlcap!
+export plot_iv_summary, plot_iv_summary_from_result, species_rich
+export species_table, polarization_table, surface_conc_table, surface_activity_table
 export lab_time_short, lab_voltage_short, lab_current_short
 
 

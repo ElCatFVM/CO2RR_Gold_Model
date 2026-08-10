@@ -193,6 +193,193 @@ function export_scanrate_varied_species_csv_long(
     return df
 end
 
+# ==========================================================================
+# Publication CSVs.
+#
+# The four files behind the polarization/activity/concentration/capacitance
+# figure of `plot_publication_notebook.jl`. They used to be written by cells of
+# `notebooks/row_interaction_script.jl`, which is not part of the package, so
+# the export half of that pipeline could not be reached from `using AuCO2RR`
+# and the naming rule lived only in a notebook.
+#
+# The names are reproduced exactly, including their inconsistencies: the
+# capacitance and polarization files carry a solver tag (`pb` / `pnp`) and the
+# concentration file does not. Changing that would orphan every file already in
+# `data/output`.
+# ==========================================================================
+
+"""
+    publication_csv_name(kind; bc, mode, ionsize, solver = nothing, index = nothing)
+
+Filename stem for a publication CSV, without the extension.
+
+`kind` is `"DLCap"`, `"Polarization_Curve"`, `"Activity_Curve"` or `"Concentration"`;
+`bc` is the boundary-condition tag (`"Robin"`), `mode` the activity model (`"Stefan_γ"`),
+`ionsize` the radius set (`"Same_Size"`, `"All_species"`, `"Potassium_only"`). `solver`
+inserts `pb` or `pnp`; `index` appends a molarity index.
+
+    publication_csv_name("Polarization_Curve"; bc="Robin", mode="Stefan_γ",
+                         ionsize="Same_Size", solver="pnp")
+    # "Polarization_Curve_Robin_Stefan_γ_pnp_Same_Size"
+"""
+function publication_csv_name(
+        kind::AbstractString;
+        bc::AbstractString,
+        mode::AbstractString,
+        ionsize::AbstractString,
+        solver = nothing,
+        index = nothing,
+    )
+    parts = [kind, bc, mode]
+    solver === nothing || push!(parts, string(solver))
+    push!(parts, ionsize)
+    index === nothing || push!(parts, string(index))
+    return join(parts, "_")
+end
+
+"""
+    export_dlcap_csv(results; bc, mode, ionsize, solver, outdir)
+
+One CSV per molarity of a `capscalc` result: `Voltage`, `Capacitance`.
+
+`results` is the vector `capscalc` returns; each entry supplies `voltage_range` and
+`dlcaps`. Files are numbered from 1 in the order of that vector, which is the order of the
+molarities passed to `capscalc` — the index in the filename carries no other meaning, so
+record which molarity each one was.
+
+Returns the paths written.
+"""
+function export_dlcap_csv(
+        results;
+        bc::AbstractString,
+        mode::AbstractString,
+        ionsize::AbstractString,
+        solver::AbstractString = "pnp",
+        outdir::AbstractString = joinpath("..", "data", "output"),
+    )
+    mkpath(outdir)
+    base = publication_csv_name("DLCap"; bc, mode, ionsize, solver)
+    return map(enumerate(results)) do (i, r)
+        df = DataFrame(Voltage = r.voltage_range, Capacitance = r.dlcaps)
+        path = joinpath(outdir, string(base, "_", i, ".csv"))
+        CSV.write(path, df)
+        path
+    end
+end
+
+"""
+    export_polarization_csv(ivresult; species, scale, bc, mode, ionsize, outdir)
+
+Polarization curve as `Voltage`, `Current`.
+
+`scale` defaults to 1, i.e. SI, because that is what the existing files hold; pass
+`cm^2 / mA` for mA cm⁻².
+
+!!! note "Species"
+    Defaults to OH⁻, matching the files already in `data/output`. That is valid for a
+    cathodic sweep — the OH⁻ and CO fluxes agree exactly there — but reports **zero** on an
+    anodic branch, because the electrode reaction books the anodic half of the proton
+    stoichiometry on H⁺. Pass `species = ico` with the current doubled if a sweep ever
+    crosses into oxidation.
+"""
+function export_polarization_csv(
+        ivresult;
+        species = iohminus,
+        scale = 1.0,
+        bc::AbstractString,
+        mode::AbstractString,
+        ionsize::AbstractString,
+        solver::AbstractString = "pnp",
+        outdir::AbstractString = joinpath("..", "data", "output"),
+    )
+    mkpath(outdir)
+    df = DataFrame(
+        Voltage = ivresult.voltages,
+        Current = currents(ivresult, species) .* scale,
+    )
+    path = joinpath(
+        outdir,
+        publication_csv_name("Polarization_Curve"; bc, mode, ionsize, solver) * ".csv",
+    )
+    CSV.write(path, df)
+    return path
+end
+
+"""
+    export_activity_csv(activity; bc, mode, ionsize, outdir)
+
+Surface activities against potential: `Voltage` plus one column per species.
+
+`activity` is the record `AuCO2RR_plots.activity_vs_voltage_axis` returns — its `vgrid`,
+`activity_electrode` and `species` fields. Taking the species names from the record rather
+than from a list written out at the call site is what keeps the columns aligned with the
+rows of the matrix.
+"""
+function export_activity_csv(
+        activity;
+        bc::AbstractString,
+        mode::AbstractString,
+        ionsize::AbstractString,
+        solver::AbstractString = "pnp",
+        outdir::AbstractString = joinpath("..", "data", "output"),
+    )
+    path = joinpath(
+        outdir,
+        publication_csv_name("Activity_Curve"; bc, mode, ionsize, solver) * ".csv",
+    )
+    return _write_species_vs_voltage(
+        path, activity.vgrid, activity.activity_electrode, activity.species, outdir
+    )
+end
+
+"""
+    export_concentration_csv(conc_out; bc, mode, ionsize, outdir)
+
+Surface concentrations against potential: `Voltage` plus one column per species.
+
+`conc_out` is the record `AuCO2RR_plots.conc_vs_voltage_axis` returns. Note the filename
+carries **no** solver tag, unlike the other three — that is how the existing files are named.
+"""
+function export_concentration_csv(
+        conc_out;
+        bc::AbstractString,
+        mode::AbstractString,
+        ionsize::AbstractString,
+        outdir::AbstractString = joinpath("..", "data", "output"),
+    )
+    path = joinpath(
+        outdir, publication_csv_name("Concentration"; bc, mode, ionsize) * ".csv"
+    )
+    return _write_species_vs_voltage(
+        path, conc_out.vgrid, conc_out.conc_electrode, conc_out.species, outdir
+    )
+end
+
+"""
+    _write_species_vs_voltage(path, vgrid, M, species, outdir)
+
+Write a `Voltage` column plus one column per species from a `species × voltage` matrix.
+
+The shape assertions are the point: a silently transposed matrix would write a file of the
+wrong width with plausible-looking numbers, and nothing downstream would notice.
+`bom = true` so the species names survive being opened in Excel.
+"""
+function _write_species_vs_voltage(path, vgrid, M, species, outdir)
+    size(M, 1) == length(species) || error(
+        "matrix has $(size(M, 1)) rows but $(length(species)) species names"
+    )
+    size(M, 2) == length(vgrid) || error(
+        "matrix has $(size(M, 2)) columns but $(length(vgrid)) voltages"
+    )
+    mkpath(outdir)
+    df = DataFrame(Voltage = collect(vgrid))
+    for (i, name) in enumerate(species)
+        df[!, String(name)] = vec(M[i, :])
+    end
+    CSV.write(path, df; bom = true)
+    return path
+end
+
 # ── moved from cell 9e44f14b (export_cv_profile_csv) ──
 """
     export_cv_profile_csv(...)

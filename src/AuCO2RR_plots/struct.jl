@@ -62,6 +62,17 @@ const LW_EXP = 2
 "Width of dashed guides — `vlines!`, `hlines!`, boundary-layer markers."
 const LW_GUIDE = 2
 
+"""
+Width of a data series in the publication figures, heavier than [`LW_LINE`](@ref).
+
+Those figures are printed at roughly half width in a two-column layout, so a line that
+reads well on screen at `LW_LINE` disappears on the page.
+"""
+const LW_SOLID = 7.0
+
+"Width of a second model dashed over [`LW_SOLID`](@ref); thinner so the primary stays on top."
+const LW_DASH = 4.5
+
 # --------------------------------------------------------------------------
 # Colour sequences for a swept family of curves (scan rate, L, pressure, …).
 #
@@ -95,6 +106,42 @@ rows are told apart by weight of ink rather than by hue, which leaves hue free t
 pressure and nothing else.
 """
 const CMAP_PRESSURE_EXP = cgrad([colorant"#A34E60", colorant"#4E7196"])
+
+"""
+Colour of each transported species, keyed by name.
+
+The same values `GoldModel.create_model` gives its `BulkSpecies`, duplicated here for the
+plots that read a CSV rather than a model — a figure redrawn from `data/output` has no
+electrolyte to ask, and a species must keep its colour whichever route it took.
+
+Keys are the names the CSV exporters write as column headers.
+"""
+const SPECIES_COLORS = Dict(
+    "K⁺" => colorant"#E07B39",
+    "H⁺" => colorant"#888888",
+    "HCO₃⁻" => colorant"#7B5C3E",
+    "CO₃²⁻" => colorant"#222222",
+    "CO₂" => colorant"#C0392B",
+    "OH⁻" => colorant"#27AE60",
+    "CO" => colorant"#2980B9",
+)
+
+"""
+Pale counterpart of [`SPECIES_COLORS`](@ref), for a second model overlaid on the first.
+
+A species keeps its hue and loses its weight, so the dashed reference stays identifiable as
+the same species while reading as the fainter of the two curves. A separate hue per model
+would need the reader to hold fourteen colours at once.
+"""
+const SPECIES_PASTEL = Dict(
+    "K⁺" => colorant"#F7C97F",
+    "H⁺" => colorant"#D3D3D3",
+    "HCO₃⁻" => colorant"#D9C2A7",
+    "CO₃²⁻" => colorant"#666666",
+    "CO₂" => colorant"#FF746C",
+    "OH⁻" => colorant"#80EF80",
+    "CO" => colorant"#AFCBFF",
+)
 
 """
 Deep blue → purple → red sequence for IR-compensation factor families.
@@ -224,6 +271,74 @@ const lab_current = rich("Current ", rich("I", font = :bold_italic), "\n(mA cm",
 "Faradaic current read from the CO flux, the definition [`cv_current`](@ref) defaults to."
 const lab_current_co = rich(
     "CO Partial Current ", rich("I", font = :bold_italic), "\n(mA cm", superscript("−2"), ")"
+)
+
+"""
+Current magnitude, for the log-scaled axis of a polarization curve.
+
+A log axis cannot show a sign, so those plots take `abs` of the current. Say so in the
+label: `Current I` over a log axis silently claims the current is positive everywhere, and
+a reader cannot tell a genuine anodic branch from a folded cathodic one.
+"""
+const lab_current_abs = rich(
+    "Current |", rich("I", font = :bold_italic), "|\n(mA cm", superscript("−2"), ")"
+)
+
+"""
+Distance from the electrode, for spatial profiles.
+
+`α` indexes species and is a running index, so ISO 80000-1 sets it in italic — unlike the
+descriptive `M`, `F`, `C` subscripts elsewhere here, which stay upright.
+"""
+const lab_distance = rich(
+    "Distance from Electrode ", rich("x", font = :bold_italic), "\n(m)"
+)
+
+"""
+Concentration at the electrode surface, `Surface Concentration c_α‡ (M)`.
+
+`α` runs over species, not `i`, and the `‡` marks the value as taken at the interface rather
+than in the bulk. This is the reference form: the same quantity appears against time in the
+CV summary and against potential in the IV panels, and those must not drift apart, so both
+read it from here.
+"""
+const lab_conc_surface = rich(
+    "Surface Concentration ", rich("c", font = :bold_italic),
+    subscript("α", font = :italic), superscript("‡"), "\n(M)"
+)
+
+"Differential double-layer capacitance: `Differential Capacitance C_dl (μF cm⁻²)`."
+const lab_capacitance = rich(
+    "Differential Capacitance ", rich("C", font = :bold_italic), subscript("dl"),
+    "\n(μF cm", superscript("−2"), ")"
+)
+
+"""
+Potential referred to the point of zero charge, `Voltage [U − U_pzc] (V)`.
+
+A capacitance curve is read against the pzc, not against SHE: its minimum sits there by
+definition, so the shifted axis is what makes two electrolytes comparable.
+"""
+const lab_voltage_pzc = rich(
+    "Voltage [", rich("U", font = :bold_italic), " − ",
+    rich("U", font = :bold_italic), subscript("pzc"), "]\n(V)"
+)
+
+"Magnitude of the CO partial current, for a log axis. See [`lab_current_abs`](@ref)."
+const lab_current_co_abs = rich(
+    "Partial CO Current |", rich("I", font = :bold_italic), subscript("CO"),
+    "|\n(mA cm", superscript("−2"), ")"
+)
+
+"""
+Activity at the electrode surface, `Surface Activity a_α‡`.
+
+Dimensionless, so there is no unit line. Mirrors [`lab_conc_surface`](@ref) exactly apart
+from the symbol, since the two are plotted as a pair.
+"""
+const lab_activity_surface = rich(
+    "Surface Activity ", rich("a", font = :bold_italic),
+    subscript("α", font = :italic), superscript("‡")
 )
 
 """

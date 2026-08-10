@@ -31,6 +31,9 @@ include("sweeps_csv.jl")
 export ivsweep_csv, sweepcomparedir
 # added from row_interaction_script.jl (batch 6: CSV export utilities)
 export export_scanrate_varied_species_csv_long, export_cv_profile_csv, export_pressure_varied_species_csv_long
+# publication CSVs, ported from row_interaction_script.jl
+export publication_csv_name, export_dlcap_csv, export_polarization_csv
+export export_activity_csv, export_concentration_csv
 
 @unitfactors mol dm m s K μm bar Pa eV μF V cm μA mA Å nm mm;
 

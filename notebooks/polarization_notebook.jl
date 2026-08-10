@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.3
 
 using Markdown
 using InteractiveUtils
@@ -52,7 +52,7 @@ begin
 end
 
 # ╔═╡ 0cc0e806-7a04-4254-9ecb-831df5ae7328
-elystruct = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
+elystruct = GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan")
 
 # ╔═╡ 4ea455cd-5cd9-40f0-b75f-e7f7f0e7ad96
 solver_control = (; max_round 	= 4,
@@ -163,6 +163,35 @@ end
 # ╔═╡ 9a7ec635-851f-4d76-9a6f-e9731aa35626
 iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true, species = findfirst(==("OH⁻"), elystruct.bulknames))
 
+# ╔═╡ 628764d5-289a-424b-9c01-776ea6fd2ced
+begin
+    _d  = joinpath(@__DIR__, "..", "data")
+    _r(f)  = CSV.read(joinpath(_d, f), DataFrame)
+    _rh(f) = CSV.read(joinpath(_d, f), DataFrame; header = [:Voltage, :Current])
+
+    act_labels = Dict(
+        "K⁺" => (-1.35, 3e2),  "H⁺" => (-0.90, 2e-5), "HCO₃⁻" => (-0.70, 5e-3),
+        "CO₃²⁻" => (-1.05, 5e-10), "CO₂" => (-1.28, 1e-3), "OH⁻" => (-0.82, 9e-8),
+        "CO" => (-1.35, 3e-1))
+    conc_labels = Dict(
+        "K⁺" => (-1.35, 0.7), "H⁺" => (-0.93, 5e-7), "HCO₃⁻" => (-0.80, 3.5e-4),
+        "CO₃²⁻" => (-1.30, 5e-11), "CO₂" => (-1.32, 1e-6), "OH⁻" => (-0.85, 5e-9),
+        "CO" => (-1.35, 5e-4))
+
+    iv_summary = plot_iv_summary_from_result(
+        ivresult, elystruct;
+        grid       = grid,
+        model_type = "Stefan_γ",
+        df_cdl     = _r("output/DLCap_Robin_Stefan_γ_pb_Same_Size_1.csv"),
+        act_ref    = _r("catmap_CO2R_data/voltage-activ.csv"),
+        conc_ref   = _r("catmap_CO2R_data/voltage-conc.csv"),
+        pol_ref    = _rh("catmap_CO2R_data/Ringe-theorical.csv"),
+        pol_points = _rh("catmap_CO2R_data/Ringe-experimental.csv"),
+        act_labels, conc_labels,
+    )
+    iv_summary.fig
+end
+
 # ╔═╡ Cell order:
 # ╠═68e52c7a-6922-11f1-8634-f109a9649529
 # ╠═0a5f93b7-4f7c-4049-8a27-dceddc40da97
@@ -174,3 +203,4 @@ iv_curve_axis(ivresult; cutoff=-0.4, showlegend=true, species = findfirst(==("OH
 # ╠═bf704270-29bd-4782-9682-b03a70c74af7
 # ╠═9a7ec635-851f-4d76-9a6f-e9731aa35626
 # ╟─7195c5eb-e956-4b43-ad71-201f3e6e7467
+# ╠═628764d5-289a-424b-9c01-776ea6fd2ced

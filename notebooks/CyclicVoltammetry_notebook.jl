@@ -80,8 +80,8 @@ begin
     #Vmax = 2 * V
     L = 2500 * μm
     hmin = 1.0e-6 	* μm
-    #hmax = 0.05*L
-    hmax = 0.1*L
+    hmax = 0.01*L
+    #hmax = 0.1*L
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
@@ -174,7 +174,7 @@ cv_irc = sweep(elystruct_irc, grid, sawtooth; nperiods)
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
 
 # ╔═╡ bd9b5c58-0375-4ce2-aa55-c74b921aa050
-plot_cv_summary(cv_odr, elystruct_odr)	
+plot_cv_summary(cv_unc, elystruct_unc)	
 
 # ╔═╡ 3ad8349a-f95f-4ba8-98c4-b404f98137aa
 plot#_7species_contours(cv_odr, X, elystruct_odr)
@@ -330,7 +330,7 @@ md"""
 begin
     scanrates = [0.005, 0.05, 0.5, 5.0]
     SR_vec = [sweep(elystruct_odr, grid,
-                    SawTooth(scanrate = sr, vmin = -1.2, vmax = 1.2,
+                    SawTooth(scanrate = sr, vmin = -1.2, vmax = 0.8,
                              scanup = false, vstart = 0.0; tstart = 0.0);
                     nperiods,
                     Δu_opt = 0.01,
@@ -343,7 +343,7 @@ plot_scanrate_sweeps(SR_vec, scanrates)
 
 # ╔═╡ 4c520a35-1109-472d-a800-d42133a7ef94
 plot_scanrate_sweeps_split(SR_vec, scanrates; ured = (-1.3, -0.6),
-        uox = (-0.2, 1.45),)
+        uox = (-0.2, 1.0),)
 
 # ╔═╡ d291fbb9-0cc4-4f6b-a7ed-4e3f103f4d11
 md"""
@@ -380,7 +380,7 @@ plot_cv_summary(rec, elystruct_odr)
 plot_cv_scanrate_grid(SR_vec, m; scanrates = scanrates)
 
 # ╔═╡ 9849e70d-47f9-4b04-aafb-54033c674b54
-plot_exp_sim_cvsweep_split(P_recs; annotate_x = 0.93)
+plot_exp_sim_cvsweep_split(P_recs;)
 
 # ╔═╡ 9a5e3eed-0f4e-43b6-b7b5-e28c62a30a4b
 begin

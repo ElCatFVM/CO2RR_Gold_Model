@@ -1,4 +1,4 @@
-using CSV, DataFrames, CairoMakie, GridVisualize
+﻿using CSV, DataFrames, CairoMakie, GridVisualize
 
 
 
@@ -40,7 +40,8 @@ function iv_curve_axis(ivresult;
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
         xlabel = lab_voltage,
-        ylabel = lab_current,
+        # `|I|`, not `I`: `abs` above folds the sign away so the log axis can show it.
+        ylabel = lab_current_abs,
         yscale = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e2)),
     )
@@ -55,7 +56,7 @@ function iv_curve_axis(ivresult;
 
     # ---- PLOTS ----
     # simulation line
-    lines!(ax, volts, I_sim; color=:green, linewidth=5, label="e⁻, we")
+    lines!(ax, volts, I_sim; color=:green, linewidth=LW_LINE, label="e⁻, we")
 
 
 	"""	
@@ -122,7 +123,7 @@ function conc_vs_voltage_axis(
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
         xlabel = lab_voltage,
-        ylabel = rich(rich("c", font = :italic), subscript("i"), superscript("+"), "  (M)"),
+        ylabel = lab_conc_surface,
         yscale  = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
@@ -139,11 +140,11 @@ function conc_vs_voltage_axis(
         iH = findfirst(isequal("H⁺"), species)
         iH === nothing && error("H⁺ not found in species list.")
         y = max.(conc_electrode[iH, :], eps(Float64))
-        lines!(ax, vgrid, y; color=colors[iH], linewidth=5, label=species[iH])
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=LW_LINE, label=species[iH])
     else
         for ia in 1:nspecies
             y = max.(conc_electrode[ia, :], eps(Float64))
-            lines!(ax, vgrid, y; color=colors[ia], linewidth=5, label=species[ia])
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=LW_LINE, label=species[ia])
         end
     end
 
@@ -172,12 +173,12 @@ function addplot_ax!(
         iH = findfirst(isequal("H⁺"), species)
         iH === nothing && error("H⁺ not found in species list.")
         y = log10.(sol[iH, :] .* scale)
-        lines!(ax, x, y; color=colors[iH], linewidth=5, label=species[iH])
+        lines!(ax, x, y; color=colors[iH], linewidth=LW_LINE, label=species[iH])
     else
         nc = min(size(sol, 1), length(species), length(colors))
         for ia in 1:nc
             y = log10.(sol[ia, :] .* scale)
-            lines!(ax, x, y; color=colors[ia], linewidth=5, label=species[ia])
+            lines!(ax, x, y; color=colors[ia], linewidth=LW_LINE, label=species[ia])
         end
     end
 
@@ -197,8 +198,11 @@ function plot1d_makie(
 
     fig = Figure(size=fig_size)
     ax  = Axis(fig[1, 1];
-        xlabel = "Distance from electrode [m]",
-        ylabel = rich("log", subscript("10"), " ", rich("c", font = :italic), "(", rich("a", font = :italic), subscript("i"), ")"),
+        xlabel = lab_distance,
+        ylabel = rich(
+            "log", subscript("10"), " ",
+            rich("a", font = :bold_italic), subscript("i", font = :italic)
+        ),
         xscale = log10,
         limits = ((1e-11, L*1.2), (-11, 1)),
     )
@@ -249,7 +253,7 @@ function conc_vs_voltage_axis_compare(result, m;
     fig = Figure(size=(960, 540))
     ax = Axis(fig[1, 1];
         xlabel = lab_voltage,
-        ylabel = rich(rich("c", font = :italic), subscript("i"), superscript("+"), "  (M)"),
+        ylabel = lab_conc_surface,
         yscale = log10,
         limits = ((-1.25, -0.50), (1e-11, 1e1)),
     )
@@ -266,11 +270,11 @@ function conc_vs_voltage_axis_compare(result, m;
         iH = findfirst(isequal("H⁺"), species)
         iH === nothing && error("H⁺ not found in species list.")
         y = max.(conc_electrode[iH, :], eps(Float64))
-        lines!(ax, vgrid, y; color=colors[iH], linewidth=3, label=species[iH])
+        lines!(ax, vgrid, y; color=colors[iH], linewidth=LW_LINE, label=species[iH])
     else
         for ia in 1:nspecies
             y = max.(conc_electrode[ia, :], eps(Float64))
-            lines!(ax, vgrid, y; color=colors[ia], linewidth=3, label=species[ia])
+            lines!(ax, vgrid, y; color=colors[ia], linewidth=LW_LINE, label=species[ia])
         end
     end
 
@@ -307,9 +311,9 @@ function conc_vs_voltage_axis_compare(result, m;
             y = max.(g.Concentration[p], eps(Float64))
 
             if 1 <= idx <= nspecies
-                lines!(ax, V, y; color=colors[idx], linewidth=2, linestyle=:dashdot)
+                lines!(ax, V, y; color=colors[idx], linewidth=LW_EXP, linestyle=:dashdot)
             else
-                lines!(ax, V, y; linewidth=2, linestyle=:dashdot)
+                lines!(ax, V, y; linewidth=LW_EXP, linestyle=:dashdot)
             end
         end
     end
@@ -331,8 +335,10 @@ function plot1d(result, vshow, m; grid, L, df_compare=nothing)
         legend  = :rt,
         limits  = (-11, 1),
         xlimits = (1e-11, L*1.2),
-        xlabel  = "Distance from electrode [m]",
-        ylabel  = "log c(aᵢ)",
+        # Plain strings, not the `lab_*` rich labels: this is a `GridVisualizer`, which
+        # takes only `String`. Parentheses for the unit, to match the Makie figures.
+        xlabel  = "Distance from Electrode x (m)",
+        ylabel  = "log₁₀ aᵢ",
         xscale  = :log,
     )
 
@@ -423,8 +429,10 @@ function plot1d_movie(result, m; grid, L, step=5, file="concentrations.gif", fra
         legend  = :rt,
         limits  = (-11, 1),
         xlimits = (1e-11, L*1.2),
-        xlabel  = "Distance from electrode [m]",
-        ylabel  = "log c(aᵢ)",
+        # Plain strings, not the `lab_*` rich labels: this is a `GridVisualizer`, which
+        # takes only `String`. Parentheses for the unit, to match the Makie figures.
+        xlabel  = "Distance from Electrode x (m)",
+        ylabel  = "log₁₀ aᵢ",
         xscale  = :log,
     )
 
@@ -708,7 +716,7 @@ function activity_vs_voltage_axis(
 
     ax = Axis(fig[1,1];
         xlabel = lab_voltage,
-        ylabel = rich(rich("ã", font = :italic), subscript("i")),
+        ylabel = lab_activity_surface,
         limits = ((-1.25, -0.50), nothing),
         yscale = log10
     )
@@ -721,7 +729,7 @@ function activity_vs_voltage_axis(
         x_data = vgrid[valid_mask]
         y_data = max.(activity_electrode[iH, valid_mask], eps(Float64))
 
-        lines!(ax, x_data, y_data; color=colors[iH], linewidth=5, label=species[iH])
+        lines!(ax, x_data, y_data; color=colors[iH], linewidth=LW_LINE, label=species[iH])
     else
         for ia in 1:nspecies
             valid_mask = .!isnan.(activity_electrode[ia, :])
@@ -729,7 +737,7 @@ function activity_vs_voltage_axis(
             y_data = max.(activity_electrode[ia, valid_mask], eps(Float64))
 
             if sum(valid_mask) > 0
-                lines!(ax, x_data, y_data; color=colors[ia], linewidth=5, label=species[ia])
+                lines!(ax, x_data, y_data; color=colors[ia], linewidth=LW_LINE, label=species[ia])
             end
         end
     end
@@ -745,6 +753,468 @@ function activity_vs_voltage_axis(
         activity_electrode=activity_electrode,
         vgrid=vgrid,
     )
+end
+
+# ==========================================================================
+# Panel builders for the polarization figure.
+#
+# These read the CSVs written by `sweeps_csv.jl`'s publication exporters rather
+# than a live result: that is the pipeline the published figure stands on, and
+# it means a figure can be redrawn without re-running a sweep. The column
+# contract is the exporters' — `Voltage` plus `Current`, `Capacitance`, or one
+# column per species.
+#
+# Each draws into a `fig[i, j]` and returns its `Axis`, so panels can be
+# composed by `plot_iv_summary` or used one at a time.
+# ==========================================================================
+
+"""
+    species_columns(df)
+
+Species names of a wide species-vs-voltage CSV: every column except `Voltage`, in file
+order.
+
+The exporters write the species names as the column headers, so the plot reads them from
+the file instead of from a list repeated at the call site — a list that would have to be
+kept in the same order as the matrix rows and silently mislabels every curve when it is not.
+"""
+species_columns(df) = [n for n in names(df) if n != "Voltage"]
+
+"""
+    panel_polarization!(fig, panel_pos, df; refs, kwargs...)
+
+Polarization curve `|I|` against potential, log scale.
+
+`df` needs `Voltage` and `Current`, as [`export_polarization_csv`](@ref) writes them. `refs`
+is a vector of `(df, label, marker, colour)` tuples drawn as scatter behind the simulation —
+digitised literature points, typically.
+
+`abs` because the axis is logarithmic; the label says `|I|` for the same reason.
+"""
+function panel_polarization!(
+        fig, panel_pos, df;
+        ref = nothing,
+        ref_label = "CatINT",
+        ref_scale = 1.0,
+        ref_color = colorant"#999999",
+        ref_lw = LW_DASH,
+        points = nothing,
+        points_label = "Experiment",
+        points_color = colorant"#00916a",
+        markersize = 12,
+        scale = cm^2 / mA,
+        color = colorant"#2980B9",
+        label = "MPNP@LiquidElectrolytes.jl",
+        lw = LW_SOLID,
+        xlabel = lab_voltage,
+        ylabel = lab_current_co_abs,
+        yaxisposition = :left,
+        limits = ((-1.5, -0.4), (1.0e-10, 1.0e2)),
+        yticks = (10.0 .^ (0:-5:-10), [powlab(0), powlab(-5), powlab(-10)]),
+        xticks = LinearTicks(5),
+        legend_position = :lb,
+        showlegend = true,
+    )
+    ax = Axis(
+        panel_pos;
+        xlabel = xlabel, ylabel = ylabel, yaxisposition = yaxisposition,
+        yscale = log10, limits = limits, xticks = xticks, yticks = yticks,
+    )
+    lines!(ax, df.Voltage, abs.(df.Current) .* scale; color, linewidth = lw)
+    # `ref_scale`, separate from `scale`: the simulated column is stored in SI and needs
+    # `cm^2 / mA`, while a digitised literature curve is already in mA cm⁻². One shared
+    # factor would silently move one of the two by five orders of magnitude.
+    ref === nothing || lines!(
+        ax, ref.Voltage, abs.(ref.Current) .* ref_scale;
+        color = ref_color, linewidth = ref_lw, linestyle = :dash,
+    )
+    points === nothing || scatter!(
+        ax, points.Voltage, abs.(points.Current) .* ref_scale;
+        marker = :circle, markersize = markersize, color = points_color,
+    )
+
+    if showlegend
+        elems = Any[LineElement(color = color, linewidth = lw)]
+        labels = Any[label]
+        if ref !== nothing
+            push!(elems, LineElement(color = ref_color, linewidth = ref_lw, linestyle = :dash))
+            push!(labels, ref_label)
+        end
+        if points !== nothing
+            push!(elems, MarkerElement(color = points_color, marker = :circle,
+                                       markersize = markersize + 2))
+            push!(labels, points_label)
+        end
+        axislegend(
+            ax, elems, labels;
+            position = legend_position, labelsize = 28,
+            framevisible = true, backgroundcolor = (:white, 0.5),
+            framecolor = (:black, 0.5), patchsize = (45, 22),
+        )
+    end
+    return ax
+end
+
+"""
+    panel_species_vs_voltage!(fig, panel_pos, df; ylabel, kwargs...)
+
+One curve per species against potential, log scale — the shared body of the concentration
+and activity panels, which differ only in their label and limits.
+
+`ref` overlays a second table with the same columns, dashed, for a comparison model.
+Species missing from `ref` are skipped rather than erroring, because a reference table
+often carries fewer of them.
+"""
+function panel_species_vs_voltage!(
+        fig, panel_pos, df;
+        ylabel,
+        species = nothing,
+        ref = nothing,
+        ref_value_col = :Concentration,
+        colors = nothing,
+        ref_colors = nothing,
+        annotate = nothing,
+        annotate_fontsize = 32,
+        lw = LW_SOLID,
+        ref_lw = LW_DASH,
+        xlabel = lab_voltage,
+        yaxisposition = :left,
+        limits = ((-1.5, -0.5), (1.0e-11, 1.0e1)),
+        yticks = (10.0 .^ (0:-3:-9), [powlab(0), powlab(-3), powlab(-6), powlab(-9)]),
+        xticks = LinearTicks(5),
+        showlegend = false,
+    )
+    # Explicit `species` pins the order, which matters when `ref` is long-format and keyed
+    # by a numeric index into that same list.
+    sp = species === nothing ? species_columns(df) : species
+    # `get`, not indexing: a CSV may carry a column this map has never seen, and a missing
+    # colour should cost that one curve its identity, not the whole figure.
+    cols = colors === nothing ? [get(SPECIES_COLORS, s, colorant"#555555") for s in sp] : colors
+    rcols = ref_colors === nothing ?
+        [get(SPECIES_PASTEL, s, colorant"#BBBBBB") for s in sp] : ref_colors
+
+    ax = Axis(
+        panel_pos;
+        xlabel = xlabel, ylabel = ylabel, yaxisposition = yaxisposition,
+        yscale = log10, limits = limits, xticks = xticks, yticks = yticks,
+    )
+    for (i, s) in enumerate(sp)
+        y = max.(df[!, s], eps(Float64))     # the log axis cannot take an exact zero
+        lines!(ax, df.Voltage, y; color = cols[i], linewidth = lw, label = s)
+    end
+    if ref !== nothing
+        for (i, s) in enumerate(sp)
+            xr, yr = _ref_series(ref, i, s, ref_value_col)
+            xr === nothing && continue
+            lines!(
+                ax, xr, max.(yr, eps(Float64));
+                color = rcols[i], linewidth = ref_lw, linestyle = :dash,
+            )
+        end
+    end
+
+    # Direct labels beat a legend for seven overlapping curves, but where each one fits is a
+    # property of the data, not something to derive: pass the positions as
+    # `Dict("K⁺" => (-1.35, 1e-1), …)` in data coordinates. Species absent from the dict are
+    # simply not labelled, so a partial dict is fine.
+    if annotate !== nothing
+        for (i, s) in enumerate(sp)
+            haskey(annotate, s) || continue
+            x, y = annotate[s]
+            text!(
+                ax, x, y;
+                text = species_rich(s), color = cols[i],
+                fontsize = annotate_fontsize, font = :bold, align = (:center, :center),
+            )
+        end
+    end
+
+    showlegend && axislegend(ax; position = :rb)
+    return ax
+end
+
+"""
+    _ref_series(ref, i, name, value_col)
+
+One species' reference curve, from a table in either layout.
+
+**Wide**: one column per species, named as in the main table — what the exporters here
+write. **Long**: an `Index` column numbering species in the order they were passed, plus
+`Voltage` and `value_col` — what the digitised CatINT tables use.
+
+Returns `(nothing, nothing)` when the species is absent, because a reference table routinely
+carries fewer species than the model does and a missing one should drop its dashed curve
+rather than the figure.
+"""
+function _ref_series(ref, i, name, value_col)
+    cols = names(ref)
+    if String(name) in cols
+        return ref.Voltage, ref[!, String(name)]
+    elseif "Index" in cols && String(value_col) in cols
+        m = ref[!, :Index] .== i
+        any(m) || return (nothing, nothing)
+        return ref[m, :Voltage], ref[m, value_col]
+    end
+    return (nothing, nothing)
+end
+
+"""
+    species_rich(name)
+
+Species name as rich text, with digits subscripted and charges superscripted.
+
+The CSV headers already carry Unicode sub/superscripts (`HCO₃⁻`), which render but sit on
+the baseline at the wrong size. This rebuilds the few known names properly and passes
+anything else through unchanged.
+"""
+function species_rich(name)
+    name == "K⁺" && return rich("K", superscript("+"))
+    name == "H⁺" && return rich("H", superscript("+"))
+    name == "OH⁻" && return rich("OH", superscript("−"))
+    name == "HCO₃⁻" && return rich("HCO", subscript("3"), superscript("−"))
+    name == "CO₃²⁻" && return rich("CO", subscript("3"), superscript("2−"))
+    name == "CO₂" && return rich("CO", subscript("2"))
+    return rich(name)
+end
+
+"""
+    panel_dlcap!(fig, panel_pos, df; kwargs...)
+
+Differential capacitance against potential referred to the pzc, on a linear axis.
+
+`shift` is subtracted from the voltage column so the curve is read against `U_pzc`; the
+published figure shifts by 0.16 V.
+
+`scale` converts the stored value. `capscalc` and the CSV exporter work in SI, i.e. F m⁻²,
+while capacitance is quoted in μF cm⁻² — a factor of 100. Getting this wrong is not obvious
+from the figure: 0.17 F m⁻² and 17 μF cm⁻² are the same number in different clothes, and
+only the axis label says which one is on the page.
+
+`label` is drawn inside the axis at `label_pos` (relative coordinates), which is how the
+published panel names its model rather than spending a legend on one curve.
+"""
+function panel_dlcap!(
+        fig, panel_pos, df;
+        shift = 0.0,
+        scale = cm^2 / μF,
+        color = colorant"#2980B9",
+        lw = LW_SOLID,
+        xlabel = lab_voltage_pzc,
+        ylabel = lab_capacitance,
+        yaxisposition = :left,
+        limits = ((-0.9, 0.9), (0, 25)),
+        xticks = LinearTicks(5),
+        yticks = Makie.automatic,
+        label = "",
+        label_pos = (0.8, 0.6),
+        label_fontsize = 28,
+    )
+    ax = Axis(
+        panel_pos;
+        xlabel = xlabel, ylabel = ylabel,
+        yaxisposition = yaxisposition, limits = limits,
+        xticks = xticks, yticks = yticks,
+    )
+    lines!(ax, df.Voltage .- shift, df.Capacitance .* scale; color, linewidth = lw)
+    isempty(label) || text!(
+        ax, Point2f(label_pos...);
+        text = label, space = :relative, color = color,
+        fontsize = label_fontsize, font = :bold, align = (:center, :center),
+    )
+    return ax
+end
+
+"""
+    species_table(vgrid, M, species)
+
+A `species × voltage` matrix as the wide table the panels read: `Voltage` plus one column
+per species.
+
+Same layout the publication CSV exporters write, so a figure can be fed from a live result
+or from a file without the plotting code knowing which.
+"""
+function species_table(vgrid, M, species)
+    size(M, 1) == length(species) || error(
+        "matrix has $(size(M, 1)) rows but $(length(species)) species names"
+    )
+    df = DataFrame(Voltage = collect(vgrid))
+    for (i, s) in enumerate(species)
+        df[!, String(s)] = vec(M[i, :])
+    end
+    return df
+end
+
+"""
+    polarization_table(ivresult; species, scale)
+
+`Voltage`/`Current` table from a live IV result, in the layout
+[`panel_polarization!`](@ref) reads.
+
+`species` defaults to OH⁻, matching the CSV exporter and valid on a cathodic sweep — see the
+note on [`export_polarization_csv`](@ref).
+"""
+polarization_table(ivresult; species = iohminus, scale = 1.0) =
+    DataFrame(
+        Voltage = collect(ivresult.voltages),
+        Current = currents(ivresult, species) .* scale,
+    )
+
+"""
+    surface_conc_table(ivresult, m; grid)
+
+Surface concentrations against potential, as a wide table.
+
+Reads the same computation [`conc_vs_voltage_axis`](@ref) plots, so the table and the
+standalone figure cannot disagree; the figure it builds on the way is discarded.
+"""
+function surface_conc_table(ivresult, m; grid)
+    out = conc_vs_voltage_axis(ivresult, m; grid = grid)
+    return species_table(out.vgrid, out.conc_electrode, out.species)
+end
+
+"""
+    surface_activity_table(ivresult, m; grid, model_type, ipressure)
+
+Surface activities against potential, as a wide table.
+
+`model_type` selects the activity model and must match the one the electrolyte was built
+with — `"Stefan_γ"` or `"DMGL_γ"`. It is not derived from the electrolyte because the
+activity expression lives in the plotting layer, so passing the wrong one silently produces
+a plausible curve for the wrong model.
+"""
+function surface_activity_table(
+        ivresult, m;
+        grid,
+        model_type::String,
+        ipressure = LiquidElectrolytes.pressure_index(m.elydata),
+    )
+    out = activity_vs_voltage_axis(
+        ivresult, m; grid = grid, ipressure = ipressure, model_type = model_type,
+    )
+    return species_table(out.vgrid, out.activity_electrode, out.species)
+end
+
+"""
+    plot_iv_summary_from_result(ivresult, m; grid, model_type, df_cdl, kwargs...)
+
+[`plot_iv_summary`](@ref) with panels (a)–(c) built from a live IV result instead of from
+CSV.
+
+Panel (d) still takes `df_cdl`: differential capacitance comes from a separate
+`dlcapsweep`, not from an IV sweep, so there is nothing in `ivresult` to build it from.
+The reference overlays — CatINT and the experimental points — stay file-driven, since they
+are digitised literature data.
+
+All of [`plot_iv_summary`](@ref)'s keywords apply.
+"""
+function plot_iv_summary_from_result(
+        ivresult, m;
+        grid,
+        model_type::String,
+        df_cdl,
+        pol_species = iohminus,
+        ipressure = LiquidElectrolytes.pressure_index(m.elydata),
+        kwargs...,
+    )
+    return plot_iv_summary(;
+        df_pol = polarization_table(ivresult; species = pol_species),
+        df_act = surface_activity_table(ivresult, m; grid, model_type, ipressure),
+        df_conc = surface_conc_table(ivresult, m; grid),
+        df_cdl = df_cdl,
+        kwargs...,
+    )
+end
+
+"""
+    plot_iv_summary(; df_pol, df_act, df_conc, df_cdl, kwargs...)
+
+The four-panel polarization figure: current, surface activity, surface concentration and
+differential capacitance, all against potential.
+
+Composed from [`panel_polarization!`](@ref), [`panel_species_vs_voltage!`](@ref) and
+[`panel_dlcap!`](@ref), each of which is usable on its own. Was a `let` block in
+`plot_publication_notebook.jl` with its own axis styling and its own species list; the
+panels now share the package style and read their species from the CSV headers.
+
+Rows 1 and 2 share the potential axis and only the bottom row is labelled, so the four read
+as one figure rather than four plots. Capacitance is the exception: it is normally measured
+over a wider window, so its axis is not linked — pass `link_cdl = true` if it should be.
+
+Every `df_*` is a table written by the matching exporter in `sweeps_csv.jl`; the `*_ref`
+tables overlay a second model.
+"""
+function plot_iv_summary(;
+        df_pol,
+        df_act,
+        df_conc,
+        df_cdl,
+        pol_ref = nothing,
+        pol_points = nothing,
+        act_ref = nothing,
+        conc_ref = nothing,
+        act_labels = nothing,
+        conc_labels = nothing,
+        species = ["K⁺", "H⁺", "HCO₃⁻", "CO₃²⁻", "CO₂", "OH⁻", "CO"],
+        cdl_shift = 0.16,
+        cdl_label = "MPNP",
+        pol_scale = cm^2 / mA,
+        act_limits = ((-1.5, -0.5), (1.0e-11, 1.0e4)),
+        act_yticks = (10.0 .^ (3:-3:-9),
+                      [powlab(3), powlab(0), powlab(-3), powlab(-6), powlab(-9)]),
+        conc_limits = ((-1.5, -0.5), (1.0e-11, 1.0e1)),
+        fig_size = (1400, 1100),
+        figure_padding = (40, 60, 30, 60),
+        panel_labels = ("(a)", "(b)", "(c)", "(d)"),
+        showlegend = true,
+    )
+    fig = Figure(size = fig_size, figure_padding = figure_padding)
+
+    ax_pol = panel_polarization!(
+        fig, fig[1, 1], df_pol;
+        ref = pol_ref, points = pol_points, scale = pol_scale, xlabel = "", showlegend,
+    )
+    # Right-hand y axes in column 2 so each row's two labels sit on the outside of the
+    # figure rather than back to back down the middle.
+    ax_act = panel_species_vs_voltage!(
+        fig, fig[1, 2], df_act;
+        ylabel = lab_activity_surface, species, ref = act_ref, annotate = act_labels,
+        xlabel = "", yaxisposition = :right,
+        limits = act_limits, yticks = act_yticks,
+    )
+    ax_con = panel_species_vs_voltage!(
+        fig, fig[2, 1], df_conc;
+        ylabel = lab_conc_surface, species, ref = conc_ref, annotate = conc_labels,
+        limits = conc_limits,
+    )
+    ax_cdl = panel_dlcap!(
+        fig, fig[2, 2], df_cdl;
+        shift = cdl_shift, label = cdl_label, yaxisposition = :right,
+    )
+
+    # Each panel keeps its own voltage window — (a) reaches further negative than (b)/(c),
+    # and (d) is against U − U_pzc entirely — so the axes are deliberately not linked. Only
+    # the x *label* is dropped from the top row, since the tick values still differ.
+    ax_pol.xlabelvisible = false
+    ax_act.xlabelvisible = false
+
+    if panel_labels !== nothing
+        for (pos, lbl, pad) in zip(
+                (fig[1, 1, TopLeft()], fig[1, 2, TopLeft()],
+                 fig[2, 1, TopLeft()], fig[2, 2, TopLeft()]),
+                panel_labels, (130, 0, 130, 0),
+            )
+            Label(
+                pos, lbl;
+                fontsize = 30, font = :bold, padding = (0, pad, 8, 0),
+                halign = :right, valign = :bottom,
+            )
+        end
+    end
+
+    rowgap!(fig.layout, 20)
+    colgap!(fig.layout, 30)
+    resize_to_layout!(fig)
+    return (fig = fig, pol = ax_pol, act = ax_act, conc = ax_con, cdl = ax_cdl)
 end
 
 

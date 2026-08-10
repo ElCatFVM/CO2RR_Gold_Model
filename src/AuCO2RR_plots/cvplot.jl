@@ -1260,7 +1260,7 @@ function plot_exp_sim_cvsweep_split(
         scale = cm^2 / mA,
         sim_gain = 1.0,
         ured = (-1.3, -0.6),
-        uox = (-0.2, 1.35),
+        uox = (-0.2, 1.05),
         anodic_gain = 1.0,
         widths = nothing,
         fig_size = (960, 820),
@@ -1439,6 +1439,18 @@ every reduced CO₂ releases 2 OH⁻ which consume further CO₂ through CO₂ +
 `n_e` is the electron count per molecule of `species` (2 for CO and CO₂, 1 for OH⁻).
 `sgn` fixes the display convention: CO and OH⁻ are produced while CO₂ is consumed, so
 their fluxes come out with opposite signs.
+
+!!! note "OH⁻ is valid on a cathodic branch and only there"
+    `2 * currents(., ico)` and `1 * currents(., iohminus)` are numerically identical while
+    the electrode is reducing — measured, not assumed. `we_breactions` books the *anodic*
+    half of the stoichiometry on H⁺ instead (`r_pos = max(r_oh, 0)` goes to `ihplus`, and
+    `f[iohminus]` keeps only `r_neg`), because neither dilute ion can sustain the proton
+    turnover and water is the real reservoir. So on an anodic branch the OH⁻ boundary flux
+    is **zero** and OH⁻ reports no current at all.
+
+    A cathodic-only IV sweep may therefore use OH⁻ — `iv_curve_axis` does. A voltammogram
+    may not: it would lose its entire oxidation peak silently. CO works in both directions,
+    which is why it is the default here.
 """
 faradaic_current(result; species = ico, n_e = 2, sgn = 1) =
     sgn .* n_e .* currents(result, species)
@@ -2595,15 +2607,9 @@ function panel_conc_time!(
     ax_c = Axis(
         panel_pos;
         xlabel = xlabel,
-        ylabel = rich(
-            "Surface Concentration ",
-            # `α` runs over species, so it is a running index, not a descriptive tag:
-            # ISO 80000-1 sets those in italic (unlike the upright `M` of `U_M`). Plain
-            # italic rather than bold italic keeps the index subordinate to the `c`.
-            rich("c", font = :bold_italic), subscript("α", font = :italic),
-            superscript("‡"),
-            "\n(M)"
-        ),
+        # Shared with the IV panels through `struct.jl`: this is the same quantity against a
+        # different abscissa, and two copies of the label would eventually disagree.
+        ylabel = lab_conc_surface,
         yscale = log10,
         yminorticksvisible = true,
         yminorticks = IntervalsBetween(9)

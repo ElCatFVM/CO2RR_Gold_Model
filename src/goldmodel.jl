@@ -477,6 +477,21 @@ function create_model(;
         p_CO2 = 1.0
     )
 
+    # `PNPSystem` dispatches on the concrete compensation type through an `if/elseif/elseif`
+    # with no `else`, so anything outside these three leaves its `sys` unassigned and
+    # surfaces as `UndefVarError: sys not defined` from inside VoronoiFVM — with nothing
+    # pointing back here. The old API took a symbol (`:none`), which is exactly the value
+    # that fails this way, so reject it where the name of the offending keyword is still
+    # visible.
+    isa(
+        ircompensation,
+        Union{NoIRCompensation, PseudoPotentiostat, OhmicDropEstimation}
+    ) || error(
+        "ircompensation must be NoIRCompensation(), PseudoPotentiostat() or " *
+        "OhmicDropEstimation(...); got $(repr(ircompensation)). " *
+        "The symbol form (`:none`) is the pre-2.9 API."
+    )
+
     if γ_select == "DGML"
         γ = DGML_γ!
     elseif γ_select == "Stefan"

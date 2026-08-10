@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.3
 
 using Markdown
 using InteractiveUtils
@@ -53,7 +53,7 @@ end;
 begin
 	using AuCO2RR
 	include(joinpath(pkgdir(AuCO2RR), "plots", "AuCO2RR_plots.jl"))
-	using .AuCO2RR_plots
+	using AuCO2RR.AuCO2RR_plots
 end
 
 # ╔═╡ 3ac837b8-559b-41c2-8f83-1331839dcf7e
@@ -3080,7 +3080,7 @@ end
 
 # ╔═╡ 8f63ec58-bc97-43ba-9bbe-e10bb50e2cfe
 elydata_Gold_unc = ElectrolyteData(; 
-								    ircompensation=:none,
+								    #ircompensation=:none,
 	                               	nc = size(bulk)[1],
 									na    = na,
 									z     = getproperty.(bulk, :z),
@@ -3098,7 +3098,7 @@ elydata_Gold_unc = ElectrolyteData(;
 									actcoeff! = γ_mode,
 								    C_gap = C_gap,
 								    ϕ_pzc = ϕ_pzc,
-									ircompfactor = user_input_cv.ircomp,
+									#ircompfactor = user_input_cv.ircomp,
 									#redoxreaction = we_breactions
 									)
 
