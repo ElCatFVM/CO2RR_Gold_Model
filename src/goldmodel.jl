@@ -387,9 +387,63 @@ function calc_QBL_local(u, data; tolϕ = 1.0e-12)
 end
 
 
+raw"""
+    carbonate_bulk(reactiondata; p_CO2 = 1.0, c_CO2_ref, c_HCO3_ref, c_CO3_ref)
+
+Bulk composition at `p_CO2` bar of CO₂, as published in the parameter table (set IV b).
+
+Returns `(; CO2, HCO3, CO3, OH, H)` in SI. H⁺ and OH⁻ come from `reactiondata.pH`; the three
+carbonate species are the tabulated reference values scaled by `p_CO2`.
+
+The reference values are the table's, not recomputed from the equilibrium constants, so that
+the code reports the same numbers the paper does. Recomputing
+`[HCO3^-] = K_{b1}[CO2][OH^-]` and `[CO3^{2-}] = K_{b2}[HCO3^-][OH^-]` gives `0.09245` and
+`2.718e-5`, within 2 % of the tabulated `0.091` and `2.68e-5` — the difference is rounding
+in the table, and it leaves the bulk quotients at `Q/K = 0.98` and `1.00` rather than exactly
+one.
+
+Scaling all three together is what keeps that true at every pressure. `CO₂ + OH⁻ ⇌ HCO₃⁻`
+is first order in each carbonate species at fixed pH, so a common factor leaves every
+quotient unchanged; scaling CO₂ alone — which is what the pressure sweep did originally —
+puts that quotient a factor `1/p` off, a tenfold disequilibrium at 0.1 bar. Because the bulk
+enters as a Dirichlet condition, such a disequilibrium is imposed for the whole sweep rather
+than relaxing away, and the OH⁻ it produces is easily mistaken for an electrode effect.
+
+!!! warning "`CO₃²⁻` was a decade low"
+    The value hard-coded here before was `2.68e-6`; the table says `2.68e-5`. Results
+    produced before this fix started a decade away from equilibrium in
+    `HCO₃⁻ + OH⁻ ⇌ CO₃²⁻` and were driven by the volume term from the first step.
+
+!!! note "Fixed pH, not fixed K⁺"
+    Because the proton activity is pinned by `reactiondata.pH`, K⁺ follows from
+    electroneutrality and a pressure series is also a series at *varying* supporting
+    electrolyte concentration.
+
+    A measurement usually holds the KHCO₃ loading fixed and lets pH rise as CO₂ is removed.
+    Reproducing that means solving for the pH that conserves K⁺, which this does not do. Say
+    which convention a computed pressure series used.
+"""
+function carbonate_bulk(
+        reactiondata;
+        p_CO2 = 1.0,
+        c_CO2_ref = 0.033 * ufac"mol / dm^3",
+        c_HCO3_ref = 0.091 * ufac"mol / dm^3",
+        c_CO3_ref = 2.68e-5 * ufac"mol / dm^3",
+    )
+    c_OH = 10.0^(reactiondata.pH - 14) * ufac"mol / dm^3"
+    c_H = 10.0^(-reactiondata.pH) * ufac"mol / dm^3"
+    return (
+        CO2 = c_CO2_ref * p_CO2,
+        HCO3 = c_HCO3_ref * p_CO2,
+        CO3 = c_CO3_ref * p_CO2,
+        OH = c_OH,
+        H = c_H,
+    )
+end
+
 """
     create_model(; γ_select, use_md_hydrated, BC_model, model, ircompensation,
-                   specieslayout, reactiondata)
+                   specieslayout, reactiondata, p_CO2)
 
 Assemble the whole cell. This is the entry point everything else builds on.
 
@@ -402,8 +456,12 @@ keep the bulk electroneutral, and closes over the volume and electrode reactions
 | `use_md_hydrated` | `true` for MD hydrated radii and solvation numbers, `false` for bare or equal-size ions |
 | `BC_model` | `:Robin` (Helmholtz gap capacitance), `:Dirichlet`, or neither |
 | `ircompensation` | `NoIRCompensation()`, `OhmicDropEstimation(...)`, `PseudoPotentiostat()` |
+| `p_CO2` | CO₂ partial pressure in bar; sets the whole carbonate bulk via [`carbonate_bulk`](@ref) |
 
 Returns `(bcondition, reaction, elydata, bulk, bulknames, bulkcolors, species_dict)`.
+
+Building the model at the pressure of interest is preferable to scaling `c_bulk` afterwards,
+because it keeps the bulk on its own equilibrium — see [`carbonate_bulk`](@ref).
 
 The combination of `γ_select` and `use_md_hydrated` selects a radius set and prints which
 one was chosen; an unhandled combination is an error rather than a silent default.
@@ -415,7 +473,8 @@ function create_model(;
         model = :Gold,
         ircompensation = NoIRCompensation(),
         specieslayout = SpeciesLayout(),
-        reactiondata = ReactionData()
+        reactiondata = ReactionData(),
+        p_CO2 = 1.0
     )
 
     if γ_select == "DGML"
@@ -516,12 +575,16 @@ function create_model(;
         error("undefined case:  use_md_hydrated = $(use_md_hydrated), γ=$(γ)")
     end
 
+    # Derived, not tabulated: see `carbonate_bulk` for what the three literals that used to
+    # sit here got wrong.
+    cb = carbonate_bulk(reactiondata; p_CO2 = p_CO2)
+
     bulk = [
         BulkSpecies(;
             name = "HCO₃⁻",
             z = -1,
             D = 1.185e-9,
-            c_bulk = 0.091 * ufac"mol / dm^3",
+            c_bulk = cb.HCO3,
             a = a_HCO3,
             κ = κ_HCO3,
             color = "#7B5C3E"
@@ -530,7 +593,7 @@ function create_model(;
             name = "CO₃²⁻",
             z = -2,
             D = 0.923e-9,
-            c_bulk = 2.68e-6 * ufac"mol / dm^3",
+            c_bulk = cb.CO3,
             a = a_CO3,
             κ = κ_CO3,
             color = "#222222"
@@ -539,7 +602,7 @@ function create_model(;
             name = "CO₂",
             z = 0,
             D = 1.91e-9,
-            c_bulk = 0.033 * ufac"mol / dm^3",
+            c_bulk = cb.CO2,
             a = a_CO2,
             κ = κ_CO2,
             color = "#C0392B"
@@ -548,7 +611,7 @@ function create_model(;
             name = "OH⁻",
             z = -1,
             D = 5.273e-9,
-            c_bulk = 10^(reactiondata.pH - 14) * ufac"mol / dm^3",
+            c_bulk = cb.OH,
             a = a_OH,
             κ = κ_OH,
             color = "#27AE60"
@@ -557,7 +620,7 @@ function create_model(;
             name = "H⁺",
             z = 1,
             D = 9.31e-9,
-            c_bulk = 10^(-reactiondata.pH) * ufac"mol / dm^3",
+            c_bulk = cb.H,
             a = a_H,
             κ = κ_H,
             color = "#888888"

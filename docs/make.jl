@@ -60,6 +60,7 @@ function mkdocs()
             "AuCO2RR.jl" => "index.md",
             "Notations" => "notations.md",
             "Standard calculations" => "calculations.md",
+            "Cyclic voltammetry walkthrough" => "cv_notebook.md",
             "Plots" => "plots.md",
             "API" => "api.md",
             "Internal API" => "internal.md",
@@ -68,19 +69,21 @@ function mkdocs()
     return nothing
 end
 
-"""
-    write_version_selector(builddir)
-
-Populate the sidebar version selector for a **local** build.
-
-`deploydocs` normally writes `versions.js` next to the version directories on gh-pages and
-a `siteinfo.js` inside each one; the selector at the bottom left of the sidebar is filled
-in from those two files by `documenter.js`. A local build has neither, so the selector
-stays empty. Writing them by hand gives the same result without deploying.
-
-Delete this call once `deploydocs` is enabled — it would otherwise overwrite what the real
-deployment produced.
-"""
+# write_version_selector(builddir)
+#
+# Populated the sidebar version selector for a *local* build. `deploydocs` normally writes
+# `versions.js` next to the version directories on gh-pages and a `siteinfo.js` inside each
+# one, and `documenter.js` fills the selector at the bottom left of the sidebar from those
+# two. A local build has neither, so the selector stays empty; writing them by hand gave
+# the same result without deploying.
+#
+# Disabled now that `deploydocs` is enabled below — the real deployment writes both files,
+# and this would overwrite them and hide every other version from the selector.
+#
+# Kept as comments rather than a docstring: a `\"\"\"...\"\"\"` block here would attach
+# itself to the next expression, which is the `mkdocs()` *call*, and Julia rejects that
+# with "cannot document the following expression".
+#
 #function write_version_selector(builddir)
 #    label = DOC_VERSION_LABEL
 #    write(
@@ -101,14 +104,13 @@ deployment produced.
 #end
 
 mkdocs()
-write_version_selector(joinpath(@__DIR__, "build"))
 
 # Skip deployment from the REPL; only CI publishes to gh-pages.
 # Enable once a GitHub remote exists — and drop `write_version_selector` above,
 # since deploydocs writes versions.js / siteinfo.js itself.
  if !isinteractive()
      deploydocs(
-         repo = "github.com/USER/Capacitance_Code.git",
+         repo = "github.com/xuminsu/Capacitance_Code.git",
          devbranch = "main",
          versions = ["stable" => "v^", "dev" => "dev", "v#.#"],
      )

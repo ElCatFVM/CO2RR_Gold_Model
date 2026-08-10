@@ -348,6 +348,58 @@ function cvsweep_odr_over_L(
     return results
 end
 
+"""
+    cvsweep_over_ircompfactor(model, grid, sawtooth; factors, Δt_fixed, nperiods, solver_kwargs...)
+
+CV at each ohmic-drop compensation factor in `factors`. Returns `Dict(factor => result)`.
+
+`model` is the named tuple from `GoldModel.create_model`, and its electrolyte must already
+carry an `OhmicDropEstimation` — the factor is swapped on a copy of that object rather than
+on a fresh one, because `create_model` injected `redoxreaction = we_breactions` into it and
+a newly constructed `OhmicDropEstimation` would not carry it. Losing it silently removes
+the entire surface reaction from the boundary residual: `ohmicdropcompensation` evaluates
+`redoxreaction` and that is the only path by which the faradaic fluxes reach the equations.
+
+`Δt_fixed` pins `Δt_min = Δt_max`, so every factor is integrated on the *same* time grid.
+Without it the adaptive controller picks different steps per run — the extra unknowns `iq`
+and `icc` enter its error estimate — and curves then differ by discretisation as well as by
+compensation. With it, `factor = 0` reproduces an uncompensated run to solver tolerance.
+
+Pass `Δt_fixed = nothing` to let the controller adapt, e.g. when only one factor is needed.
+"""
+function cvsweep_over_ircompfactor(
+        model, grid, sawtooth;
+        factors = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9],
+        Δt_fixed = 0.05,
+        nperiods = 1,
+        store_solutions = true,
+        unknown_storage = :dense,
+        solver_kwargs...
+    )
+    ely0 = model.elydata
+    isa(ely0.ircompensation, OhmicDropEstimation) || error(
+        "cvsweep_over_ircompfactor needs a model built with OhmicDropEstimation; " *
+            "got $(typeof(ely0.ircompensation))"
+    )
+
+    grid_kwargs = Δt_fixed === nothing ? (;) : (; Δt_min = Δt_fixed, Δt_max = Δt_fixed)
+
+    results = Dict{Float64, Any}()
+    for f in factors
+        celldata = copy(ely0; ircompensation = copy(ely0.ircompensation; factor = f))
+        pnpcell = PNPSystem(
+            grid; bcondition = model.bcondition, celldata = celldata,
+            reaction = model.reaction, unknown_storage
+        )
+        @info ">>> ohmic-drop compensation factor f = $(f)"
+        results[f] = LiquidElectrolytes.cvsweep(
+            pnpcell; voltages = sawtooth, nperiods, store_solutions,
+            grid_kwargs..., solver_kwargs...
+        )
+    end
+    return results
+end
+
 # ── moved from cell 82116926 (blthickness), fixed ──
 
 """

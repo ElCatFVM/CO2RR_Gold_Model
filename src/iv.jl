@@ -12,6 +12,9 @@ expect.
 
 `sweepfun` decides whether this is a CV or an IV study: pass a closure that builds a
 `PNPSystem` and calls `cvsweep` to get pressure-resolved voltammograms.
+
+To hold one pressure fixed and sweep something else instead, use [`at_pressure`](@ref)
+directly.
 """
 function pressure_varied_sweep(
     elydata_base, sweepfun;
@@ -23,11 +26,60 @@ function pressure_varied_sweep(
 )
     recs = Vector{Any}(undef, length(Pvec))
     for (k, p) in pairs(Pvec)
-        ely = deepcopy(elydata_base)
-        ely.c_bulk[ispec] = base_value .* scale(p)
+        ely = at_pressure(elydata_base, p; ispec, base_value, scale)
         recs[k] = sweepfun(ely; sweep_kwargs...)
     end
     return collect(zip(Pvec, recs))
+end
+
+"""
+    at_pressure(elydata, p; ispec, coupled, ineutral, base_value, scale)
+
+Copy of `elydata` with the CO₂ partial pressure set to `p`, **keeping the bulk on its own
+carbonate equilibrium**.
+
+Extracted from [`pressure_varied_sweep`](@ref) so that a single pressure can be combined with
+*another* sweep — scan rate, domain size, compensation factor. Going through
+`pressure_varied_sweep` for that means running a whole pressure family to keep one member.
+
+At the fixed pH of `GoldModel.carbonate_bulk`, all three carbonate concentrations are
+proportional to the partial pressure, so `coupled` — HCO₃⁻ and CO₃²⁻ by default — is scaled
+by the same factor as `ispec`. Scaling CO₂ alone, which is what this did originally, leaves
+`CO₂ + OH⁻ ⇌ HCO₃⁻` a factor `1/p` from equilibrium; because the bulk is a Dirichlet
+condition that disequilibrium is imposed for the whole sweep rather than relaxing away, and
+it drives OH⁻ production that is easily mistaken for an electrode effect.
+
+Scaling anions changes the charge balance, so the species at `ineutral` — K⁺ — is
+recomputed to restore electroneutrality, as `GoldModel.make_eneutral` does at build time.
+
+The copy is deep, so the caller's electrolyte is untouched.
+
+!!! note
+    Building the model with `create_model(; p_CO2)` is the better route when the pressure is
+    known up front; this exists for sweeping an already-built electrolyte. The two agree
+    because both derive the same proportionality from the same constants.
+"""
+function at_pressure(
+        elydata, p;
+        ispec::Integer,
+        coupled = (3, 4),          # HCO₃⁻, CO₃²⁻ in the default SpeciesLayout order
+        ineutral::Integer = 1,     # K⁺
+        base_value = elydata.c_bulk[ispec],
+        scale = identity,
+    )
+    ely = deepcopy(elydata)
+    f = scale(p)
+
+    ely.c_bulk[ispec] = base_value .* f
+    for i in coupled
+        ely.c_bulk[i] *= f
+    end
+
+    # Charge from everything except the balancing species, then set it to cancel that.
+    ely.c_bulk[ineutral] = 0.0
+    ely.c_bulk[ineutral] = -sum(ely.z .* ely.c_bulk) / ely.z[ineutral]
+
+    return ely
 end
 
 

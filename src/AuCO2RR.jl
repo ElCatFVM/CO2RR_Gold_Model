@@ -41,6 +41,7 @@ include("cv.jl")
 export sweep_over_L_cv
 # added from row_interaction_script.jl (batch 4: extra CV sweep drivers)
 export sweep, cvsweep_compensated_over_L, cvsweep_odr_over_L, blthickness, blthickness_t
+export cvsweep_over_ircompfactor
 
 
 include("dlcap.jl")
@@ -48,6 +49,7 @@ export capscalc
 
 include("iv.jl")
 export pressure_varied_sweep, sweep_over_L_c, scanrate_varied_sweep, run_pH_sweep
+export at_pressure
 export ivsweep_over_L
 # added from row_interaction_script.jl (batch 5: pressure colname + simulate drivers)
 export _pressure_colname, simulate_CO2R, simulate_CO2R_dir

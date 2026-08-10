@@ -78,9 +78,10 @@ end
 # ╔═╡ 035cf151-b62a-42ee-8b03-38e68fc4e4b3
 begin
     #Vmax = 2 * V
-    L = 1000 * μm
+    L = 2500 * μm
     hmin = 1.0e-6 	* μm
-    hmax = 0.05*L
+    #hmax = 0.05*L
+    hmax = 0.1*L
     X = ExtendableGrids.geomspace(0, L, hmin, hmax)
     grid = ExtendableGrids.simplexgrid(X)
 	#X, grid = makegrid(elydata_Gold_unc, L)
@@ -115,7 +116,7 @@ elseif ircomp==:ohmicdrop
                           Ru = L / σ,
                           species=5,
                           ne=2,
-        factor=0.0
+        factor=0.85
     )
 else
     error("wrong value of ircompensation: $ircomp")
@@ -154,72 +155,55 @@ pnpcell_odr = PNPSystem(grid; bcondition = elystruct_odr.bcondition, celldata = 
 # ╔═╡ 1e59ac64-17d4-42a0-befc-32961332c4c7
 pnpcell_unc = PNPSystem(grid; bcondition = elystruct_unc.bcondition, celldata = elystruct_unc.elydata, reaction = elystruct_unc.reaction)
 
+# ╔═╡ 57b5d6b5-cf65-4997-903d-f8b08e983b8b
+#Δt_min = Δt_cv, Δt_max = Δt_cv, abstol = 1.0e-12, reltol = 1.0e-12
+
 # ╔═╡ e2eb4160-550a-4a07-b4c8-66863aaab46f
-# ╠═╡ show_logs = false
-cv_odr = sweep(elystruct_odr, grid, sawtooth; nperiods = nperiods)
+cv_odr = sweep(elystruct_odr, grid, sawtooth; nperiods)
+
+# ╔═╡ 7bf09e84-8ad2-4b3b-92bd-8627d2c0dedc
+Δt_cv = 0.05
 
 # ╔═╡ 47515ef3-b6aa-49d0-b4fc-b471cb947aa1
-# ╠═╡ show_logs = false
-cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods = nperiods)
+cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods)
 
 # ╔═╡ ba48cb67-a7af-4d65-b65f-b55d9c29f54c
-# ╠═╡ show_logs = false
-cv_irc = sweep(elystruct_irc, grid, sawtooth; nperiods = nperiods)
+cv_irc = sweep(elystruct_irc, grid, sawtooth; nperiods)
 
 # ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
 
 # ╔═╡ bd9b5c58-0375-4ce2-aa55-c74b921aa050
+plot_cv_summary(cv_odr, elystruct_odr)	
+
+# ╔═╡ 3ad8349a-f95f-4ba8-98c4-b404f98137aa
+plot#_7species_contours(cv_odr, X, elystruct_odr)
+
+# ╔═╡ 36238c29-eea8-47b4-b5a3-17905b3483a8
+extrema(currents(cv_odr, 7) ./ currents(cv_odr, 5))   # CO / CO₂
+
+# ╔═╡ 96eb220e-d88c-4f3c-872e-174938b19a8c
 let
-    result = cv_irc
     fig = with_theme(electrochemistry_theme()) do
-        f = Figure(size = (800, 1260))       
-        ax1, leg1 = AuCO2RR_plots.panel_conc_time!(f, f[1, 2], result, elystruct_odr;     xlabel = "")
-        ax2 = AuCO2RR_plots.panel_time_current!(f, f[2, 2], result, elystruct_odr;      xlabel = "")
-        ax3 = AuCO2RR_plots.panel_time_voltage!(f, f[3, 2], result; sawtooth = sawtooth, xlabel = "")
-        ax4 = AuCO2RR_plots.panel_time_ph!(f, f[4, 2], result;                  xlabel = "")   # (d) pH
-        #ax5, hm = panel_co2_log_contour!(f, f[5, 2], f[5, 3], result, X, bulk; L_val = L)  # (e)
-        ax5, leg5 = AuCO2RR_plots.QoverK(f, f[5, 2], result,elystruct_odr; legend_pos = f[5, 3])       # (f) Q/K
-
-        labels = ["(a)", "(b)", "(c)", "(d)", "(e)"]
-        for i in 1:5
-            Label(f[i, 1], labels[i],
-                fontsize = 25, font = :bold, valign = :top,
-                padding = (0, -20, -10, 0))
-        end
-
-        hidexdecorations!(ax1, grid = false)
-        hidexdecorations!(ax2, grid = false)
-        hidexdecorations!(ax3, grid = false)
-        hidexdecorations!(ax4, grid = false)
-        #hidexdecorations!(ax5, grid = false)     # hide x-labels on the contour too (only ax6 shows the x-axis)
-
-        ax3.yticks = LinearTicks(3)
-        ax4.yticks = LinearTicks(4)
-        ylims!(ax1, 1e-14, 1e2)
-
-        linkxaxes!(ax1, ax2, ax3, ax4, ax5)
-        rowgap!(f.layout, 15)
-        for r in 1:5
-			if r == 1
-				rowsize!(f.layout, r, 350)
-			else
-            	rowsize!(f.layout, r, Relative(1/6))   # split into 6
-			end
-        end
+        f = Figure(size = (800, 400))
+        panel_time_current_diff!(
+            f, f[1, 1],
+            cv_odr,            # result_1  (label_1 = "odr")
+            cv_unc,            # result_2  (label_2 = "unc")
+            elystruct_odr;     # m  → m.elydata (cspecies, capacitive-term mode)
+            include_capacitive = false,   # ★ recommend false when the modes differ 
+            title = "IR Compensation Effect"
+        )
         f
     end
     fig
 end
 
-# ╔═╡ 3ad8349a-f95f-4ba8-98c4-b404f98137aa
-plot_7species_contours(cv_odr, X, elystruct_unc)
+# ╔═╡ 5412784d-68b9-4ac1-bc87-0051e1da0ce8
+tsol = (; Δt_min = 0.05, Δt_max = 0.05,   # 적응 제어 무력화 → 같은 격자
+          abstol  = 1.0e-12,
+          reltol  = 1.0e-12)
 
-# ╔═╡ 34ab3828-53ef-41f9-bcd7-95755b0a8c8b
-plot_potential_split(cv_unc, elystruct_unc; scanrate = 0.05)
-
-# ╔═╡ 36238c29-eea8-47b4-b5a3-17905b3483a8
-extrema(currents(cv_odr, 7) ./ currents(cv_odr, 5))   # CO / CO₂
 
 # ╔═╡ 59ec47b9-2a47-4350-b708-ca7a980bbdb2
 md"""
@@ -229,7 +213,7 @@ md"""
 # ╔═╡ 01f688a7-3265-4bc5-9b74-6eedfc36476d
 begin
 	grid_dict = Dict{Float64, Any}()
-	for Lv in [100, 300, 500, 1000, 3000, 5000] .* μm
+	for Lv in [100, 500, 1000, 2500] .* μm
 	    Xg = ExtendableGrids.geomspace(0, Lv, 1.0e-7*μm, Lv*0.1)
 	    grid_dict[Lv] = ExtendableGrids.simplexgrid(Xg)
 	end
@@ -267,18 +251,8 @@ end
 # ╔═╡ 2f128f25-d629-44b5-bcb7-d3b9d59362ea
 Lmax=sort(keys(grid_dict))[end]
 
-# ╔═╡ 0fb39632-67a5-4780-a3d4-71c51bd9a3c3
-function fixed(fig)
-    @htl("""
-    <div style="
-        display: inline-block;
-        align-self: flex-start;
-        flex: 0 0 auto;
-    ">
-        $(fig)
-    </div>
-    """)
-end
+# ╔═╡ de959fd3-0a8f-4f18-924c-6c9785408a04
+cv_unc_fixed = sweep(elystruct_unc, grid, sawtooth; nperiods, tsol...)
 
 # ╔═╡ b5abb13d-b6e4-4a47-a4b0-d099588b1b60
 plots=[AuCO2RR_plots.plottsol(grid_dict[L],
@@ -304,111 +278,48 @@ blthickness(grid, elystruct_odr.elydata, cv_odr.tsol; species = 5) / μm
 
 # ╔═╡ 69bcb95c-69a5-4daf-9646-2313c8452018
 begin
-    factors = [0.0, 0.3, 0.5, 0.7, 0.9]
-    ely0 = elystruct_odr.elydata
-    
-    splitruns = Dict{Any, Any}()
+    factors = [0.0, 0.1, 0.5, 0.9]
+
+    ely0    = elystruct_odr.elydata
+
+    #same = (; Δt_min = 0.05, Δt_max = 0.05, abstol = 1.0e-12, reltol = 1.0e-12)
+
+    splitruns = Dict{Float64, Any}()
     for f in factors
-        # copy() so `redoxreaction` survives — create_model bound we_breactions into it,
-        # and a freshly constructed OhmicDropEstimation would not have it
-        ircompensation=OhmicDropEstimation(
-                          Ru = L / σ,
-                          species=5,
-                          ne=2,
-        factor=f
-        )
-        
-        cd = copy(ely0; ircompensation)
+        cd  = copy(ely0; ircompensation = copy(ely0.ircompensation; factor = f))
         pnp = PNPSystem(grid; bcondition = elystruct_odr.bcondition, celldata = cd,
                         reaction = elystruct_odr.reaction, unknown_storage = :dense)
         splitruns[f] = LiquidElectrolytes.cvsweep(pnp; voltages = sawtooth, nperiods,
-                                                  store_solutions = true, Δu_opt = 0.025)
+                                                  store_solutions = true, same...)
     end
-    splitruns["unc"] = cv_unc          # 무보정 기준선
     splitruns
 end
 
-
-# ╔═╡ f32f2d90-a774-4485-a850-b15a7d1268da
-let
-    fig = Figure(size = (700, 520))
-    ax = Axis(fig[1, 1]; xlabel = AuCO2RR_plots.lab_voltage,
-              ylabel = rich(rich("ϕ", font = :italic), "(0)  (V)"),
-              title = "potential divider vs. compensation")
-    ablines!(ax, 0, 1; color = (:black, 0.45), linestyle = :dot, linewidth = 2)
-
-    ks = [0.0, 0.3, 0.5, 0.7, 0.9]
-    for (i, f) in enumerate(ks)
-        r = splitruns[f]
-        lines!(ax, r.sawtooth, r.voltages;
-               color = AuCO2RR_plots.CMAP_SCANRATE[(i - 1) / (length(ks) - 1)],
-               linewidth = 4, label = "f = $f")
-    end
-    axislegend(ax; position = :lt, framevisible = false)
-    fig
+# ╔═╡ 0fb39632-67a5-4780-a3d4-71c51bd9a3c3
+begin
+    cd  = copy(ely0; ircompensation = copy(ely0.ircompensation; factor = 0.0))
+    pnp = PNPSystem(grid; bcondition = elystruct_odr.bcondition, celldata = cd,
+                    reaction = elystruct_odr.reaction, unknown_storage = :dense)
+    cv_f0 = LiquidElectrolytes.cvsweep(pnp; voltages = sawtooth, nperiods,
+                                       store_solutions = true, tsol...)
 end
 
-
-# ╔═╡ 9bd12311-fbe8-436b-8c14-18edb5744929
-function panel_time_current_diff!(fig, panel_pos, result_1, result_2, m;
-                             redox_species = nothing,
-                             include_capacitive = true,
-                             scale = cm^2/mA,
-                             sign = -1,
-                             color_gradient = false,
-                             lw = 4,
-                             label_1 = "odr",
-                             label_2 = "unc",
-                             xlims = nothing,          # ★ (xmin, xmax) or nothing
-                             ylims = nothing)          # ★ (ymin, ymax) or nothing
-    model = m.elydata
-    xlabel = "Curr"
-    ax = Axis(panel_pos; xlabel = xlabel,
-              ylabel = rich(rich("I", font=:italic), "  (mA cm", superscript("−2"), ")"))
-    redox = Dict(model.cspecies[5] => 2)
-    function calc_total_current(res)
-        n_t = length(res.times)
-        I_F = zeros(n_t)
-        for (idx, n_e) in redox
-            I_F .+= n_e .* currents(res, idx)
-        end
-        I_C = zeros(n_t)
-        if include_capacitive && model.ircompensation == :ohmicdrop
-            I_C = [u[model.icc, 1] for u in res.tsol[1:end-1]]
-        end
-        return res.times, sign .* (I_F .+ I_C) .* scale
-    end
-    t1, I_1 = calc_total_current(result_1)
-    t2, I_2 = calc_total_current(result_2)
-    # the two sweeps have different time grids, so interpolate I_2 onto t1
-    itp2   = Interpolations.linear_interpolation(t2, I_2; extrapolation_bc = Interpolations.Line())
-    I_diff = I_1 .- itp2.(t1)
-    lines!(ax, t1, I_diff; color = colorant"#C4844C", linewidth = lw)
-
-    # ★ set axis limits (only when given)
-    xlims === nothing || xlims!(ax, xlims...)
-    ylims === nothing || ylims!(ax, ylims...)
-
-    return ax
+# ╔═╡ 56baa4d6-6838-40d3-9649-c2b151fd9755
+begin
+	I0 = AuCO2RR_plots.cv_current(cv_f0)       .* (cm^2/mA)
+	Iu = AuCO2RR_plots.cv_current(cv_unc_fixed) .* (cm^2/mA)
+	length(I0) == length(Iu), maximum(abs, I0 .- Iu) / maximum(abs, Iu)
 end
 
-# ╔═╡ 96eb220e-d88c-4f3c-872e-174938b19a8c
-let
-    fig = with_theme(electrochemistry_theme()) do
-        f = Figure(size = (800, 400))
-        panel_time_current_diff!(
-            f, f[1, 1],
-            cv_odr,            # result_1  (label_1 = "odr")
-            cv_unc,            # result_2  (label_2 = "unc")
-            elystruct_odr;     # m  → m.elydata (cspecies, capacitive-term mode)
-            include_capacitive = false,   # ★ recommend false when the modes differ (see note below)
-			#xlims = (0, 10),
-         #   ylims = (-1e-8, 1e-8)
-        )
-        f
-    end
-    fig
-end
+# ╔═╡ bb8cd305-1bb7-4d4e-8158-014a290e2325
+plot_ircomp_compare(splitruns, elystruct_odr;
+                                  reference = cv_unc_fixed,
+                                  reference_model = elystruct_unc,
+                                  panels = (:driving, :metal_time, :ircomp, :cv),
+                                  layout = (2, 2))
+
+# ╔═╡ 68527236-79a2-4064-ace0-ddd046401c13
+
 
 # ╔═╡ 743e985e-1fa3-426f-b2c0-cdb52517443d
 md"""
@@ -417,18 +328,22 @@ md"""
 
 # ╔═╡ 535e8412-7e45-4be2-9533-b1ee1245d3e1
 begin
-    scanrates = [0.005, 0.01, 0.02, 0.05, 0.1]
+    scanrates = [0.005, 0.05, 0.5, 5.0]
     SR_vec = [sweep(elystruct_odr, grid,
-                    SawTooth(scanrate = sr, vmin = -1.2, vmax = 0.8,
+                    SawTooth(scanrate = sr, vmin = -1.2, vmax = 1.2,
                              scanup = false, vstart = 0.0; tstart = 0.0);
-                    nperiods, Δu_opt = 0.025) for sr in scanrates]
+                    nperiods,
+                    Δu_opt = 0.01,
+                    abstol = 1.0e-12, reltol = 1.0e-12) for sr in scanrates]
 end
+
 
 # ╔═╡ d7b50e64-d0c9-4551-a732-a7a1dea445a4
 plot_scanrate_sweeps(SR_vec, scanrates)
 
 # ╔═╡ 4c520a35-1109-472d-a800-d42133a7ef94
-plot_scanrate_sweeps_split(SR_vec, scanrates)
+plot_scanrate_sweeps_split(SR_vec, scanrates; ured = (-1.3, -0.6),
+        uox = (-0.2, 1.45),)
 
 # ╔═╡ d291fbb9-0cc4-4f6b-a7ed-4e3f103f4d11
 md"""
@@ -441,10 +356,12 @@ begin
         PNPSystem(grid; bcondition = elystruct_odr.bcondition,
                   celldata = ely, reaction = elystruct_odr.reaction,
                   unknown_storage = :dense);
-        voltages = sawtooth, nperiods, store_solutions = true, Δu_opt = 0.025)
+        voltages = sawtooth, nperiods, store_solutions = true,
+        Δt_min = Δt_cv, Δt_max = Δt_cv,
+        abstol = 1.0e-12, reltol = 1.0e-12)
 
     P_recs = pressure_varied_sweep(elystruct_odr.elydata, cvfun;
-                                   Pvec = [0.2, 0.4, 0.6, 0.8, 1.0], ispec = 5)
+                                   Pvec = [0.1, 0.5, 1.0], ispec = 5)
 end
 
 # ╔═╡ bde0975f-957f-4e8c-8c15-59e7f1a09400
@@ -452,6 +369,40 @@ pressure_varied_cvsweep(P_recs)
 
 # ╔═╡ ad3c4119-cd97-4933-820f-84eee96cbc07
 pressure_varied_cvsweep_split(P_recs)
+
+# ╔═╡ 46f1c6f3-d36e-442b-9936-3dd4dec397b3
+rec = first(r for (p, r) in P_recs if p == 0.1)
+
+# ╔═╡ 9530079d-d4e1-4712-9c8d-e01ec26a1d79
+plot_cv_summary(rec, elystruct_odr)
+
+# ╔═╡ 7620826e-c562-41e2-aa2b-e717843f9187
+plot_cv_scanrate_grid(SR_vec, m; scanrates = scanrates)
+
+# ╔═╡ 9849e70d-47f9-4b04-aafb-54033c674b54
+plot_exp_sim_cvsweep_split(P_recs; annotate_x = 0.93)
+
+# ╔═╡ 9a5e3eed-0f4e-43b6-b7b5-e28c62a30a4b
+begin
+    ispec = 5                                    # CO₂
+    ely_01 = at_pressure(elystruct_odr.elydata, 0.1; ispec)
+
+    SR_01 = [ LiquidElectrolytes.cvsweep(
+                  PNPSystem(grid;
+                            bcondition = elystruct_odr.bcondition,
+                            celldata = deepcopy(ely_01),
+                            reaction = elystruct_odr.reaction,
+                            unknown_storage = :dense);
+                  voltages = SawTooth(scanrate = sr, vmin = -1.2, vmax = 0.8,
+                                      scanup = false, vstart = 0.0; tstart = 0.0),
+                  nperiods, store_solutions = true,
+                  Δu_opt = 0.002, abstol = 1.0e-12, reltol = 1.0e-12)
+              for sr in [0.01, 0.05, 0.2] ]
+end
+
+# ╔═╡ f91ff7ae-334b-4263-858a-3fa0892911e8
+plot_cv_scanrate_grid(SR_01, elystruct_odr; scanrates = [0.01, 0.05, 0.2])
+
 
 # ╔═╡ Cell order:
 # ╠═8d20515c-54c6-11f1-aeac-bdc0c7e51b18
@@ -472,30 +423,34 @@ pressure_varied_cvsweep_split(P_recs)
 # ╠═f4f59329-e817-495a-9e83-1ab53e7738a9
 # ╠═590a17bd-c98d-4b23-9139-04b550c95efe
 # ╠═1e59ac64-17d4-42a0-befc-32961332c4c7
+# ╠═57b5d6b5-cf65-4997-903d-f8b08e983b8b
 # ╠═e2eb4160-550a-4a07-b4c8-66863aaab46f
+# ╠═7bf09e84-8ad2-4b3b-92bd-8627d2c0dedc
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
 # ╠═ba48cb67-a7af-4d65-b65f-b55d9c29f54c
 # ╠═f77ec140-e091-46c1-8bc6-1c00f3880e83
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
 # ╠═3ad8349a-f95f-4ba8-98c4-b404f98137aa
-# ╠═34ab3828-53ef-41f9-bcd7-95755b0a8c8b
 # ╠═36238c29-eea8-47b4-b5a3-17905b3483a8
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
+# ╠═5412784d-68b9-4ac1-bc87-0051e1da0ce8
 # ╟─59ec47b9-2a47-4350-b708-ca7a980bbdb2
 # ╠═01f688a7-3265-4bc5-9b74-6eedfc36476d
 # ╠═cf4713e6-706c-484f-b398-8ba6cc33561b
 # ╟─5cc3a435-8fae-4eb9-8e2f-2de72e2e807a
 # ╠═affdc880-3a70-429a-bcfb-a53cf7ed1f31
 # ╠═2f128f25-d629-44b5-bcb7-d3b9d59362ea
+# ╠═de959fd3-0a8f-4f18-924c-6c9785408a04
 # ╠═0fb39632-67a5-4780-a3d4-71c51bd9a3c3
+# ╠═56baa4d6-6838-40d3-9649-c2b151fd9755
 # ╠═b5abb13d-b6e4-4a47-a4b0-d099588b1b60
 # ╠═c2e9573b-2105-4930-9f17-5a3bf3fe7058
 # ╠═1ea52fc4-0921-43ea-88e4-04fadee047f9
 # ╠═6301f323-16d8-4805-bbcf-4a055bca2d59
 # ╠═6f56453e-384b-4be6-9298-8101d12d8b79
 # ╠═69bcb95c-69a5-4daf-9646-2313c8452018
-# ╠═f32f2d90-a774-4485-a850-b15a7d1268da
-# ╠═9bd12311-fbe8-436b-8c14-18edb5744929
+# ╠═bb8cd305-1bb7-4d4e-8158-014a290e2325
+# ╠═68527236-79a2-4064-ace0-ddd046401c13
 # ╠═743e985e-1fa3-426f-b2c0-cdb52517443d
 # ╠═535e8412-7e45-4be2-9533-b1ee1245d3e1
 # ╠═d7b50e64-d0c9-4551-a732-a7a1dea445a4
@@ -504,3 +459,9 @@ pressure_varied_cvsweep_split(P_recs)
 # ╠═2333ae9c-0f59-4a87-90ed-bc5e8fba9f76
 # ╠═bde0975f-957f-4e8c-8c15-59e7f1a09400
 # ╠═ad3c4119-cd97-4933-820f-84eee96cbc07
+# ╠═46f1c6f3-d36e-442b-9936-3dd4dec397b3
+# ╠═9530079d-d4e1-4712-9c8d-e01ec26a1d79
+# ╠═7620826e-c562-41e2-aa2b-e717843f9187
+# ╠═9849e70d-47f9-4b04-aafb-54033c674b54
+# ╠═9a5e3eed-0f4e-43b6-b7b5-e28c62a30a4b
+# ╠═f91ff7ae-334b-4263-858a-3fa0892911e8

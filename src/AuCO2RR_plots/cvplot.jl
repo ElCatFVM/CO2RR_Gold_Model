@@ -1,4 +1,4 @@
-# plots/cvplot.jl
+﻿# plots/cvplot.jl
 
 using CairoMakie
 using CSV
@@ -136,7 +136,7 @@ function plot_conc_time_electrode(
         fig[1, 1],
         xlabel = lab_time,
         ylabel = rich(
-            rich("c", font = :italic), subscript("i, electrode"),
+            rich("c", font = :bold_italic), subscript("i, electrode"),
             "  (mol/dm", superscript("3"), ")"
         ),
         limits = ((times[1] - (times[end] / 200), times[end] + (times[end] / 100)), (1.0e-12, 1.0e4)),
@@ -201,7 +201,7 @@ function plot_conc_profile_logx(
     ax = Axis(
         fig[1, 1],
         xlabel = "Distance from electrode [m]",
-        ylabel = rich("log", subscript("10"), "(", rich("c", font = :italic), ")"),
+        ylabel = rich("log", subscript("10"), "(", rich("c", font = :bold_italic), ")"),
         xscale = log10,
         limits = (x_limits, y_limits),
         title = "t = $(round(result.tsol.t[ti], digits = 4)) s | ϕ = $phi_val V",
@@ -374,7 +374,8 @@ function plot_pH_varied_sweep(
     cols = [RGB(1 - t, 0, t) for t in LinRange(0, 1, n)]
 
     plots = Any[]
-    labels = String[]
+    # Not `String[]`: `label_fmt` may return `rich(...)` for a formatted entry.
+    labels = Any[]
 
     for (j, item) in pairs(pH_recs)
 
@@ -642,7 +643,7 @@ function plot_conc_profile_with_delta(
         fig[1, 1],
         xlabel = "x / μm",
         ylabel = rich(
-            "log", subscript("10"), " ", rich("c", font = :italic), subscript("i"),
+            "log", subscript("10"), " ", rich("c", font = :bold_italic), subscript("i"),
             "  (mol/dm", superscript("3"), ")"
         ),
         title = "t = $(round(pnpresult.tsol.t[t_index], digits = 4)) s  |  δ$(Int(round(frac * 100))) for $(species[ispec])",
@@ -940,6 +941,144 @@ function pressure_varied_cvsweep(
 end
 
 """
+    split_axis_pair!(fig, row; ured, uox, kwargs...)
+
+One row of a broken voltage axis: the reductive window `ured` in `fig[row, 1]`, the
+oxidative window `uox` in `fig[row, 2]`, butted together with the featureless region
+between them omitted and a single black rule at the seam.
+
+Returns `(ax_red, ax_ox)`. The oxidative panel carries its ticks on the right, so the pair
+reads as one axis with a piece removed rather than as two plots.
+
+`titles` labels the two windows; pass `nothing` on every row but the first of a stack.
+`show_xticklabels = false` likewise suppresses the tick labels on all but the bottom row.
+"""
+function split_axis_pair!(
+        fig, row;
+        ured, uox,
+        ylabel = lab_current,
+        xticks_red = LinearTicks(3),
+        xticks_ox = LinearTicks(3),
+        titles = nothing,
+        show_xticklabels = true,
+    )
+    ax_red = Axis(
+        fig[row, 1];
+        ylabel = ylabel, xticks = xticks_red,
+        xticklabelsvisible = show_xticklabels, xticksvisible = show_xticklabels,
+    )
+    ax_ox = Axis(
+        fig[row, 2];
+        yaxisposition = :right, xticks = xticks_ox,
+        xticklabelsvisible = show_xticklabels, xticksvisible = show_xticklabels,
+    )
+    if titles !== nothing
+        ax_red.title = titles[1]
+        ax_ox.title = titles[2]
+    end
+    # One black rule at the seam: keep the left panel's right spine, drop the right
+    # panel's left spine. Leaving both on would draw a double-width wall.
+    ax_ox.leftspinevisible = false
+    xlims!(ax_red, ured...)
+    xlims!(ax_ox, uox...)
+    return ax_red, ax_ox
+end
+
+"""
+    split_series!(ax_red, ax_ox, U, I; ured, uox, kwargs...)
+
+Draw one curve into both windows of a [`split_axis_pair!`](@ref) and return
+`(plot, anchors)`, where `anchors` is `(; red, ox)`: the current at each window's **vertex**
+— the most negative `U` reached inside `ured`, the most positive inside `uox`.
+
+Samples outside a window become `NaN` rather than being dropped, which preserves the
+sample order and lets Makie break the line instead of joining across the gap.
+
+A vertex is where a direct label belongs, because that is where the family fans out. The
+last in-window sample is the obvious alternative and is wrong: a cycle returns to its
+start, so every curve ends on the baseline and all the labels land on one point. `NaN` when
+the curve never enters that window.
+"""
+function split_series!(
+        ax_red, ax_ox, U, I;
+        ured, uox, anodic_gain = 1.0, color = :black, lw = LW_LINE,
+    )
+    I_red = [ured[1] <= u <= ured[2] ? x : NaN for (u, x) in zip(U, I)]
+    I_ox = [uox[1] <= u <= uox[2] ? x * anodic_gain : NaN for (u, x) in zip(U, I)]
+
+    line = lines!(ax_red, U, I_red; color = color, linewidth = lw)
+    lines!(ax_ox, U, I_ox; color = color, linewidth = lw)
+
+    in_red = findall(!isnan, I_red)
+    in_ox = findall(!isnan, I_ox)
+    anchors = (
+        red = isempty(in_red) ? NaN : I_red[in_red[argmin(U[in_red])]],
+        ox = isempty(in_ox) ? NaN : I_ox[in_ox[argmax(U[in_ox])]],
+    )
+    return line, anchors
+end
+
+"""
+    annotate_split!(ax, anchors, labels, colors; window, at = :end, kwargs...)
+
+Direct labelling for one window of a [`split_axis_pair!`](@ref): each value written at the
+end of its own curve, in that curve's colour.
+
+No patch column, no frame sitting on top of the data, and no round trip through a colour
+key — the reader never has to match a swatch. The sweep turns around before the axis edge,
+so the margin beyond the vertex is empty and the labels cost no data space.
+
+`at` picks the side the labels sit on: `:end` for the oxidative window, whose vertex is at
+its high-voltage edge, `:start` for the reductive one, whose vertex is at its low-voltage
+edge. Pass the matching field of the [`split_series!`](@ref) anchors — `at = :start` with
+the `ox` anchors would put every label at the wrong current.
+
+Bold because a direct label sits on the data rather than in a frame: at this size colour
+alone does not carry, and the pale end of a pastel ramp washes out.
+
+`NaN` anchors — a curve that never enters the window — are skipped.
+"""
+function annotate_split!(
+        ax, anchors, labels, colors;
+        window, at = :end, annotate_x = nothing, fontsize = 22,
+    )
+    # 5 % in from the window edge, not 10 %: the labels belong in the margin the sweep
+    # leaves beyond its vertex, and the further in they sit the more likely they are to
+    # land on the branch coming back. `annotate_x` overrides with an absolute voltage.
+    w = window[2] - window[1]
+    x = if annotate_x !== nothing
+        annotate_x
+    elseif at === :start
+        window[1] + 0.05w
+    else
+        window[2] - 0.05w
+    end
+    for (j, y) in enumerate(anchors)
+        isnan(y) && continue
+        text!(
+            ax, x, y;
+            text = labels[j], color = colors[j],
+            fontsize = fontsize, font = :bold, align = (:center, :center),
+        )
+    end
+    return nothing
+end
+
+"""
+    split_widths!(fig, ured, uox; widths = nothing, ncols = 2)
+
+Size the two columns of a broken axis so both windows share the same volts per unit width,
+unless `widths` overrides it, and butt them together.
+"""
+function split_widths!(fig, ured, uox; widths = nothing)
+    w = widths === nothing ? (ured[2] - ured[1], uox[2] - uox[1]) : widths
+    colsize!(fig.layout, 1, Auto(w[1]))
+    colsize!(fig.layout, 2, Auto(w[2]))
+    colgap!(fig.layout, 1, 0)
+    return nothing
+end
+
+"""
     pressure_varied_cvsweep_split(P_recs; ured = (-1.3, -0.6), uox = (0.0, 1.0), kwargs...)
 
 Same data as [`pressure_varied_cvsweep`](@ref), drawn as a **broken voltage axis**: the
@@ -979,13 +1118,24 @@ function pressure_varied_cvsweep_split(
         abscissa = :applied,
         scale = cm^2 / mA,
         ured = (-1.3, -0.6),
-        uox = (0.0, 1.0),
+        uox = (-0.2, 1.0),
         anodic_gain = 1.0,
         widths = nothing,
-        fig_size = (1100, 460),
+        fig_size = (960, 460),
         lw = LW_LINE,
-        legend_title = "Overlay",
-        label_fmt = p -> "$(p)\t pCO2(atm)",
+        legend_title = lab_pressure,
+        # The unit lives in `legend_title`, so an entry is just its number.
+        label_fmt = p -> string(p),
+        # Corner of the oxidation panel the legend sits in; `:lt`, `:rt`, `:lb`, `:rb`.
+        # Only read when `legend_mode == :axis`.
+        legend_position = :lt,
+        # `:direct` writes each label in its own curve's colour at the end of the anodic
+        # branch, `:axis` draws a boxed legend inside the oxidation panel, `:none` neither.
+        legend_mode = :direct,
+        # Voltage the direct labels sit at. Default is just right of where the sweep turns
+        # around, in the empty margin between the anodic vertex and the axis edge.
+        annotate_x = nothing,
+        annotate_fontsize = 22,
         colormap = CMAP_PRESSURE,
         xticks_red = LinearTicks(3),
         xticks_ox = LinearTicks(3),
@@ -1000,47 +1150,227 @@ function pressure_varied_cvsweep_split(
     # Only the left panel carries the current label — the unit is the same on both
     # sides, and the voltage label is a single centred `Label` under the pair, so the
     # broken axis reads as one axis instead of two fully decorated plots.
-    ax_red = Axis(fig[1, 1]; ylabel = lab_current, title = "reduction", xticks = xticks_red)
-    ax_ox = Axis(
-        fig[1, 2];
-        title = ox_title, yaxisposition = :right, xticks = xticks_ox,
+    ax_red, ax_ox = split_axis_pair!(
+        fig, 1; ured, uox, xticks_red, xticks_ox, titles = ("reduction", ox_title),
     )
-    # One black rule at the seam: keep the left panel's right spine, drop the right
-    # panel's left spine. Leaving both on would draw a double-width wall.
-    ax_ox.leftspinevisible = false
 
     plots = Any[]
     labels = String[]
+    anchors = Float64[]                 # current at the anodic vertex, one per curve
 
     for j in 1:n
         p, rec = P_recs[j]
         I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale
         U, _ = cv_abscissa(rec; kind = abscissa)
 
-        I_red = [ured[1] <= u <= ured[2] ? x : NaN for (u, x) in zip(U, I)]
-        I_ox = [uox[1] <= u <= uox[2] ? x * anodic_gain : NaN for (u, x) in zip(U, I)]
-
-        line = lines!(ax_red, U, I_red; color = cols_sim[j], linewidth = lw)
-        lines!(ax_ox, U, I_ox; color = cols_sim[j], linewidth = lw)
-
+        line, anchor = split_series!(
+            ax_red, ax_ox, U, I; ured, uox, anodic_gain, color = cols_sim[j], lw,
+        )
         push!(plots, line)
         push!(labels, label_fmt(p))
+        push!(anchors, anchor.ox)
     end
 
-    xlims!(ax_red, ured...)
-    xlims!(ax_ox, uox...)
+    if legend_mode === :direct
+        annotate_split!(
+            ax_ox, anchors, labels, cols_sim;
+            window = uox, at = :end, annotate_x, fontsize = annotate_fontsize,
+        )
+    elseif legend_mode === :axis
+        # `axislegend`, not `Legend`: it anchors to the axis interior. A `Legend` placed at
+        # `fig[1, 2]` would claim layout space and shrink the panel it is meant to sit in.
+        axislegend(
+            ax_ox, plots, labels, legend_title;
+            position = legend_position,
+            # One row: the entries are bare numbers of a single swept variable, so reading
+            # them left to right matches the colour ramp and costs a fraction of the panel
+            # height a five-row column would. `nbanks = 1` pins it to one row — with
+            # `:horizontal` alone Makie is free to wrap.
+            orientation = :horizontal, nbanks = 1, colgap = 8,
+            framevisible = true, backgroundcolor = (:white, 0.85),
+            titlesize = FS_LEGEND_TITLE, labelsize = FS_LEGEND,
+            patchsize = (18, 10), rowgap = 1, titlegap = 5,
+            padding = (8, 8, 5, 5),
+        )
+    end
 
-    Legend(fig[1, 3], plots, labels, legend_title; framevisible = true)
+    # One voltage label centred under both panels. It is a `Label`, not an axis `xlabel`,
+    # so the theme's `xlabelsize` / `xlabelfont` do not reach it — spell both out here or
+    # this one string drifts away from every other axis label in the package.
+    Label(
+        fig[2, 1:2], xlab;
+        fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 6),
+    )
 
-    # one voltage label centred under both panels, matching the theme's axis-label style
-    Label(fig[2, 1:2], xlab; fontsize = 25, font = :bold, padding = (0, 0, 0, 6))
-
-    # equal volts-per-unit-width on both sides unless told otherwise
-    w = widths === nothing ? (ured[2] - ured[1], uox[2] - uox[1]) : widths
-    colsize!(fig.layout, 1, Auto(w[1]))
-    colsize!(fig.layout, 2, Auto(w[2]))
-    colgap!(fig.layout, 1, 0)      # butt the two panels together
+    split_widths!(fig, ured, uox; widths)
     rowgap!(fig.layout, 1, 4)
+    return fig
+end
+
+"""
+    plot_exp_sim_cvsweep_split(P_recs; kwargs...)
+
+Measured against simulated CO₂-pressure CVs, both drawn on the broken voltage axis of
+[`pressure_varied_cvsweep_split`](@ref): experiment in row 1, theory in row 2, each split
+into the reductive window `ured` and the oxidative window `uox`.
+
+Broken-axis version of [`plot_combined_exp_sim_ivc`](@ref). Same comparison, but the flat
+region between the two features is cut out of both rows at once, so the anodic branch —
+one to two orders of magnitude below the reduction peak — is legible in the same figure
+that shows the peak.
+
+The x axes are linked, the tick labels appear only on the bottom row and the window titles
+only on the top, so the four panels read as two rows of one axis. Each row keeps its own
+current scale: the measurement and the model do not have to agree in magnitude for their
+*shapes* to be compared, which is what this figure is for.
+
+Curves are labelled directly, in their own colour, at the anodic vertex — see
+[`annotate_split!`](@ref) — and each row is named by grey text at the top left of the same
+panel. Both live in the oxidation window because the sweep turns around before the axis
+edge there, leaving a margin the reduction window does not have.
+
+Experiment takes the saturated [`CMAP_PRESSURE_EXP`](@ref) and theory the pale
+[`CMAP_PRESSURE`](@ref), so a pressure keeps its hue across the rows while the rows stay
+tellable apart.
+
+The experimental CSV is the Langmuir `Figure_3.csv` layout: three header rows, then
+`(voltage, current)` column pairs in the order given by `exp_pressures`, of which
+`exp_wanted` are drawn. `exp_csv` is resolved relative to the working directory.
+
+!!! warning
+    `sim_gain` defaults to 1. [`plot_combined_exp_sim_ivc`](@ref) multiplies its simulated
+    current by a hard-coded factor of 2 with no comment; that factor is not carried over
+    here, so this figure will not reproduce it unless you pass `sim_gain = 2` and say so in
+    the caption.
+
+See [`pressure_varied_cvsweep_split`](@ref) for the current, abscissa and window keywords,
+all of which apply here too.
+"""
+function plot_exp_sim_cvsweep_split(
+        P_recs;
+        exp_csv = "../data/Langmuir_CV_data/Figure_3.csv",
+        exp_pressures = ["Ar sat", "0.1", "0.2", "0.3", "0.5", "0.6", "1.0"],
+        exp_wanted = ["0.1", "0.5", "1.0"],
+        exp_sgn = 1,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
+        scale = cm^2 / mA,
+        sim_gain = 1.0,
+        ured = (-1.3, -0.6),
+        uox = (-0.2, 1.35),
+        anodic_gain = 1.0,
+        widths = nothing,
+        fig_size = (960, 820),
+        lw = LW_LINE,
+        # The unit rides on every entry here, unlike the swept-family plots, because there
+        # is no legend title left to carry it once the labels sit on the curves.
+        label_fmt = p -> "$(p) atm",
+        annotate_x = nothing,
+        annotate_fontsize = 22,
+        colormap_exp = CMAP_PRESSURE_EXP,
+        colormap_sim = CMAP_PRESSURE,
+        xticks_red = LinearTicks(3),
+        xticks_ox = LinearTicks(3),
+        row_labels = ("Experiment", "Theory"),
+        # Relative position inside the oxidation panel, (0,0) bottom left to (1,1) top
+        # right. Relative rather than data coordinates so the text does not have to be
+        # re-tuned every time the current range changes.
+        row_label_pos = (0.04, 0.92),
+        row_label_color = :gray35,
+        row_label_fontsize = 32,
+    )
+    # ---- experimental columns ----------------------------------------------------
+    raw = CSV.read(exp_csv, DataFrame; header = false)
+    # Rows 1-3 are the header block; everything below is numeric with `missing` padding
+    # where a trace ends early, which becomes NaN so Makie breaks the line.
+    num = map(x -> x === missing ? NaN : parse(Float64, x), Matrix(raw[4:end, :]))
+    exp_df = DataFrame(num, :auto)
+    npairs = size(exp_df, 2) ÷ 2
+    keep = findall(in(exp_wanted), exp_pressures[1:npairs])
+
+    n_exp = length(keep)
+    n_sim = length(P_recs)
+    cols_exp = [colormap_exp[t] for t in range(0, 1, length = max(n_exp, 1))]
+    cols_sim = [colormap_sim[t] for t in range(0, 1, length = max(n_sim, 1))]
+
+    xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
+    ox_title = anodic_gain == 1 ? "oxidation" : @sprintf("oxidation  (×%g)", anodic_gain)
+
+    fig = Figure(size = fig_size)
+    ax_exp_red, ax_exp_ox = split_axis_pair!(
+        fig, 1; ured, uox, xticks_red, xticks_ox,
+        titles = ("reduction", ox_title), show_xticklabels = false,
+    )
+    ax_sim_red, ax_sim_ox = split_axis_pair!(
+        fig, 2; ured, uox, xticks_red, xticks_ox,
+    )
+    # Linked so the two rows cannot drift apart if a caller sets limits on only one of them.
+    linkxaxes!(ax_exp_red, ax_sim_red)
+    linkxaxes!(ax_exp_ox, ax_sim_ox)
+
+    # ---- experiment --------------------------------------------------------------
+    exp_labels = String[]
+    exp_anchors = Float64[]
+    for (k, j) in enumerate(keep)
+        U = exp_df[!, 2j - 1]
+        I = exp_sgn .* exp_df[!, 2j]
+        _, anchor = split_series!(
+            ax_exp_red, ax_exp_ox, U, I; ured, uox, anodic_gain, color = cols_exp[k], lw,
+        )
+        push!(exp_labels, label_fmt(exp_pressures[j]))
+        push!(exp_anchors, anchor.ox)
+    end
+    annotate_split!(
+        ax_exp_ox, exp_anchors, exp_labels, cols_exp;
+        window = uox, at = :end, annotate_x, fontsize = annotate_fontsize,
+    )
+
+    # ---- theory ------------------------------------------------------------------
+    sim_labels = String[]
+    sim_anchors = Float64[]
+    for j in 1:n_sim
+        p, rec = P_recs[j]
+        I = cv_current(rec; species, n_e, sgn, include_capacitive) .* scale .* sim_gain
+        U, _ = cv_abscissa(rec; kind = abscissa)
+        _, anchor = split_series!(
+            ax_sim_red, ax_sim_ox, U, I; ured, uox, anodic_gain, color = cols_sim[j], lw,
+        )
+        push!(sim_labels, label_fmt(p))
+        push!(sim_anchors, anchor.ox)
+    end
+    annotate_split!(
+        ax_sim_ox, sim_anchors, sim_labels, cols_sim;
+        window = uox, at = :end, annotate_x, fontsize = annotate_fontsize,
+    )
+
+    if row_labels !== nothing
+        # Inside the oxidation panel, not a `Label` in the layout margin: a margin label
+        # competes with the window titles above row 1 and pushes the panels apart, and it
+        # reads as a figure part number rather than as a name for the data under it. Grey
+        # and unnumbered — the row is identified, not enumerated, so it does not fight the
+        # coloured pressure labels for attention.
+        for (ax, lab) in zip((ax_exp_ox, ax_sim_ox), row_labels)
+            text!(
+                ax, Point2f(row_label_pos...);
+                text = lab, space = :relative,
+                color = row_label_color, fontsize = row_label_fontsize, font = :bold,
+                align = (:left, :top),
+            )
+        end
+    end
+
+    # One voltage label centred under both columns — see `pressure_varied_cvsweep_split`.
+    Label(
+        fig[3, 1:2], xlab;
+        fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 6),
+    )
+
+    split_widths!(fig, ured, uox; widths)
+    rowgap!(fig.layout, 1, 10)     # between the two data rows
+    rowgap!(fig.layout, 2, 4)      # above the shared voltage label
     return fig
 end
 
@@ -1054,8 +1384,8 @@ only the legend labelling differs. All of its keywords apply here too.
 plot_scanrate_sweeps_split(sweep_vec, scanrates; colormap = CMAP_SCANRATE, kwargs...) =
     pressure_varied_cvsweep_split(
     collect(zip(scanrates, sweep_vec));
-    legend_title = "Scan Rates (V/s)",
-    label_fmt = sr -> "$(sr) V/s",
+    legend_title = lab_scanrate,
+    label_fmt = sr -> string(sr),
     colormap = colormap,
     kwargs...
 )
@@ -1087,8 +1417,12 @@ const ico = 7
 # same axis label really do show the same quantity.
 # =====================================================================
 
-const lab_voltage_rp = rich(rich("U", font = :italic), subscript("rp"), "  (V vs. SHE)")
-const lab_voltage_dl = rich(rich("U", font = :italic), subscript("dl"), "  (V)")
+const lab_voltage_rp = rich(
+    "Reaction-Plane Potential ", rich("U", font = :bold_italic), subscript("rp"), "\n(V vs. SHE)"
+)
+const lab_voltage_dl = rich(
+    "Double-Layer Voltage ", rich("U", font = :bold_italic), subscript("dl"), "\n(V)"
+)
 
 """
     faradaic_current(result; species = ico, n_e = 2, sgn = 1)
@@ -1119,9 +1453,30 @@ Reads `result.j_cap`, as the rest of this file does. Do not reach for the `icc` 
 instead: it only exists when `ircompensation isa OhmicDropEstimation`, so that route
 silently evaluates to zero in every other compensation mode and makes currents from
 different modes incomparable without any warning.
+
+The field is **present but empty** on a run that accumulated no capacitive term, so testing
+`hasproperty` alone is not enough: an `Any[]` passed on to `lines!` fails inside Makie's
+argument conversion with `reducing over an empty collection`, several frames away from
+anything that names the problem. An empty field is reported and treated as zero here
+instead — a figure with a flat capacitive panel is a result, not a crash, but it is never
+what the caller expected, so it warns.
 """
-capacitive_current(result) =
-    hasproperty(result, :j_cap) ? result.j_cap : zeros(length(result.times))
+function capacitive_current(result)
+    n = length(result.times)
+    hasproperty(result, :j_cap) || return zeros(n)
+    j = result.j_cap
+    if isempty(j)
+        @warn "`result.j_cap` is empty: this run carried no capacitive current, so the " *
+            "capacitive term is taken as zero." maxlog = 1
+        return zeros(n)
+    end
+    length(j) < n && error(
+        "`j_cap` has $(length(j)) entries for $(n) time points; it cannot be added to a " *
+        "faradaic current of length $(n)"
+    )
+    # A stored solution often carries one entry more than there are sweep times.
+    return length(j) == n ? j : j[1:n]
+end
 
 """
     cv_current(result; include_capacitive = false, kwargs...)
@@ -1133,6 +1488,98 @@ function cv_current(result; include_capacitive = false, kwargs...)
     I = faradaic_current(result; kwargs...)
     include_capacitive || return I
     return I .+ capacitive_current(result)
+end
+
+"""
+    reaction_plane_potential(result, m)
+
+Electrostatic potential in the electrolyte at the electrode node, ϕ(0), read from the
+stored solution.
+
+Use this rather than `result.voltages` whenever compensation modes are compared. That field
+is ϕ(0) under `NoIRCompensation` but `ϕ_we + ϕ_DL` — the *compensated applied* potential —
+under `OhmicDropEstimation`, because that is what `ohmicdropcompensation` hands to
+`potentialbcondition!`. Plotting it against the applied protocol therefore gives a straight
+line for the compensated modes and a strongly attenuated curve for the uncompensated one,
+which looks like a physical difference and is not.
+
+With the Robin boundary condition, `ϕ_we - ϕ_pzc - ϕ(0)` is the drop across the Helmholtz
+gap, so ϕ(0) is the diffuse-layer share of the applied potential. That split is set by
+`C_gap` against the diffuse-layer capacitance and is essentially independent of the
+compensation factor.
+"""
+function reaction_plane_potential(result, m)
+    iϕ = m.elydata.iϕ
+    n = length(result.times)
+    return [u[iϕ, 1] for u in result.tsol[1:n]]
+end
+
+"""
+    electrode_potential(result, m)
+
+Potential of the metal, `φ_M` in the notation of Levey et al. — the value that
+`potentialbcondition!` actually imposes at the working electrode.
+
+Under `OhmicDropEstimation` that is `ϕ_we + ϕ_DL`, which is what `result.voltages` holds.
+Under `NoIRCompensation` nothing is added, so it is the applied protocol itself; note that
+`result.voltages` is *not* usable there, since in that mode it carries ϕ(0) instead.
+"""
+electrode_potential(result, m) =
+    isa(m.elydata.ircompensation, OhmicDropEstimation) ? result.voltages : result.sawtooth
+
+"""
+    compensation_potential(result, m)
+
+Potential the ohmic-drop compensation added, `ϕ_DL = factor · Ru · (j_F + j_C)`.
+
+Exactly zero for an uncompensated run and proportional to the factor otherwise. It peaks
+where the current peaks and vanishes wherever the current does.
+"""
+compensation_potential(result, m) = electrode_potential(result, m) .- result.sawtooth
+
+"""
+    driving_force(result, m)
+
+`φ_M - φ_PET`, the potential difference actually driving electron transfer, measured from
+the potential of zero charge: `electrode_potential - ϕ_pzc - ϕ(0)`.
+
+This is the quantity Levey, Edwards, White & Macpherson plot against the applied potential
+(*Phys. Chem. Chem. Phys.* **2023**, 25, 7832, Fig. 3 and 5c). Plotted that way a
+loss-free cell gives a straight line of unit slope — their "diffusion model" reference —
+and every deviation from it is potential that never reached the reaction plane. Ohmic-drop
+compensation pulls the curve back towards that line, which is the whole point of applying
+it.
+
+Plot this, not [`reaction_plane_potential`](@ref) on its own: ϕ(0) alone is dominated by
+the capacitive split between the Helmholtz gap and the diffuse layer, which compensation
+does not touch, so it looks factor-independent and hides the effect.
+"""
+driving_force(result, m) =
+    electrode_potential(result, m) .- m.elydata.ϕ_pzc .- reaction_plane_potential(result, m)
+
+"""
+    double_layer_capacitance(result, scanrate; cap_scale = cm^2 / 1.0e-6)
+
+Capacitance from the capacitive current, `C = j_cap / (dU/dt)`.
+
+Divides by the **signed** sweep rate taken from the applied protocol, not by the positive
+constant `scanrate`: dU/dt flips at every vertex, so dividing by the constant mirrors one
+half of the sweep about zero and the capacitance comes out antisymmetric instead of as a
+single curve. `scanrate` is used only to set the threshold below which a sample sits too
+close to a vertex to be meaningful; those become `NaN`.
+
+Only interpretable where no faradaic current flows — once the surface reaction turns over,
+the coverages change and `j_cap / v` stops being a double-layer capacitance. Mask it with
+the faradaic current before reading values off.
+"""
+function double_layer_capacitance(result, scanrate; cap_scale = cm^2 / 1.0e-6)
+    U_we = result.sawtooth
+    t = result.times
+    dUdt = let d = diff(U_we) ./ diff(t)
+        vcat(d, d[end])
+    end
+    C = capacitive_current(result) ./ dUdt .* cap_scale
+    return [abs(v) < 0.5 * abs(scanrate) ? NaN * one(c) : c for (v, c) in zip(dUdt, C)]
 end
 
 """
@@ -1174,13 +1621,13 @@ function CV_dsp_cap_result(result, m; scale = cm^2 / mA, show_diff = false)
     j_dsp = result.j_dsp .* scale
     j_cap = result.j_cap .* scale
 
-    lines!(ax, result.voltages, j_dsp; color = :magenta, label = rich(rich("j", font = :italic), subscript("dsp")))
-    lines!(ax, result.voltages, j_cap; color = :skyblue, label = rich(rich("j", font = :italic), subscript("cap")))
+    lines!(ax, result.voltages, j_dsp; color = :magenta, label = rich(rich("j", font = :bold_italic), subscript("dsp")))
+    lines!(ax, result.voltages, j_cap; color = :skyblue, label = rich(rich("j", font = :bold_italic), subscript("cap")))
 
     if show_diff
         lines!(
             ax, result.voltages, j_dsp .- j_cap;
-            color = :orange, linestyle = :dash, label = rich(rich("j", font = :italic), subscript("dsp"), " − ", rich("j", font = :italic), subscript("cap"))
+            color = :orange, linestyle = :dash, label = rich(rich("j", font = :bold_italic), subscript("dsp"), " − ", rich("j", font = :bold_italic), subscript("cap"))
         )
     end
 
@@ -1208,7 +1655,7 @@ function CV_total_current(result, m; species = nothing, scale = cm^2 / mA)
     #i_tot = i_F .+ i_cap
 
     # lines!(ax, result.voltages, i_F;   color = :magenta,  label = L"i_F")
-    lines!(ax, result.voltages, i_cap; color = :skyblue, label = rich(rich("i", font = :italic), subscript("cap")))
+    lines!(ax, result.voltages, i_cap; color = :skyblue, label = rich(rich("i", font = :bold_italic), subscript("cap")))
     # lines!(ax, result.voltages, i_tot; color = :orange,   label = L"i_{tot}")
     axislegend(ax; position = :rt)
     return fig
@@ -1253,10 +1700,10 @@ function plot_cv_total_current_tot(
     # ---- Plot ----
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (900, 800))
-        ax_a = Axis(f[1, 2], ylabel = rich(rich("i", font = :italic), subscript("F"), "  (mA cm", superscript("−2"), ")"))
-        ax_b = Axis(f[2, 2], ylabel = rich(rich("i", font = :italic), subscript("C"), "  (mA cm", superscript("−2"), ")"))
+        ax_a = Axis(f[1, 2], ylabel = rich(rich("i", font = :bold_italic), subscript("F"), "  (mA cm", superscript("−2"), ")"))
+        ax_b = Axis(f[2, 2], ylabel = rich(rich("i", font = :bold_italic), subscript("C"), "  (mA cm", superscript("−2"), ")"))
         ax_c = Axis(
-            f[3, 2], ylabel = rich(rich("i", font = :italic), subscript("tot"), "  (mA cm", superscript("−2"), ")"),
+            f[3, 2], ylabel = rich(rich("i", font = :bold_italic), subscript("tot"), "  (mA cm", superscript("−2"), ")"),
             xlabel = lab_voltage
         )
 
@@ -1295,6 +1742,23 @@ function plot_cv_total_current_tot(
 end
 
 # ── moved from cell 02a78c8d (plot_cv_scanrate_grid) ──
+"""
+    plot_cv_scanrate_grid(result_vec, m; scanrates, kwargs...)
+
+The current split into its faradaic and capacitive terms, one column per scan rate.
+
+Rows are `I_F`, `I_C` and their sum; there is one column per entry of `result_vec`, headed
+by the matching entry of `scanrates`. Rows share a current scale so a term can be read
+across scan rates, columns share a voltage scale so the three terms of one sweep line up.
+
+The split is the point of the figure: the faradaic term is nearly scan-rate independent
+while the capacitive term grows in proportion to the rate, so the two are separable only by
+plotting them apart. At the slowest rate `I_C` is invisible next to `I_F`; by the fastest it
+dominates the total.
+
+`I_F` is [`faradaic_current`](@ref) and `I_C` is [`capacitive_current`](@ref) — the same
+definitions every other CV figure in this package uses.
+"""
 function plot_cv_scanrate_grid(
         result_vec, m;
         species = ico,
@@ -1309,26 +1773,33 @@ function plot_cv_scanrate_grid(
         color_F = colorant"#F2728A",
         color_C = colorant"#5BA8E8",
         mix_mode::Symbol = :mean,
-        lw = LW_LINE
+        lw = LW_LINE,
+        # Below the theme's `FS_LABEL`: a rotated label is bounded by the row height, and a
+        # row of a three-high stack is well under half a panel.
+        ylabelsize = 20,
+        rowgap_px = 6,
+        colgap_px = 10,
     )
     sp, ne = redox_species === nothing ? (species, n_e) : first(pairs(redox_species))
 
-    # These three differ from the shared `lab_current` (struct.jl) only by the
-    # F / C / tot subscript, so they are built from the same pieces.
-    unit_i = rich("  (mA cm", superscript("−2"), ")")
-    lab_iF = rich(rich("I", font = :italic), subscript("F"), unit_i)
-    lab_iC = rich(rich("I", font = :italic), subscript("C"), unit_i)
-    lab_itot = rich(rich("I", font = :italic), subscript("tot"), unit_i)
+    # One column per result. The loops used to be hard-coded to `1:3` while `scanrates`
+    # was a keyword, so passing four sweeps silently plotted three of them.
+    ncol = length(result_vec)
+    ncol == 0 && error("`result_vec` is empty: nothing to plot")
+    length(scanrates) < ncol && error(
+        "got $(ncol) results but only $(length(scanrates)) scan rates to label them with"
+    )
+
+    ylabels = [lab_current_F, lab_current_C, lab_current_tot]
     # The voltage label has to follow `abscissa`; hardcoding it would label a
     # double-layer or reaction-plane potential as if it were the applied one.
-    lab_U = isempty(result_vec) ? lab_voltage : cv_abscissa(result_vec[1]; kind = abscissa)[2]
+    lab_U = cv_abscissa(result_vec[1]; kind = abscissa)[2]
 
     fig = with_theme(electrochemistry_theme()) do
-        f = Figure(size = (1000, 700))
-        axes_matrix = Matrix{Axis}(undef, 3, 3)
-        ylabels = [lab_iF, lab_iC, lab_itot]
+        f = Figure(size = (330 * ncol, 700))
+        axes_matrix = Matrix{Axis}(undef, 3, ncol)
 
-        for col in 1:3, row in 1:3
+        for col in 1:ncol, row in 1:3
             axes_matrix[row, col] = row == 3 ?
                 Axis(f[row, col + 1], xlabel = lab_U) :
                 Axis(f[row, col + 1])
@@ -1337,7 +1808,7 @@ function plot_cv_scanrate_grid(
 
             if col == 1
                 axes_matrix[row, col].ylabel = ylabels[row]
-                axes_matrix[row, col].ylabelpadding = 30
+                axes_matrix[row, col].ylabelsize = ylabelsize
             else
                 hideydecorations!(axes_matrix[row, col]; ticks = false, grid = false)
             end
@@ -1350,30 +1821,32 @@ function plot_cv_scanrate_grid(
             end
         end
 
-        for i in 1:3
-            linkyaxes!(axes_matrix[i, 1], axes_matrix[i, 2], axes_matrix[i, 3])
-            linkxaxes!(axes_matrix[1, i], axes_matrix[2, i], axes_matrix[3, i])
+        # Rows share a current scale so a term can be compared across scan rates; columns
+        # share a voltage scale so the three terms of one sweep line up vertically.
+        for row in 1:3
+            ncol > 1 && linkyaxes!(axes_matrix[row, :]...)
+        end
+        for col in 1:ncol
+            linkxaxes!(axes_matrix[:, col]...)
         end
 
         return f, axes_matrix
     end
     f, axes_matrix = fig
 
-    grid_labels = ["(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)", "(i)"]
-    for row in 1:3, col in 1:3
-        idx = (row - 1) * 3 + col
+    for row in 1:3, col in 1:ncol
         Label(
-            f[row, col + 1], grid_labels[idx],
-            fontsize = 24, font = :bold, halign = :left, valign = :top,
+            f[row, col + 1], "($('a' + (row - 1) * ncol + col - 1))",
+            fontsize = FS_TITLE, font = :bold, halign = :left, valign = :top,
             padding = (15, 0, 0, 15)
         )
     end
 
-    for col in 1:3
+    for col in 1:ncol
         Label(
             f[0, col + 1],
-            rich(string(scanrates[col]), "  V s", superscript("−1"));
-            fontsize = 26, font = :bold, halign = :center, valign = :bottom
+            rich(string(scanrates[col]), " V s", superscript("−1"));
+            fontsize = FS_TITLE, font = :bold, halign = :center, valign = :bottom
         )
     end
 
@@ -1382,33 +1855,32 @@ function plot_cv_scanrate_grid(
         RGBf((cF.r + cC.r) / 2, (cF.g + cC.g) / 2, (cF.b + cC.b) / 2) :
         RGBf(min(cF.r + cC.r, 1.0f0), min(cF.g + cC.g, 1.0f0), min(cF.b + cC.b, 1.0f0))
 
-    for col in 1:3
+    for col in 1:ncol
         res = result_vec[col]
-        n_t = length(res.voltages)
 
         I_F = faradaic_current(res; species = sp, n_e = ne, sgn = sgn)
         I_C = include_capacitive ? capacitive_current(res) : zero(I_F)
-
-        I_F_scaled = I_F .* scale
-        I_C_scaled = I_C .* scale
-        I_total = (I_F .+ I_C) .* scale
-
         U, _ = cv_abscissa(res; kind = abscissa)
-        lines!(axes_matrix[1, col], U, I_F_scaled; color = color_F, linewidth = lw)
-        lines!(axes_matrix[2, col], U, I_C_scaled; color = color_C, linewidth = lw)
-        lines!(axes_matrix[3, col], U, I_total; color = color_tot, linewidth = lw)
+
+        lines!(axes_matrix[1, col], U, I_F .* scale; color = color_F, linewidth = lw)
+        lines!(axes_matrix[2, col], U, I_C .* scale; color = color_C, linewidth = lw)
+        lines!(axes_matrix[3, col], U, (I_F .+ I_C) .* scale;
+               color = color_tot, linewidth = lw)
     end
 
-    rowgap!(f.layout, 15)
-    colgap!(f.layout, 25)
+    # Tight: rows 1-2 have their x decorations hidden and columns 2+ their y decorations,
+    # so there is nothing between neighbouring panels for a gap to keep apart.
+    rowgap!(f.layout, rowgap_px)
+    colgap!(f.layout, colgap_px)
 
     rowsize!(f.layout, 1, Relative(0.29))
     rowsize!(f.layout, 2, Relative(0.29))
     rowsize!(f.layout, 3, Relative(0.38))
 
+    # Column 1 holds only the y labels; the data columns share the rest equally.
     colsize!(f.layout, 1, Auto())
-    for col in 2:4
-        colsize!(f.layout, col, Relative(0.34))
+    for col in 2:(ncol + 1)
+        colsize!(f.layout, col, Relative(1 / ncol * 0.98))
     end
 
     return f
@@ -1727,7 +2199,7 @@ function plot_co2_profiles(
 
         vlines!(ax, [L_val], color = :red, linestyle = :dash, linewidth = LW_GUIDE)
 
-        Colorbar(fig[idx, 2], hm, label = rich("log", subscript("10"), "(", rich("c", font = :italic), subscript(rich("CO", subscript("2"))), ")"))
+        Colorbar(fig[idx, 2], hm, label = rich("log", subscript("10"), "(", rich("c", font = :bold_italic), subscript(rich("CO", subscript("2"))), ")"))
     end
 
     rowgap!(fig.layout, 35)
@@ -1770,7 +2242,7 @@ function co2_log_contour(
     ax = Axis(
         f[1, 1];
         xlabel = lab_time,
-        ylabel = rich(rich("x", font = :italic), "  (m)"),
+        ylabel = rich(rich("x", font = :bold_italic), "  (m)"),
         yscale = log10,
         yminorticksvisible = true,
         yminorticks = IntervalsBetween(9),
@@ -1787,8 +2259,8 @@ function co2_log_contour(
     cb = Colorbar(
         f[1, 2], hm;
         label = rich(
-            "log", subscript("10"), "(", rich("c", font = :italic), subscript("bulk"),
-            ") − log", subscript("10"), "(", rich("c", font = :italic), subscript(rich("CO", subscript("2"))), ")"
+            "log", subscript("10"), "(", rich("c", font = :bold_italic), subscript("bulk"),
+            ") − log", subscript("10"), "(", rich("c", font = :bold_italic), subscript(rich("CO", subscript("2"))), ")"
         ),
         ticklabelsize = 20,
         labelsize = 20
@@ -1859,7 +2331,7 @@ function plot_activity_time_electrode(
             f[1, 1],
             title = model_title,
             xlabel = lab_time,
-            ylabel = rich(rich("a", font = :italic), subscript("i, electrode")),
+            ylabel = rich(rich("a", font = :bold_italic), subscript("i, electrode")),
             limits = ((times[1] - (times[end] / 200), times[end] + (times[end] / 100)), (1.0e-12, 1.0e4)),
             yscale = log10
         )
@@ -1921,15 +2393,15 @@ function CV_overlay_currents(
 
         lines!(
             ax, U, i_F; color = col_F, linestyle = ls,
-            label = rich(rich("i", font = :italic), subscript("F"), " (", string(labels[k]), ")")
+            label = rich(rich("i", font = :bold_italic), subscript("F"), " (", string(labels[k]), ")")
         )
         lines!(
             ax, U, i_cap; color = col_cap, linestyle = ls,
-            label = rich(rich("i", font = :italic), subscript("cap"), " (", string(labels[k]), ")")
+            label = rich(rich("i", font = :bold_italic), subscript("cap"), " (", string(labels[k]), ")")
         )
         lines!(
             ax, U, i_tot; color = col_tot, linestyle = ls,
-            label = rich(rich("i", font = :italic), subscript("tot"), " (", string(labels[k]), ")")
+            label = rich(rich("i", font = :bold_italic), subscript("tot"), " (", string(labels[k]), ")")
         )
     end
 
@@ -2045,7 +2517,7 @@ function plot_pressure_varied_sweep_ivc(
 
     if n > 0
         leg = Legend(
-            fig[1, 1], plot_objs, labels, rich(rich("p", font = :italic), subscript(rich("CO", subscript("2"))));
+            fig[1, 1], plot_objs, labels, rich(rich("p", font = :bold_italic), subscript(rich("CO", subscript("2"))));
             framevisible = false,
             halign = :right, valign = :bottom,
             labelsize = 20, titlesize = 23,
@@ -2124,9 +2596,13 @@ function panel_conc_time!(
         panel_pos;
         xlabel = xlabel,
         ylabel = rich(
-            rich("c", font = :italic),
-            subscript(rich("α", font = :italic)),
-            superscript("‡"), "  (M)"
+            "Surface Concentration ",
+            # `α` runs over species, so it is a running index, not a descriptive tag:
+            # ISO 80000-1 sets those in italic (unlike the upright `M` of `U_M`). Plain
+            # italic rather than bold italic keeps the index subordinate to the `c`.
+            rich("c", font = :bold_italic), subscript("α", font = :italic),
+            superscript("‡"),
+            "\n(M)"
         ),
         yscale = log10,
         yminorticksvisible = true,
@@ -2182,20 +2658,102 @@ function panel_time_current!(
     return ax
 end
 
-# ── moved from cell 13a0e5da (panel_time_voltage!) ──
-# Pass `sawtooth` to plot the APPLIED protocol U_we(t) (the full vmin..vmax ramp).
-# Without it, `result.voltages` is plotted, which here is the reaction-plane
-# (electrode node) potential — compressed by the gap capacitance, not the sawtooth.
-function panel_time_voltage!(fig, panel_pos, result; sawtooth = nothing, lw = LW_LINE, xlabel = lab_time)
+"""
+    panel_time_current_diff!(fig, panel_pos, result_1, result_2, m; kwargs...)
+
+Difference between two current traces against time, `I₁(t) − I₂(t)`.
+
+Written for compensated-vs-uncompensated pairs, where the two currents overlap almost
+everywhere and the interesting quantity is the residual: the difference resolves a gap
+that is invisible when the traces are drawn on top of each other.
+
+The two sweeps do not share a time grid — an adaptive solver puts its steps wherever the
+run needed them, so `result_1.times != result_2.times` even for the same protocol.
+`result_2` is therefore linearly interpolated onto `result_1.times`. `Line()`
+extrapolation covers the ends, so a `result_2` that stops short of `result_1` is
+continued along its last slope rather than erroring; keep the two protocols identical if
+that matters.
+
+Both currents come from [`cv_current`](@ref), so this panel carries the same definition as
+every other CV plot here. `redox_species` overrides `species`, matching
+[`panel_time_current!`](@ref).
+
+`xlims` / `ylims` are applied only when given.
+"""
+function panel_time_current_diff!(
+        fig, panel_pos, result_1, result_2, m;
+        species = ico,
+        n_e = 2,
+        sgn = -1,
+        redox_species = nothing,       # back-compat: overrides `species` when given
+        include_capacitive = true,
+        scale = cm^2 / mA,
+        lw = LW_LINE,
+        color = colorant"#C4844C",
+        xlabel = lab_time,
+        label_1 = "odr",
+        label_2 = "unc",
+        title = "$(label_1) − $(label_2)",
+        xlims = nothing,
+        ylims = nothing,
+    )
+    ax = Axis(
+        panel_pos; xlabel = xlabel, title = title,
+        # Δ is an operator, not a quantity, so it stays upright next to the italic symbol.
+        ylabel = rich("Current Difference ",rich("Δ", font = :bold), rich("I", font = :bold_italic),
+                      "\n(mA cm", superscript("−2"), ")"),
+    )
+
+    sp = redox_species === nothing ? species : redox_species
+    # `sgn` multiplies the *total*, not just the faradaic part as `cv_current`'s own `sgn`
+    # would: it is a display convention (cathodic down), and flipping only one of the two
+    # terms would change their sum.
+    current(res) = sgn .* cv_current(res; species = sp, n_e, include_capacitive) .* scale
+
+    t1, I_1 = result_1.times, current(result_1)
+    t2, I_2 = result_2.times, current(result_2)
+
+    itp2 = Interpolations.linear_interpolation(
+        t2, I_2; extrapolation_bc = Interpolations.Line()
+    )
+    lines!(ax, t1, I_1 .- itp2.(t1); color = color, linewidth = lw)
+
+    xlims === nothing || xlims!(ax, xlims...)
+    ylims === nothing || ylims!(ax, ylims...)
+
+    return ax
+end
+
+"""
+    panel_time_voltage!(fig, panel_pos, result; m = nothing, lw, xlabel)
+
+Electrode potential against time — the same quantity as the `:metal_time` panel of
+[`plot_ircomp_compare`](@ref), with the applied protocol drawn dotted behind it.
+
+Given `m`, the curve is [`electrode_potential`](@ref), which resolves to `ϕ_we + ϕ_DL`
+under `OhmicDropEstimation` and to the applied protocol itself otherwise. Without `m` it
+falls back to `result.voltages`, which means *different things in different compensation
+modes* — reaction-plane potential without compensation, compensated applied potential with
+it — so pass the model whenever runs are compared.
+"""
+function panel_time_voltage!(
+        fig, panel_pos, result;
+        m = nothing, lw = LW_LINE, xlabel = lab_time,
+        color = parse(Colorant, "#D7C2F0"),
+    )
     ax = Axis(
         panel_pos; xlabel = xlabel,
-        ylabel = rich(rich("U", font = :italic), "  (V vs. SHE)")
+        ylabel = rich("Electrode Potential ", rich("U", font = :bold_italic),
+                      subscript("M"), "\n(V vs. SHE)")
     )
-    U = sawtooth === nothing ? result.voltages : sawtooth.(result.times)
-    lines!(
-        ax, result.times, U;
-        color = parse(Colorant, "#D7C2F0"), linewidth = lw
+    U = m === nothing ? result.voltages : electrode_potential(result, m)
+    # the protocol is the reference the curve is read against; the gap between them is
+    # the compensation term, which is invisible unless both are on the axis
+    hasproperty(result, :sawtooth) && lines!(
+        ax, result.times, result.sawtooth;
+        color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE
     )
+    lines!(ax, result.times, U; color = color, linewidth = lw)
     return ax
 end
 
@@ -2223,7 +2781,7 @@ function panel_co2_log_contour!(
     ax = Axis(
         panel_pos;
         xlabel = lab_time,
-        ylabel = rich(rich("x", font = :italic), "  (m)"),
+        ylabel = rich(rich("x", font = :bold_italic), "  (m)"),
         yscale = log10,
         yminorticksvisible = true,
         yminorticks = IntervalsBetween(9),
@@ -2243,9 +2801,9 @@ function panel_co2_log_contour!(
     Colorbar(
         cbar_pos, hm;
         label = rich(
-            "log", subscript("10"), "(", rich("c", font = :italic),
+            "log", subscript("10"), "(", rich("c", font = :bold_italic),
             subscript("bulk"), ") − log", subscript("10"), "(",
-            rich("c", font = :italic),
+            rich("c", font = :bold_italic),
             subscript(rich("CO", subscript("2"))), ")"
         ),
         ticklabelsize = 20, labelsize = 20
@@ -2262,119 +2820,273 @@ function panel_time_ph!(
     nt = length(times)
     cH = [result.tsol[ihplus, 1, t] / scale for t in 1:nt]   # surface (node 1) H⁺ concentration (M)
     pH = -log10.(max.(cH, eps(Float64)))
-    ax = Axis(panel_pos; xlabel = xlabel, ylabel = rich("pH"))
+    # pH is upright by convention — it is not a variable symbol, so it takes no italic
+    ax = Axis(panel_pos; xlabel = xlabel, ylabel = rich("Surface pH"))
     lines!(ax, times, pH; color = color, linewidth = lw)
     return ax
 end
 
-# ── moved from cell ac2bef83 (plot_7species_contours) ──
-raw"""
-    plot_potential_split(result, m; scanrate, kwargs...)
 
-Where the applied potential actually goes: three panels from a single CV run.
-
-| Panel | Shows |
-|:--|:--|
-| (a) | $\phi_\mathrm{we}(t)$ and $\phi(0)(t)$ on one axis — the gap between them is the drop across the compact layer |
-| (b) | $\phi(0)$ against $\phi_\mathrm{we}$ — the potential divider, slope $C_\mathrm{gap}/(C_\mathrm{gap}+C_\mathrm{d})$ |
-| (c) | $C = j_\mathrm{cap}/v$ against $\phi_\mathrm{we}$ — the capacitance that sets that slope |
-
-The three explain one another: the diffuse capacitance in (c) is smallest near the PZC,
-which is where the divider in (b) is steepest, which is where the two curves in (a) run
-closest together.
-
-`scanrate` in V/s is needed for panel (c) because a CV gives capacitance as
-$C = j_\mathrm{cap} / v$. Pass the same value used to build the sawtooth.
-
-!!! note "Panel (c) is only meaningful where no faradaic current flows"
-    `j_cap` is separated out by the solver, but once the surface reaction turns over the
-    coverages change and a capacitance reading stops being interpretable. `mask_faradaic`
-    greys out the window where `|I_F|` exceeds `faradaic_tol` (mA cm⁻²) rather than
-    silently plotting through it.
 """
-function plot_potential_split(
-        result, m;
-        scanrate,
+    plot_ircomp_compare(results, m; reference = nothing, kwargs...)
+
+Compare a family of ohmic-drop compensation factors — the `Dict(factor => result)` that
+`cvsweep_over_ircompfactor` returns — in three panels.
+
+`panels` selects which of the three to draw, in the order given:
+
+| `panels` entry | Quantity | Expected behaviour |
+|:--|:--|:--|
+| `:driving` | `φ_M - φ_PET`, the driving force for electron transfer | approaches the dotted unit-slope line as the factor rises — the reference of Levey et al., Fig. 3 and 5c |
+| `:metal` | `φ_M`, the potential imposed at the electrode | rides on the dotted y = x line, displaced by ϕ_DL. This is the "applied and electrode potential track each other" view |
+| `:ircomp` | ϕ_DL, the potential the compensation added | **proportional to the factor**, peaking where the current peaks, and identically zero for the uncompensated run |
+| `:cv` | the voltammogram itself | the physical consequence: more compensation, more overpotential at the interface, larger and earlier peaks |
+| `:metal_time` | `φ_M` against **time** | tracks the applied protocol, drawn as a dotted reference, offset by ϕ_DL |
+| `:rp_time` | `ϕ(0)` against **time** | strongly attenuated against the same reference — the capacitive split, not a compensation effect |
+
+The last two put time on the abscissa; the rest use the applied potential. Mixing them in
+one call is fine, each axis is labelled for what it carries.
+
+The default is `(:driving, :metal_time, :ircomp)`: what compensation did to the driving
+force, whether the electrode still follows the protocol, and how much potential was put
+back. Drop to one with `panels = (:driving,)`, or ask for any of the others.
+
+Panels sit in one row unless `layout = (rows, cols)` is given — `layout = (2, 2)` with four
+panels wraps them into a square, which keeps the axis labels legible where a single row of
+four does not. The figure size follows the grid; override it with `fig_size` and the label
+size with `labelsize`.
+
+Pass an uncompensated run as `reference` to overlay it as a dashed black line, **together
+with the model it was built from** as `reference_model`. It should sit on top of the
+`factor = 0` curve in every panel — at zero factor the two are the same problem, so a
+visible gap means the runs were integrated on different time grids.
+
+!!! warning "`reference_model` is not optional in practice"
+    Without it the reference is read through `m`, whose electrolyte carries
+    `OhmicDropEstimation`, so `electrode_potential` takes `reference.voltages` — which
+    under `NoIRCompensation` holds ϕ(0), not φ_M. The driving force then collapses to the
+    constant `-ϕ_pzc` and ϕ_DL becomes a spurious straight line.
+
+!!! note "How large should the effect be?"
+    ϕ_DL is bounded by `factor · Ru · i`. With `Ru = L/σ` and a boundary layer of a few
+    hundred μm this is tens of millivolts against a sweep of volts, so panel (a) looks
+    unchanged and panel (b) is where the factor is legible. Raising `L` raises `Ru`
+    proportionally — and with it the risk that the positive feedback loop gain
+    `factor · Ru · ∂j/∂η` reaches 1 and the solve diverges.
+"""
+function plot_ircomp_compare(
+        results, m;
+        reference = nothing,
+        reference_model = nothing,
         species = ico,
         n_e = 2,
         sgn = 1,
+        include_capacitive = false,
         current_scale = cm^2 / mA,
-        cap_scale = cm^2 / (1.0e-6),      # F/m² -> μF/cm²
-        mask_faradaic = true,
-        faradaic_tol = 0.05,
-        fig_size = (1250, 420),
+        colormap = CMAP_IRCOMP,
+        panels = (:driving, :metal_time, :ircomp),
+        layout = nothing,
+        fig_size = nothing,
+        labelsize = 20,
         lw = LW_LINE,
-        titlefontsize = 26, labelsize = 24
+        legend_title = "f",
     )
+    nrow, ncol = layout === nothing ? (1, length(panels)) : layout
+    nrow * ncol >= length(panels) ||
+        error("layout $(layout) has room for $(nrow * ncol) panels but $(length(panels)) were asked for")
+    figsize = fig_size === nothing ? (480 * ncol + 140, 430 * nrow) : fig_size
+    ks = sort(collect(keys(results)))
+    isempty(ks) && error("plot_ircomp_compare: no results")
+    cols = [colormap[t] for t in range(0, 1, length = max(length(ks), 1))]
     ϕ_pzc = m.elydata.ϕ_pzc
 
-    hasproperty(result, :sawtooth) ||
-        error("result carries no `sawtooth`; plot_potential_split needs the applied protocol")
+    # every run shares the applied protocol; with a fixed grid they share it sample by
+    # sample, which is what makes the curves directly comparable
+    U_we = results[first(ks)].sawtooth
 
-    U_we = result.sawtooth            # applied
-    U_rp = result.voltages            # reaction plane
-    t = result.times
+    # y-value and axis decoration per panel kind, so the layout below is just bookkeeping
+    lab_UM = rich("Electrode Potential ", rich("U", font = :bold_italic), subscript("M"), "\n(V vs. SHE)")
+    ylabel_of = Dict(
+        :driving => rich("Driving Force ",
+                         rich("U", font = :bold_italic), subscript("M"), " − ",
+                         rich("U", font = :bold_italic), subscript("PET"), "\n(V)"),
+        :metal => lab_UM,
+        # subscript "DROP", not "DL": U_dl is already the double-layer voltage that
+        # `cv_abscissa(:dl)` returns, and the two are unrelated quantities
+        :ircomp => rich("Recovered IR Drop ",
+                        rich("U", font = :bold_italic), subscript("DROP"), "\n(V)"),
+        :cv => lab_current_co,
+        :metal_time => lab_UM,
+        :rp_time => rich("Reaction-Plane Potential ",
+                         rich("U", font = :bold_italic), subscript("PET"), "\n(V vs. SHE)"),
+    )
+    title_of = Dict(
+        :driving => "driving force",
+        :metal => "electrode potential",
+        :ircomp => "recovered IR drop",
+        :cv => "voltammogram",
+        :metal_time => "electrode potential vs. time",
+        :rp_time => "reaction plane vs. time",
+    )
+    # panels whose abscissa is time rather than the applied potential
+    is_time(kind) = kind in (:metal_time, :rp_time)
 
-    I_F = faradaic_current(result; species, n_e, sgn) .* current_scale
-    C = capacitive_current(result) ./ scanrate .* cap_scale
+    yvalue(kind, r, mm) =
+        kind === :driving ? driving_force(r, mm) :
+        kind === :metal || kind === :metal_time ? electrode_potential(r, mm) :
+        kind === :ircomp ? compensation_potential(r, mm) :
+        kind === :rp_time ? reaction_plane_potential(r, mm) :
+        kind === :cv ? cv_current(r; species, n_e, sgn, include_capacitive) .* current_scale :
+        error("unknown panel :$kind (see the docstring for the list)")
 
-    quiet = mask_faradaic ? abs.(I_F) .<= faradaic_tol : trues(length(I_F))
+    fig = Figure(size = figsize)
+    axes = Dict{Symbol, Axis}()
+    for (k, kind) in enumerate(panels)
+        r, c = (k - 1) ÷ ncol + 1, (k - 1) % ncol + 1
+        tag = length(panels) > 1 ? "($(('a':'z')[k])) " : ""
+        axes[kind] = Axis(
+            fig[r, c];
+            xlabel = is_time(kind) ? lab_time : lab_voltage,
+            ylabel = ylabel_of[kind],
+            title = tag * title_of[kind],
+            xlabelsize = labelsize, ylabelsize = labelsize,
+        )
+    end
 
+    # Unit slope through the pzc: a cell with no loss between metal and reaction plane —
+    # the "diffusion model" reference of Levey et al. Compensation pulls the curves
+    # towards it.
+    if haskey(axes, :driving)
+        ablines!(axes[:driving], -ϕ_pzc, 1; color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)
+        # name the reference on the line itself; a legend entry for a guide line costs a
+        # whole row and still leaves the reader matching dash patterns
+        ulo, uhi = extrema(U_we)
+        x_t = ulo + 0.68 * (uhi - ulo)
+        text!(
+            axes[:driving], x_t, x_t - ϕ_pzc;
+            text = rich(rich("C", font = :bold_italic), subscript("gap"), " → ∞"),
+            align = (:left, :bottom), offset = (6, 6), rotation = pi/4,
+            fontsize = labelsize, color = (:black, 0.6),
+        )
+    end
+    # For :metal the reference is y = x — the electrode potential with nothing added. The
+    # curves ride just above or below it by ϕ_DL, which is why they look glued to it.
+    haskey(axes, :metal) &&
+        ablines!(axes[:metal], 0, 1; color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)
+    haskey(axes, :ircomp) &&
+        hlines!(axes[:ircomp], [0.0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+    # On the time panels the applied protocol is the reference the curves are read
+    # against, so draw it once rather than per factor.
+    t_ref = results[first(ks)].times
+    for kind in (:metal_time, :rp_time)
+        haskey(axes, kind) && lines!(axes[kind], t_ref, U_we;
+                                     color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)
+    end
+
+    plots = Any[]
+    labels = String[]
+    for (i, f) in enumerate(ks)
+        r = results[f]
+        local line
+        for kind in panels
+            x = is_time(kind) ? r.times : U_we
+            line = lines!(axes[kind], x, yvalue(kind, r, m); color = cols[i], linewidth = lw)
+        end
+        push!(plots, line)
+        push!(labels, string(f))
+    end
+
+    if reference !== nothing
+        # The reference is normally an uncompensated run, i.e. a *different* model, and it
+        # has to be read with its own. Passing `m` here would make `electrode_potential`
+        # take `reference.voltages`, which under NoIRCompensation holds ϕ(0) rather than
+        # φ_M — the driving force then collapses to the constant −ϕ_pzc.
+        mref = reference_model === nothing ? m : reference_model
+        Uref = reference.sawtooth
+        local line
+        for kind in panels
+            x = is_time(kind) ? reference.times : Uref
+            line = lines!(axes[kind], x, yvalue(kind, reference, mref);
+                          color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+        end
+        push!(plots, line)
+        push!(labels, "unc")
+    end
+
+    Legend(fig[1:nrow, ncol + 1], plots, labels, legend_title; framevisible = false)
+    colgap!(fig.layout, 25)
+    nrow > 1 && rowgap!(fig.layout, 20)
+    return fig
+end
+
+"""
+    plot_cv_summary(result, m; sawtooth = nothing, kwargs...)
+
+The five-panel summary of a single CV run, stacked on a shared time axis.
+
+| Panel | Content |
+|:--|:--|
+| (a) | concentrations at the electrode, log scale |
+| (b) | current |
+| (c) | electrode potential, with the applied protocol dotted behind it — the same quantity as the `:metal_time` panel of [`plot_ircomp_compare`](@ref) |
+| (d) | surface pH |
+| (e) | reaction quotient over equilibrium constant for the two buffer reactions |
+
+Only the bottom panel carries a time axis; the rest have their x decorations hidden and are
+linked to it, so a feature at one time lines up vertically across all five. That is the
+point of the figure — the pH excursion in (d), the buffer going off equilibrium in (e) and
+the current in (b) are the same event seen three ways.
+
+Panel (c) takes the electrode potential from `m` rather than from `result.voltages`, which
+carries a different quantity in each compensation mode. Pass the model the run was built
+from — for an uncompensated run that is the uncompensated model, not the odr one.
+
+`conc_row_height` is a fixed pixel height because panel (a) spans some fourteen decades and
+needs the room; the other four share the remainder.
+"""
+function plot_cv_summary(
+        result, m;
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = true,
+        conc_limits = (1.0e-14, 1.0e2),
+        conc_row_height = 350,
+        labelsize = 22,
+        fig_size = (800, 1260),
+        panel_labels = ["(a)", "(b)", "(c)", "(d)", "(e)"],
+    )
     fig = Figure(size = fig_size)
 
-    # (a) both potentials against time
-    ax_a = Axis(
-        fig[1, 1];
-        xlabel = lab_time, ylabel = lab_voltage, title = "(a) applied vs. reaction plane",
-    titlesize = titlefontsize)
-    l1 = lines!(ax_a, t, U_we; color = :black, linewidth = lw)
-    l2 = lines!(ax_a, t, U_rp; color = "#C0392B", linewidth = lw)
-    axislegend(
-        ax_a, [l1, l2],
-        [rich(rich("ϕ", font = :italic), subscript("we")),
-         rich(rich("ϕ", font = :italic), subscript("0"))];
-        position = :lt, framevisible = false, labelsize
-    )
+    ax1, _ = panel_conc_time!(fig, fig[1, 2], result, m; xlabel = "")
+    ax2 = panel_time_current!(fig, fig[2, 2], result, m;
+                              species, n_e, sgn, include_capacitive, xlabel = "")
+    ax3 = panel_time_voltage!(fig, fig[3, 2], result; m, xlabel = "")
+    ax4 = panel_time_ph!(fig, fig[4, 2], result; xlabel = "")
+    ax5, _ = QoverK(fig, fig[5, 2], result, m; legend_pos = fig[5, 3])
 
-    # (b) the divider itself
-    ax_b = Axis(
-        fig[1, 2];
-        xlabel = lab_voltage, ylabel = rich(rich("ϕ", font = :italic), "(0)  (V)"),
-        title = "(b) potential divider", titlesize = titlefontsize, limits = ((-1.3, 0.8), (-1.3, 0.8))
-    )
-    # y = x is the no-loss reference: if the whole applied potential reached the reaction
-    # plane the curve would lie on it, so the vertical gap to it *is* the potential lost to
-    # the electrolyte. Without the line that gap cannot be read off the panel.
-    ablines!(ax_b, 0, 1; color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)
-    lines!(ax_b, U_we, U_rp; color = "#C0392B", linewidth = lw)
-    vlines!(ax_b, [ϕ_pzc]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
-    text!(ax_b, ϕ_pzc, -0.5; text = rich(rich("ϕ", font = :italic), subscript("pzc")), fontsize = 26, rotation = -pi/2)
-    axislegend(
-        ax_b,
-        [LineElement(color = "#C0392B", linewidth = lw),
-         LineElement(color = (:black, 0.45), linestyle = :dot, linewidth = LW_GUIDE)],
-        ["divider", "no loss"];
-        position = :lt, framevisible = false, labelsize
-    )
-
-    # (c) capacitance from the capacitive current
-    ax_c = Axis(
-        fig[1, 3];
-        xlabel = lab_voltage,
-        ylabel = rich(rich("C", font = :italic), "  (μF cm", superscript("−2"), ")"),
-        title = "(c) capacitance", titlesize = titlefontsize
-    )
-    Cq = [q ? c : NaN for (q, c) in zip(quiet, C)]
-    lines!(ax_c, U_we, Cq; color = "#2980B9", linewidth = lw)
-    if mask_faradaic && any(.!quiet)
-        # show, rather than hide, the window that was excluded
-        Cf = [q ? NaN : c for (q, c) in zip(quiet, C)]
-        lines!(ax_c, U_we, Cf; color = (:gray, 0.45), linewidth = lw, linestyle = :dot)
+    for (i, lab) in enumerate(panel_labels)
+        Label(fig[i, 1], lab; fontsize = FS_LABEL, font = :bold,
+              valign = :top, padding = (0, -20, -10, 0))
     end
-    vlines!(ax_c, [ϕ_pzc]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
-    text!(ax_c, ϕ_pzc, -0.5; text = rich(rich("ϕ", font = :italic), subscript("pzc")), fontsize = 26, rotation = -pi/2)
 
-    colgap!(fig.layout, 30)
+    for ax in (ax1, ax2, ax3, ax4, ax5)
+        ax.ylabelsize = labelsize
+        ax.xlabelsize = labelsize
+    end
+    for ax in (ax1, ax2, ax3, ax4)
+        hidexdecorations!(ax, grid = false)
+    end
+    ax3.yticks = LinearTicks(3)
+    ax4.yticks = LinearTicks(4)
+    ylims!(ax1, conc_limits...)
+
+    linkxaxes!(ax1, ax2, ax3, ax4, ax5)
+    rowgap!(fig.layout, 15)
+    rowsize!(fig.layout, 1, conc_row_height)
+    for r in 2:5
+        rowsize!(fig.layout, r, Relative(1 / 6))
+    end
     return fig
 end
 
@@ -2388,6 +3100,23 @@ Seven species in a 2×4 grid leaves exactly one free slot, which is why that is 
 a single column of seven panels is far too tall for a page, and splitting into two figures
 loses the side-by-side comparison.
 
+`show_potential` fills that free cell with the electrode potential against the same time
+axis, which also pushes the colorbar into a column of its own where it can run full height.
+Keep it on: seven fields over time with nothing saying where in the sweep a given time
+falls makes every feature a bare number rather than "the cathodic vertex". Turn it off and
+the colorbar returns to the free cell at half height.
+
+Only the bottom panel of each column carries tick labels, and the time label is written
+once under the whole grid rather than per panel.
+
+!!! note "Why this figure is decimated"
+    A log-scaled y axis costs CairoMakie its fast path for `heatmap!`: cells of unequal
+    height cannot be blitted as one image, so it emits a polygon per cell. Seven panels of
+    a run stored at `Δt = 0.05` are millions of vector paths and take minutes to draw.
+    `max_time_samples` caps the columns per panel at roughly one per pixel, which is all
+    the figure can show; raise it only if a feature narrower than that is being missed, and
+    use `x_stride` if the spatial grid is the expensive direction instead.
+
 The colour scale is shared across panels, so a colour means the same concentration
 everywhere in the figure and species can be read against one another. Pass `colorrange` to
 pin it, e.g. across several figures. Concentrations below `10^floor_exp` are clamped, which
@@ -2400,7 +3129,12 @@ function plot_7species_contours(
         layout = (2, 4),
         colorrange = nothing,
         floor_exp = -12,
-        fig_size = (1250, 560),
+        fig_size = (1250, 520),
+        show_potential = true,
+        colgap_px = 20,
+        rowgap_px = 8,
+        max_time_samples = 400,
+        x_stride = 1,
     )
     bulk = m.bulk
     target_species = [
@@ -2412,8 +3146,20 @@ function plot_7species_contours(
         ("CO₃²⁻", rich("CO", subscript("3"), superscript("2−"))),
         ("CO", rich("CO")),
     ]
-    times = result.tsol.t
+    times_all = result.tsol.t
     discrete_cmap = cgrad(:jet, num_levels, categorical = true)
+
+    # Decimate before plotting. A log-scaled y axis costs CairoMakie its fast path for
+    # `heatmap!`: with unequal cell heights it cannot blit one image and instead emits one
+    # polygon per cell. At Δt = 0.05 over 80 s that is 1600 columns per panel, seven
+    # panels deep — millions of vector paths for a figure whose panels are ~280 px wide.
+    # Nothing below ~1 sample per pixel is visible, so the samples beyond that only cost
+    # render time and file size.
+    tstride = max(1, cld(length(times_all), max_time_samples))
+    tidx = 1:tstride:length(times_all)
+    xidx = 1:x_stride:length(X)
+    times = times_all[tidx]
+    Xp = X[xidx]
 
     # Build every log field first: a shared colour range cannot be known until all of
     # them exist.
@@ -2424,10 +3170,12 @@ function plot_7species_contours(
             @warn "Species '$sp_name' not found in bulk; skipping this panel."
             continue
         end
-        @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times)] ./ scale
+        @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times_all)] ./ scale
         M = log10.(max.(c_matrix, 10.0^floor_exp))
         replace!(M, Inf => float(floor_exp), -Inf => float(floor_exp), NaN => float(floor_exp))
-        push!(panels, (sp_label, M))
+        # Clamp first, subsample second: the floor has to see every sample, or a spike
+        # below it that happens to fall on a dropped column would come back as a hole.
+        push!(panels, (sp_label, M[xidx, tidx]))
     end
     isempty(panels) && error("none of the target species were found in `m.bulk`")
 
@@ -2441,19 +3189,27 @@ function plot_7species_contours(
 
     nrow, ncol = layout
     npanel = length(panels)
+    # The potential trace claims the first free cell, so it decides which panels have
+    # something below them. Without counting it, the last panel of the top row is treated
+    # as the bottom of its column and grows a tick row and an axis label, which is what
+    # opens the band of white between the two rows.
+    has_potential = show_potential && npanel < nrow * ncol
+    nfilled = npanel + (has_potential ? 1 : 0)
+
     fig = Figure(size = fig_size)
     axs = Axis[]
     local hm
 
     for (k, (sp_label, M)) in enumerate(panels)
         row, col = fldmod1(k, ncol)
-        # bottom of its column: either the last row, or nothing sits below it
-        is_bottom = (k + ncol > npanel)
+        # bottom of its column: nothing sits in the cell below it
+        is_bottom = (k + ncol > nfilled)
 
         ax = Axis(
             fig[row, col];
-            xlabel = is_bottom ? lab_time : "",
-            ylabel = col == 1 ? rich(rich("x", font = :italic), "  (m)") : "",
+            # No per-panel `xlabel`: every bottom panel would repeat it, and they all share
+            # one linked time axis. A single `Label` under the grid says it once.
+            ylabel = col == 1 ? rich(rich("x", font = :bold_italic), "  (m)") : "",
             yscale = log10,
             yminorticksvisible = true,
             yminorticks = IntervalsBetween(9),
@@ -2467,7 +3223,7 @@ function plot_7species_contours(
         col == 1 || hideydecorations!(ax; grid = false, ticks = false)
 
         hm = heatmap!(
-            ax, times, X .+ 1.0e-12, M';
+            ax, times, Xp .+ 1.0e-12, M';
             colorrange = crange,
             colormap = discrete_cmap,
             interpolate = false,
@@ -2477,20 +3233,53 @@ function plot_7species_contours(
 
     length(axs) > 1 && linkaxes!(axs...)
 
-    # Shared colorbar in the leftover cell; falls back to an extra column if the layout
-    # happens to be exactly full.
-    cbar_label = rich(
-        "log", subscript("10"), "(", rich("c", font = :italic), " / M)"
-    )
-    if npanel < nrow * ncol
-        crow, ccol = fldmod1(npanel + 1, ncol)
-        Colorbar(fig[crow, ccol], hm; label = cbar_label, vertical = true, width = 18)
-    else
-        Colorbar(fig[:, ncol + 1], hm; label = cbar_label, vertical = true, width = 18)
+    # The free cell takes the potential protocol. Every contour panel is a field over time,
+    # but none of them says where in the sweep a given time falls — with this panel present,
+    # a feature at t = 22 s is read as "the cathodic vertex" instead of as a bare number.
+    if has_potential
+        prow, pcol = fldmod1(npanel + 1, ncol)
+        ax_u = Axis(
+            fig[prow, pcol];
+            ylabel = rich("Electrode Potential ", rich("U", font = :bold_italic),
+                          subscript("M"), "\n(V vs. SHE)"),
+            ylabelsize = 18,
+            yaxisposition = :right,
+        )
+        lines!(ax_u, result.times, electrode_potential(result, m);
+               color = parse(Colorant, "#D7C2F0"), linewidth = LW_LINE)
+        # x only: the contour panels share a log-scaled distance axis, and `linkaxes!`
+        # would drag this panel's volts onto it.
+        isempty(axs) || linkxaxes!(axs[1], ax_u)
     end
 
-    colgap!(fig.layout, 12)
-    rowgap!(fig.layout, 12)
+    # Shared colorbar. It may size its own column, but not one it shares with a panel: a
+    # colorbar reports its 18 px as the column's width requirement, which would collapse
+    # the panel above it to a sliver.
+    cbar_label = rich(
+        "log", subscript("10"), "(", rich("c", font = :bold_italic), " / M)"
+    )
+    if nfilled < nrow * ncol
+        crow, ccol = fldmod1(nfilled + 1, ncol)
+        Colorbar(
+            fig[crow, ccol], hm;
+            label = cbar_label, vertical = true, width = 18,
+            tellwidth = false, halign = :left,
+        )
+    else
+        Colorbar(
+            fig[1:nrow, ncol + 1], hm;
+            label = cbar_label, vertical = true, width = 18,
+        )
+    end
+
+    # One time label for the whole grid, in the row below it.
+    Label(
+        fig[nrow + 1, 1:ncol], lab_time;
+        fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 4),
+    )
+
+    colgap!(fig.layout, colgap_px)
+    rowgap!(fig.layout, rowgap_px)
     return fig
 end
 
@@ -2514,7 +3303,7 @@ function panel_log_contour!(
     ax = Axis(
         panel_pos;
         xlabel = lab_time,
-        ylabel = rich(rich("x", font = :italic), "  (m)"),
+        ylabel = rich(rich("x", font = :bold_italic), "  (m)"),
         yscale = log10,
         yminorticksvisible = true,
         yminorticks = IntervalsBetween(9),
@@ -2534,9 +3323,9 @@ function panel_log_contour!(
     Colorbar(
         cbar_pos, hm;
         label = rich(
-            "log", subscript("10"), "(", rich("c", font = :italic),
+            "log", subscript("10"), "(", rich("c", font = :bold_italic),
             subscript("bulk"), ") − log", subscript("10"), "(",
-            rich("c", font = :italic), subscript(sp.label), ")"
+            rich("c", font = :bold_italic), subscript(sp.label), ")"
         ),
         ticklabelsize = 20, labelsize = 20
     )
@@ -2573,7 +3362,10 @@ function QoverK(
     ax = Axis(
         panel_pos;
         xlabel = xlabel,
-        ylabel = rich(rich("Q", font = :italic), " / ", rich("K", font = :italic)),
+        ylabel = rich(
+            "Reaction Quotient\n",
+            rich("Q", font = :bold_italic), " / ", rich("K", font = :bold_italic)
+        ),
         yscale = log10,
         yticks = (
             10.0 .^ (-6:3:6),
@@ -2677,13 +3469,13 @@ function plot_combined_exp_sim_ivc(
     end
     ax_exp = Axis(
         fig[1, 1],
-        ylabel = rich(rich("I", font = :italic), "  (mA cm", superscript("−2"), ")"),
+        ylabel = rich(rich("I", font = :bold_italic), "  (mA cm", superscript("−2"), ")"),
         xticklabelsvisible = false, xticksvisible = false
     )
     ax_sim = Axis(
         fig[2, 1],
-        xlabel = rich(rich("ϕ", font = :italic), "  (V vs. SHE)"),
-        ylabel = rich(rich("I", font = :italic), "  (mA cm", superscript("−2"), ")")
+        xlabel = rich(rich("ϕ", font = :bold_italic), "  (V vs. SHE)"),
+        ylabel = rich(rich("I", font = :bold_italic), "  (mA cm", superscript("−2"), ")")
     )
     linkxaxes!(ax_exp, ax_sim)
     ax_sim.xticks = -1.5:0.3:1.0
