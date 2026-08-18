@@ -87,7 +87,10 @@ Equivalent to the `RGB(0.2 + 0.6t, 0.8 - 0.5t, 0.8 - 0.7t)` ramp that
 [`plot_scanrate_sweeps`](@ref) used to build inline — that expression is linear in `t`,
 so a two-stop gradient reproduces it exactly.
 """
-const CMAP_SCANRATE = cgrad([RGB(0.2, 0.8, 0.8), RGB(0.8, 0.3, 0.1)])
+const CMAP_SCANRATE = cgrad([
+    colorant"#8b99a3", colorant"#009581", colorant"#00584e",
+    colorant"#0e2421", colorant"#2F5D62",
+])
 
 """
 Dusty rose → dusty blue sequence for CO₂ partial-pressure families.
@@ -96,7 +99,10 @@ Deliberately dark for a pastel: the same curve colour also sets the direct label
 top of the data, and a pale pastel that reads fine as a 4 pt line disappears as text. Both
 stops sit near 50 % lightness so either end carries at both sizes.
 """
-const CMAP_PRESSURE = cgrad([colorant"#C97B8A", colorant"#7B9BC4"])
+const CMAP_PRESSURE = cgrad([
+    colorant"#845ec2", colorant"#bc39b1", colorant"#ce3e2b",
+    colorant"#4C7476", colorant"#2F5D62",
+])
 
 """
 Darker counterpart of [`CMAP_PRESSURE`](@ref), for measured data shown beside simulated.
@@ -387,6 +393,59 @@ The `2` of CO₂ is a stoichiometric index, not a running number, so it stays up
 const lab_pressure = rich(
     "CO", subscript("2"), " Partial Pressure\n",
     rich("p", font = :bold_italic), " (atm)"
+)
+
+"""
+Square root of the scan rate, the abscissa of a Randles–Ševčík plot.
+
+`i_p ∝ ν^{1/2}` under diffusion control, so this is the axis on which that case is a straight
+line through the origin. Plotting against `ν` curves the diffusion-limited case and makes a
+departure from it impossible to see by eye.
+"""
+const lab_sqrt_scanrate = rich(
+    "Square Root of Scan Rate ", rich("v", font = :bold_italic), superscript("1/2"),
+    "\n((V s", superscript("−1"), ")", superscript("1/2"), ")"
+)
+
+"""
+Reaction quotient on a **concentration** basis, `Q_c / K`.
+
+Distinguished from [`lab_qoverk_act`](@ref) because the two say different things and only one
+of them is what the kinetics enforces. `buffer_system` writes every rate with its activity
+coefficients, so `Q_a` is the quotient that relaxes to `K`; `Q_c` departs from it wherever
+γ ≠ 1, which near the electrode is everywhere. A figure that does not say which basis it used
+cannot be read.
+
+Subscripts `c` and `a` are descriptive, so they stay upright.
+"""
+const lab_qoverk_conc = rich(
+    "Reaction Quotient\n", rich("Q", font = :bold_italic), subscript("c"),
+    " / ", rich("K", font = :bold_italic)
+)
+
+"Reaction quotient on an **activity** basis, `Q_a / K`. See [`lab_qoverk_conc`](@ref)."
+const lab_qoverk_act = rich(
+    "Reaction Quotient\n", rich("Q", font = :bold_italic), subscript("a"),
+    " / ", rich("K", font = :bold_italic)
+)
+
+"""
+Largest departure of a buffer reaction from equilibrium over a cycle, in decades.
+
+`max |log₁₀(Q/K)|`, so 0 is "kept up throughout" and 1 is "reached ten times its equilibrium
+quotient at some point". Decades rather than the raw ratio because the three reactions have
+constants many orders apart and the interesting comparison is how *far* each was driven, not
+how large its quotient is.
+"""
+const lab_qk_deviation = rich(
+    "Max Buffer Disequilibrium\n|log", subscript("10"), "(",
+    rich("Q", font = :bold_italic), " / ", rich("K", font = :bold_italic), ")|"
+)
+
+"Peak current magnitude: `Peak Current |i_p| (mA cm⁻²)`."
+const lab_peak_current = rich(
+    "Peak Current |", rich("i", font = :bold_italic), subscript("p"),
+    "|\n(mA cm", superscript("−2"), ")"
 )
 
 "Scan rate: `Scan Rate v (V s⁻¹)`. Unit as a product of powers, not `V/s`."

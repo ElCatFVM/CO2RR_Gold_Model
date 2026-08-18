@@ -1040,7 +1040,7 @@ alone does not carry, and the pale end of a pastel ramp washes out.
 """
 function annotate_split!(
         ax, anchors, labels, colors;
-        window, at = :end, annotate_x = nothing, fontsize = 22,
+        window, at = :end, annotate_x = nothing, fontsize = 22, offsets = nothing,
     )
     # 5 % in from the window edge, not 10 %: the labels belong in the margin the sweep
     # leaves beyond its vertex, and the further in they sit the more likely they are to
@@ -1055,8 +1055,13 @@ function annotate_split!(
     end
     for (j, y) in enumerate(anchors)
         isnan(y) && continue
+        # Two curves can share a vertex current while being far apart everywhere else —
+        # a scan-rate family converges there — and then their labels land on top of one
+        # another. `offsets` nudges one of them in data units, keyed by its label text; the
+        # anchor stays where the curve is, so nothing is silently relocated.
+        dx, dy = offsets === nothing ? (0.0, 0.0) : get(offsets, labels[j], (0.0, 0.0))
         text!(
-            ax, x, y;
+            ax, x + dx, y + dy;
             text = labels[j], color = colors[j],
             fontsize = fontsize, font = :bold, align = (:center, :center),
         )
@@ -1136,6 +1141,9 @@ function pressure_varied_cvsweep_split(
         # around, in the empty margin between the anodic vertex and the axis edge.
         annotate_x = nothing,
         annotate_fontsize = 22,
+        # `Dict(label => (dx, dy))` in data units, for the case where two members share an
+        # anodic vertex current and their direct labels collide.
+        annotate_offsets = nothing,
         colormap = CMAP_PRESSURE,
         xticks_red = LinearTicks(3),
         xticks_ox = LinearTicks(3),
@@ -1175,6 +1183,7 @@ function pressure_varied_cvsweep_split(
         annotate_split!(
             ax_ox, anchors, labels, cols_sim;
             window = uox, at = :end, annotate_x, fontsize = annotate_fontsize,
+            offsets = annotate_offsets,
         )
     elseif legend_mode === :axis
         # `axislegend`, not `Legend`: it anchors to the axis interior. A `Legend` placed at
@@ -1370,7 +1379,7 @@ function plot_exp_sim_cvsweep_split(
 
     split_widths!(fig, ured, uox; widths)
     rowgap!(fig.layout, 1, 10)     # between the two data rows
-    rowgap!(fig.layout, 2, 4)      # above the shared voltage label
+    rowgap!(fig.layout, 2, 40)      # above the shared voltage label
     return fig
 end
 
@@ -2591,7 +2600,7 @@ end
 # ── moved from cell 13a0e5da (panel_conc_time!) ──
 function panel_conc_time!(
         fig, panel_pos, result, m; nspecies = 7, scale = mol / dm^3, lw = LW_LINE,
-        xlabel = lab_time, legend_pos = nothing
+        xlabel = lab_time, legend_pos = nothing, show_legend = true
     )
     bulk = m.bulk
     sp_colors = [
@@ -2630,12 +2639,19 @@ function panel_conc_time!(
     legend_elements = [ [LineElement(color = colors[i], linewidth = lw)] for i in 1:nspecies ]
     legend_labels = [ rich(string(names[i]), color = colors[i]) for i in 1:nspecies ]
 
-    leg = Legend(
-        legend_pos === nothing ? fig[1, 3] : legend_pos,
-        legend_elements, legend_labels;
-        framevisible = false,
-        labelsize = 20
-    )
+    # `show_legend = false` for the panels of a multi-column figure that share one key: the
+    # `nothing` fallback below places the legend at `fig[1, 3]`, which is a *data* cell as
+    # soon as the figure is wider than one column.
+    leg = if show_legend
+        Legend(
+            legend_pos === nothing ? fig[1, 3] : legend_pos,
+            legend_elements, legend_labels;
+            framevisible = false,
+            labelsize = 20
+        )
+    else
+        nothing
+    end
 
     return ax_c, leg
 end
@@ -2906,8 +2922,9 @@ function plot_ircomp_compare(
     cols = [colormap[t] for t in range(0, 1, length = max(length(ks), 1))]
     ϕ_pzc = m.elydata.ϕ_pzc
 
-    # every run shares the applied protocol; with a fixed grid they share it sample by
-    # sample, which is what makes the curves directly comparable
+    # Only for placing the guide lines and the `C_gap → ∞` annotation, which need one
+    # representative voltage range. The curves themselves each use their own abscissa —
+    # the runs share the protocol but not its sampling unless the step was pinned.
     U_we = results[first(ks)].sawtooth
 
     # y-value and axis decoration per panel kind, so the layout below is just bookkeeping
@@ -2995,7 +3012,11 @@ function plot_ircomp_compare(
         r = results[f]
         local line
         for kind in panels
-            x = is_time(kind) ? r.times : U_we
+            # Each run's own protocol, not `U_we`: the factors share the *protocol* but not
+            # necessarily its sampling, because an adaptive solver puts its steps wherever
+            # that run needed them. Reusing the first run's abscissa throws a
+            # DimensionMismatch as soon as two runs differ by a single step.
+            x = is_time(kind) ? r.times : r.sawtooth
             line = lines!(axes[kind], x, yvalue(kind, r, m); color = cols[i], linewidth = lw)
         end
         push!(plots, line)
@@ -3089,9 +3110,346 @@ function plot_cv_summary(
 
     linkxaxes!(ax1, ax2, ax3, ax4, ax5)
     rowgap!(fig.layout, 15)
+    # This figure has no title row and no shared label row — the time label rides on panel
+    # (e) — so the four data rows can take a plain fraction of the height. The two-column
+    # variant cannot; see `plot_cv_summary_compare`.
     rowsize!(fig.layout, 1, conc_row_height)
     for r in 2:5
         rowsize!(fig.layout, r, Relative(1 / 6))
+    end
+    return fig
+end
+
+# ==========================================================================
+# Randles–Ševčík analysis of the cathodic peak.
+#
+# A diffusion-controlled peak grows as √ν, so plotting the peak current
+# against √ν — not against ν — turns the diffusion-limited case into a
+# straight line through the origin and any departure into a visible sag
+# below it. The slope then gives an apparent diffusion coefficient.
+# ==========================================================================
+
+"""
+    cathodic_peak(result; window = nothing, kwargs...)
+
+Most negative current of a voltammogram, and the potential it occurs at.
+
+Returns `(; I, U, index)` with `I` already scaled — negative, as plotted. `window` restricts
+the search to a voltage range, which is what to reach for when a second cathodic feature
+would otherwise win.
+
+`kwargs` are the usual [`cv_current`](@ref) / [`cv_abscissa`](@ref) controls.
+"""
+function cathodic_peak(
+        result;
+        window = nothing,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
+        scale = cm^2 / mA,
+    )
+    I = cv_current(result; species, n_e, sgn, include_capacitive) .* scale
+    U, _ = cv_abscissa(result; kind = abscissa)
+    idx = window === nothing ? eachindex(I) :
+        findall(u -> window[1] <= u <= window[2], U)
+    isempty(idx) && error("no samples inside the window $(window)")
+    k = idx[argmin(I[idx])]
+    return (I = I[k], U = U[k], index = k)
+end
+
+"""
+    randles_sevcik_table(scanrates, results; window = nothing, kwargs...)
+
+Peak current against scan rate, as `DataFrame(scanrate, sqrt_scanrate, I_p, U_p)`.
+
+`I_p` is the magnitude of the cathodic peak, since Randles–Ševčík is a statement about size,
+and `U_p` is where it sat. Keep an eye on `U_p`: a peak that marches to more negative
+potential as `ν` rises is the signature of an irreversible or transport-limited step, and it
+is the first thing to check before reading anything into the slope.
+"""
+function randles_sevcik_table(scanrates, results; window = nothing, kwargs...)
+    length(scanrates) == length(results) || error(
+        "got $(length(results)) results for $(length(scanrates)) scan rates"
+    )
+    peaks = [cathodic_peak(r; window, kwargs...) for r in results]
+    return DataFrame(
+        scanrate = collect(scanrates),
+        sqrt_scanrate = sqrt.(collect(scanrates)),
+        I_p = [abs(p.I) for p in peaks],
+        U_p = [p.U for p in peaks],
+    )
+end
+
+"""
+    randles_sevcik_fit(table; fit_range = nothing, through_origin = false)
+
+Least-squares fit of `I_p` against `√ν`, over `fit_range = (ν_lo, ν_hi)` if given.
+
+Returns `(; slope, intercept, rms, n, mask)`. `mask` is which rows were used, so a figure can
+mark them.
+
+`rms` is the root-mean-square residual, in the units of `I_p` — mA cm⁻². It is reported
+instead of R² deliberately: R² is a ratio against the spread of the data, and a
+Randles–Ševčík plot spans a decade by construction, so it returns 0.99-something whether or
+not the line is any good. The RMS says how far off the line the points are, in the units
+already on the axis.
+
+`through_origin = false` by default even though the theory predicts a line through the
+origin: fitting the intercept freely and *looking* at it is a test. A large positive
+intercept means the slow sweeps sit above the line the fast ones define, which is what a
+capacitive or kinetically limited contribution does, and forcing the fit through zero would
+hide exactly that.
+
+!!! note "`rms` is exactly zero with as many points as parameters"
+    Two points define a free line, one defines a line through the origin: the residual is
+    then zero because the fit interpolates, not because the data are linear. Check `n` before
+    reading anything into a small `rms`.
+"""
+function randles_sevcik_fit(table; fit_range = nothing, through_origin = false)
+    mask = fit_range === nothing ? trues(nrow(table)) :
+        fit_range[1] .<= table.scanrate .<= fit_range[2]
+    n = count(mask)
+    n >= 2 || error("need at least two points in fit_range $(fit_range); got $(n)")
+
+    x = table.sqrt_scanrate[mask]
+    y = table.I_p[mask]
+
+    if through_origin
+        slope = sum(x .* y) / sum(x .^ 2)
+        intercept = 0.0
+    else
+        X = hcat(ones(length(x)), x)
+        intercept, slope = X \ y
+    end
+
+    ŷ = intercept .+ slope .* x
+    rms = sqrt(sum((y .- ŷ) .^ 2) / n)
+
+    return (slope = slope, intercept = intercept, rms = rms, n = n, mask = mask)
+end
+
+raw"""
+    randles_sevcik_D(slope; n_e = 2, c_bulk = 0.033)
+
+Apparent diffusion coefficient from a Randles–Ševčík slope, in m² s⁻¹.
+
+Inverts the reversible form
+
+```math
+i_\mathrm{p} = 2.69\times10^5\, n^{3/2} A D^{1/2} c\, \nu^{1/2}
+```
+
+with `i_p` in A, `A` in cm², `D` in cm² s⁻¹ and `c` in mol cm⁻³. `slope` is expected in the
+units this package plots, **mA cm⁻² per (V s⁻¹)^½**, and the electrode area cancels because
+the current is already a density. `c_bulk` is in mol dm⁻³ and defaults to CO₂ saturated at
+1 bar.
+
+!!! warning "Apparent, not molecular"
+    The formula assumes a reversible one-step transfer of a species that only diffuses. Here
+    CO₂ is also consumed by the OH⁻ its own reduction produces, so what comes out is an
+    *effective* coefficient lumping reaction into transport. A value well below the molecular
+    `D_CO₂ = 1.91e-9 m² s⁻¹` is the expected outcome and is itself the result — quote both,
+    never the fitted one alone.
+"""
+function randles_sevcik_D(slope; n_e = 2, c_bulk = 0.033)
+    slope_A = slope * 1.0e-3          # mA cm⁻² → A cm⁻²
+    c_cm3 = c_bulk * 1.0e-3           # mol dm⁻³ → mol cm⁻³
+    D_cm2 = (slope_A / (2.69e5 * n_e^1.5 * c_cm3))^2
+    return D_cm2 * 1.0e-4             # cm² s⁻¹ → m² s⁻¹
+end
+
+"""
+    plot_randles_sevcik(scanrates, results; kwargs...)
+
+Randles–Ševčík plot of the cathodic peak: `|i_p|` against `√ν`, with the fitted line.
+
+The line is drawn from the origin whatever the data range, so that whether it would pass
+through zero — as the theory requires — is visible rather than assumed. Points outside
+`fit_range` are drawn hollow, so which ones the slope rests on is visible too.
+
+The only thing written on the axes is the RMS residual, at the top left. Slope, `n` and the
+apparent diffusion coefficient from [`randles_sevcik_D`](@ref) come back in the returned
+`fit` and belong in the caption, where they can be qualified.
+"""
+function plot_randles_sevcik(
+        scanrates, results;
+        window = nothing,
+        fit_range = nothing,
+        through_origin = false,
+        show_fit = true,
+        annotate = true,
+        color = colorant"#2980B9",
+        fit_color = :gray40,
+        markersize = 14,
+        fig_size = (560, 480),
+        kwargs...,
+    )
+    tbl = randles_sevcik_table(scanrates, results; window, kwargs...)
+    fit = randles_sevcik_fit(tbl; fit_range, through_origin)
+
+    fig = Figure(size = fig_size)
+    ax = Axis(
+        fig[1, 1];
+        xlabel = lab_sqrt_scanrate, ylabel = lab_peak_current,
+        limits = ((0, nothing), (0, nothing)),
+    )
+
+    if show_fit
+        xs = [0.0, maximum(tbl.sqrt_scanrate) * 1.05]
+        lines!(ax, xs, fit.intercept .+ fit.slope .* xs;
+               color = fit_color, linewidth = LW_DASH, linestyle = :dash)
+    end
+    scatter!(ax, tbl.sqrt_scanrate, tbl.I_p; color = color, markersize = markersize)
+    any(.!fit.mask) && scatter!(
+        ax, tbl.sqrt_scanrate[.!fit.mask], tbl.I_p[.!fit.mask];
+        color = :white, strokecolor = color, strokewidth = 2, markersize = markersize,
+    )
+
+    annotate && text!(
+        ax, Point2f(0.04, 0.96);
+        text = @sprintf("RMS = %.3g mA cm⁻²", fit.rms),
+        space = :relative, align = (:left, :top),
+        fontsize = FS_LEGEND, color = fit_color,
+    )
+
+    return (fig = fig, table = tbl, fit = fit, ax = ax)
+end
+
+"""
+    plot_cv_summary_compare(result_l, m_l, result_r, m_r; kwargs...)
+
+Two [`plot_cv_summary`](@ref) stacks side by side — five rows, two data columns.
+
+For putting one run under the conditions a measurement was made at against another under the
+conditions being proposed. `column_titles` names them at the top of each column; give the
+settings that differ, since nothing else on the figure records them.
+
+**Rows share a y axis, columns do not share x.** `link_y = true` puts both runs of a row on
+one scale, so a peak twice as tall reads as twice as tall; the right column then drops its
+y decorations entirely and the pair reads as a single axis. Set `link_y = false` when the two
+magnitudes are far enough apart that the smaller would be flattened into the axis floor —
+each column then autoscales and only shapes and timings may be compared, not heights.
+
+x stays unlinked by default because the runs usually differ in scan rate, so their cycles
+differ in duration; each column keeps its own time ticks under a single shared label.
+
+Only the left column carries y labels, only the bottom of the figure carries a time label,
+and the legends are drawn once on the right for both columns — the species colours and the
+buffer reactions are the same in each.
+"""
+function plot_cv_summary_compare(
+        result_l, m_l, result_r, m_r;
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = true,
+        conc_limits = (1.0e-14, 1.0e2),
+        conc_row_height = 350,
+        # 350 + 4×165 + 6 gaps of 15 = 1100 px of the 1260 default, leaving 160 for the
+        # column titles and the shared time label. Raise `fig_size`'s height, not these, if
+        # the panels need to be taller.
+        data_row_height = 165,
+        labelsize = 22,
+        fig_size = (1500, 1260),
+        # Makie's default 16 px leaves nothing for the column titles in row 0 or the time
+        # label in row 6, both of which sit outside the axis block and were clipped.
+        # Order is (left, right, bottom, top).
+        figure_padding = (10, 20, 25, 25),
+        panel_labels = ["(a)", "(b)", "(c)", "(d)", "(e)"],
+        column_titles = ("Experimental conditions", "This work"),
+        xtick_count = 4,
+        link_x = false,
+        link_y = true,
+    )
+    fig = Figure(size = fig_size, figure_padding = figure_padding)
+
+    # columns: 1 panel letters | 2 left axes | 3 right axes | 4 legends
+    function column!(col, result, m; ylabels::Bool)
+        blank = ylabels ? nothing : ""
+        a1, _ = panel_conc_time!(
+            fig, fig[1, col], result, m;
+            xlabel = "", show_legend = col == 3, legend_pos = fig[1, 4],
+        )
+        a2 = panel_time_current!(fig, fig[2, col], result, m;
+                                 species, n_e, sgn, include_capacitive, xlabel = "")
+        a3 = panel_time_voltage!(fig, fig[3, col], result; m, xlabel = "")
+        a4 = panel_time_ph!(fig, fig[4, col], result; xlabel = "")
+        # No per-column time label: the two columns cover different spans but the *quantity*
+        # is the same, so it is named once under the pair, as on the broken-axis figures.
+        a5, _ = QoverK(fig, fig[5, col], result, m; xlabel = "",
+                       legend_pos = col == 3 ? fig[5, 4] : nothing)
+        axs = (a1, a2, a3, a4, a5)
+
+        for ax in axs
+            ax.ylabelsize = labelsize
+            ax.xlabelsize = labelsize
+        end
+        for ax in (a1, a2, a3, a4)
+            hidexdecorations!(ax, grid = false)
+        end
+        # With the rows linked in y the right column's ticks would repeat the left's value
+        # for value, so it drops its whole y decoration and the pair reads as one axis.
+        # Unlinked, it keeps the ticks — they mean something different — and loses only the
+        # label text, which would otherwise repeat five times.
+        if !ylabels
+            for ax in axs
+                link_y ? hideydecorations!(ax; grid = false) : (ax.ylabel = "")
+            end
+        end
+        a3.yticks = LinearTicks(3)
+        a4.yticks = LinearTicks(4)
+        # Few enough x ticks to survive a half-width column. The two runs cover different
+        # time spans, so the tick *values* differ and each column needs its own labels —
+        # `LinearTicks`' default count then collides in the narrower one.
+        a5.xticks = LinearTicks(xtick_count)
+        ylims!(a1, conc_limits...)
+        linkxaxes!(axs...)
+        return axs
+    end
+
+    axs_l = column!(2, result_l, m_l; ylabels = true)
+    axs_r = column!(3, result_r, m_r; ylabels = false)
+
+    for (i, lab) in enumerate(panel_labels)
+        Label(fig[i, 1], lab; fontsize = FS_LABEL, font = :bold,
+              valign = :top, padding = (0, -20, -10, 0))
+    end
+    for (col, ttl) in zip((2, 3), column_titles)
+        Label(fig[0, col], ttl; fontsize = FS_TITLE, font = :bold, padding = (0, 0, 4, 0))
+    end
+    Label(
+        fig[6, 2:3], lab_time;
+        fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 4),
+    )
+
+    link_x && linkxaxes!(axs_l[1], axs_r[1])
+    link_y && for (al, ar) in zip(axs_l, axs_r)
+        linkyaxes!(al, ar)
+    end
+
+    # The two data columns claim 80 % between them, so nothing else can squeeze them —
+    # that squeezing is what ran the tick labels together. The letter column is pinned to
+    # `Auto(false)` because its labels use negative padding and would otherwise report a
+    # width they do not occupy; the legend column keeps a normal `Auto()` so it can ask for
+    # the room it needs out of the remaining 20 % instead of overflowing the figure.
+    colsize!(fig.layout, 1, Auto(false))
+    colsize!(fig.layout, 2, Relative(0.40))
+    colsize!(fig.layout, 3, Relative(0.40))
+    colsize!(fig.layout, 4, Auto())
+    colgap!(fig.layout, 12)
+
+    rowgap!(fig.layout, 15)
+    # Absolute heights for the five data rows, so the title row and the shared-label row keep
+    # whatever is left over. `Relative` cannot do that: it measures against the whole figure,
+    # so those two rows only ever get the remainder of a fraction chosen without knowing how
+    # tall a two-line 25 pt label is — a few pixels short and the label clips. `Auto` on the
+    # data rows is worse: an `Auto` row shrinks to its content's minimum rather than taking a
+    # share, which collapses an axis to a sliver.
+    rowsize!(fig.layout, 1, conc_row_height)
+    for r in 2:5
+        rowsize!(fig.layout, r, data_row_height)
     end
     return fig
 end
@@ -3135,8 +3493,11 @@ function plot_7species_contours(
         layout = (2, 4),
         colorrange = nothing,
         floor_exp = -12,
-        fig_size = (1250, 520),
+        # `nothing` so the height can follow `show_qoverk`; an explicit size still wins.
+        fig_size = nothing,
         show_potential = true,
+        show_qoverk = false,
+        qk_row_fraction = 0.26,
         colgap_px = 20,
         rowgap_px = 8,
         max_time_samples = 400,
@@ -3202,7 +3563,7 @@ function plot_7species_contours(
     has_potential = show_potential && npanel < nrow * ncol
     nfilled = npanel + (has_potential ? 1 : 0)
 
-    fig = Figure(size = fig_size)
+    fig = Figure(size = fig_size === nothing ? (1250, show_qoverk ? 720 : 520) : fig_size)
     axs = Axis[]
     local hm
 
@@ -3278,14 +3639,141 @@ function plot_7species_contours(
         )
     end
 
-    # One time label for the whole grid, in the row below it.
+    # An extra full-width row for the buffer quotients, sharing the contour grid's time
+    # axis. It goes in the flat layout rather than a nested `GridLayout` on purpose: nesting
+    # gives the row its own column sizing, and the whole point is that a feature in Q/K lines
+    # up vertically with the concentration field that produced it.
+    ax_qk = nothing
+    if show_qoverk
+        ax_qk, _ = QoverK(
+            fig, fig[nrow + 1, 1:ncol], result, m;
+            legend_pos = fig[nrow + 1, ncol + 1],
+        )
+        isempty(axs) || linkxaxes!(axs[1], ax_qk)
+        rowsize!(fig.layout, nrow + 1, Relative(qk_row_fraction))
+    end
+
+    # One time label for the whole figure, under whichever row ended up last.
     Label(
-        fig[nrow + 1, 1:ncol], lab_time;
+        fig[nrow + (show_qoverk ? 2 : 1), 1:ncol], lab_time;
         fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 4),
     )
 
     colgap!(fig.layout, colgap_px)
     rowgap!(fig.layout, rowgap_px)
+    return fig
+end
+
+"""
+    plot_7species_contours_qk(result, X, m; kwargs...)
+
+[`plot_7species_contours`](@ref) with the buffer quotients added as a full-width row beneath
+the grid.
+
+The contour panels say what every concentration did; [`QoverK`](@ref) says whether the
+carbonate equilibria kept up while it happened. Sharing one time axis is what makes the pair
+readable — a `Q/K` excursion sits directly under the field that caused it.
+
+Identical to calling `plot_7species_contours(...; show_qoverk = true)`; the name exists so a
+notebook cell reads as what it produces.
+"""
+plot_7species_contours_qk(result, X, m; kwargs...) =
+    plot_7species_contours(result, X, m; show_qoverk = true, kwargs...)
+
+"""
+    plot_species_contour_over_L(results, grid_dict, m; species = ico, kwargs...)
+
+One species' log₁₀ concentration field over distance and time, one panel per domain size —
+the convergence check for `cvsweep_odr_over_L`.
+
+`results` is the `Dict(L => result)` that sweep returns and `grid_dict` the `Dict(L => grid)`
+it was given; both are keyed by `L` in SI.
+
+**Every panel shows the same window of distance**, by default from the finest cell out to the
+*smallest* `L` in the set. That is what makes the figure a convergence test: the near-electrode
+region is the part that has to stop changing, and letting each panel span its own domain would
+put a different physical range under each one, so panels could look different merely for being
+plotted differently. The far field that a larger domain adds is deliberately off-scale.
+
+The colour range is shared for the same reason — a colour means one concentration across the
+whole figure. Pass `colorrange` to hold it fixed across separate figures too.
+
+Convergence looks like the panels becoming indistinguishable as `L` grows. A panel that still
+differs from the largest `L` is a domain too small: its outer boundary is feeding the
+electrode, and every current taken from it is wrong.
+"""
+function plot_species_contour_over_L(
+        results, grid_dict, m;
+        species = ico,
+        scale = mol / dm^3,
+        num_levels = 24,
+        floor_exp = -12,
+        colorrange = nothing,
+        ylimits = nothing,
+        max_time_samples = 400,
+        x_stride = 1,
+        fig_size = nothing,
+        colgap_px = 14,
+    )
+    Ls = sort(collect(keys(results)))
+    isempty(Ls) && error("`results` is empty")
+    name = getproperty.(m.bulk, :name)[species]
+    discrete_cmap = cgrad(:jet, num_levels, categorical = true)
+
+    # Build every field first: the shared colour range is not known until all of them exist.
+    panels = map(Ls) do L
+        r = results[L]
+        X = grid_dict[L].components[XCoordinates]
+        t_all = r.tsol.t
+        # Same decimation as `plot_7species_contours`, for the same reason: a log-scaled
+        # y axis costs `heatmap!` its fast path, so every stored step becomes polygons.
+        tstride = max(1, cld(length(t_all), max_time_samples))
+        tidx = 1:tstride:length(t_all)
+        xidx = 1:x_stride:length(X)
+        @views c = r.tsol[species, 1:length(X), 1:length(t_all)] ./ scale
+        M = log10.(max.(c, 10.0^floor_exp))
+        replace!(M, Inf => float(floor_exp), -Inf => float(floor_exp), NaN => float(floor_exp))
+        (L = L, t = t_all[tidx], x = X[xidx], M = M[xidx, tidx])
+    end
+
+    crange = if colorrange === nothing
+        lo = minimum(minimum(p.M) for p in panels)
+        hi = maximum(maximum(p.M) for p in panels)
+        lo == hi ? (lo - 0.5, hi + 0.5) : (lo, hi)
+    else
+        colorrange
+    end
+    ylim = ylimits === nothing ?
+        (maximum(p.x[2] for p in panels), minimum(p.L for p in panels)) : ylimits
+
+    n = length(panels)
+    fig = Figure(size = fig_size === nothing ? (300 * n + 120, 420) : fig_size)
+    axs = Axis[]
+    local hm
+    for (k, p) in enumerate(panels)
+        ax = Axis(
+            fig[1, k];
+            xlabel = lab_time,
+            ylabel = k == 1 ? lab_distance : "",
+            title = @sprintf("%g μm", p.L / μm),
+            yscale = log10,
+            limits = (nothing, ylim),
+        )
+        k == 1 || hideydecorations!(ax; grid = false, ticks = false)
+        hm = heatmap!(
+            ax, p.t, p.x .+ 1.0e-12, p.M';
+            colorrange = crange, colormap = discrete_cmap, interpolate = false,
+        )
+        push!(axs, ax)
+    end
+
+    Colorbar(
+        fig[1, n + 1], hm;
+        label = rich("log", subscript("10"), "(", rich("c", font = :bold_italic),
+                     subscript(name), " / M)"),
+        vertical = true, width = 18,
+    )
+    colgap!(fig.layout, colgap_px)
     return fig
 end
 
@@ -3340,38 +3828,121 @@ function panel_log_contour!(
 end
 
 # ── moved from cell 34857db0 (QoverK)  [+ electrolyte kwarg] ──
+"""
+    qoverk_series(result, m; use_activity = false)
+
+Reaction quotient over equilibrium constant at the electrode, against time, for the three
+buffer reactions: `(; times, hco3, co2, water)`.
+
+Each `K` is evaluated from the electrolyte's own **bulk** composition, so a value of 1 means
+"as far from equilibrium as the bulk is" — by construction the bulk sits at 1 and any
+excursion is something the electrode did. That also makes the three directly comparable
+despite their very different absolute constants.
+
+!!! warning "Concentrations are not what the kinetics sees"
+    `buffer_system` writes every rate with its activity coefficients — the water step, for
+    instance, is `(kwf·a_H₂O, kwr·γ_H⁺·γ_OH⁻)`. The equilibrium those rates enforce is
+    therefore a product of **activities**, and near the electrode the γ are far from 1: that
+    is the entire content of the DGML/Stefan model. A concentration quotient then reads as
+    "out of equilibrium" where the activity quotient is not.
+
+    `use_activity = true` multiplies each concentration by the γ the electrolyte's own
+    `actcoeff!` returns at that node and time, and divides by the same product evaluated in
+    the bulk, so the reference stays at 1.
+
+    The diagnostic: water relaxes in tens of microseconds and cannot lag a sweep of any rate
+    used here, so if its concentration quotient departs by the same amount at 0.005 and at
+    5 V s⁻¹ — as it does — the departure is not kinetic and has to be the γ.
+
+Shared by [`QoverK`](@ref) and [`plot_qoverk_vs_scanrate`](@ref) so the two cannot disagree
+about what the quotient is.
+"""
+function qoverk_series(result, m; use_activity = false)
+    e = m.elydata
+    nt = length(result.tsol.t)
+
+    # Written out rather than through an inner helper. A named closure inside a function is
+    # a fresh type every time Revise reloads the file, so a session that still holds an old
+    # instance fails with `no method matching (::var"#at#NNN")(::Int64)` — the function is
+    # there, its type is not the one being called. Two closures here caused two separate
+    # failures; five explicit comprehensions cannot.
+    tsol = result.tsol
+    cco3 = [tsol[ico3, 1, t] for t in 1:nt]
+    coh = [tsol[iohminus, 1, t] for t in 1:nt]
+    chco3 = [tsol[ihco3, 1, t] for t in 1:nt]
+    cco2 = [tsol[ico2, 1, t] for t in 1:nt]
+    ch = [tsol[ihplus, 1, t] for t in 1:nt]
+
+    if use_activity
+        Γ = reduce(hcat, (_gamma_at_electrode(result, m, t) for t in 1:nt))
+        cco3 .*= Γ[ico3, :]
+        coh .*= Γ[iohminus, :]
+        chco3 .*= Γ[ihco3, :]
+        cco2 .*= Γ[ico2, :]
+        ch .*= Γ[ihplus, :]
+    end
+
+    # The bulk reference, on the same basis as the series above: with γ = 1 the activity form
+    # collapses to the concentration one, so one expression covers both.
+    γb = use_activity ? _gamma_bulk(m) : ones(e.nc)
+    cb = e.c_bulk .* γb
+
+    K_hco3 = (cb[ihco3] * cb[iohminus]) / cb[ico3]
+    K_co2 = (cb[ico2] * cb[iohminus]) / cb[ihco3]
+    K_water = cb[ihplus] * cb[iohminus]
+
+    return (
+        times = result.tsol.t,
+        hco3 = (chco3 .* coh) ./ cco3 ./ K_hco3,
+        co2 = (cco2 .* coh) ./ chco3 ./ K_co2,
+        water = (ch .* coh) ./ K_water,
+    )
+end
+
+"Activity coefficients at the electrode node, at stored time index `k`."
+function _gamma_at_electrode(result, m, k)
+    e = m.elydata
+    u = result.tsol[k]
+    nc = e.nc
+    ip = LiquidElectrolytes.pressure_index(e)
+    γ = zeros(nc)
+    e.actcoeff!(γ, view(u, 1:nc, 1), u[ip, 1], e)
+    return γ
+end
+
+"Activity coefficients of the bulk composition, the reference the quotients divide by."
+function _gamma_bulk(m)
+    e = m.elydata
+    γ = zeros(e.nc)
+    e.actcoeff!(γ, e.c_bulk, e.p_bulk, e)
+    return γ
+end
+
+"Colours of the three buffer reactions, shared by every Q/K figure."
+const QK_COLORS = ("#2980B9", "#E67E22", "#27AE60")
+
+"Labels of the three buffer reactions, in the order [`qoverk_series`](@ref) returns them."
+const QK_LABELS = (
+    rich("HCO", subscript("3"), superscript("-"), " ⇌ CO", subscript("3"), superscript("2-")),
+    rich("CO", subscript("2"), " ⇌ HCO", subscript("3"), superscript("-")),
+    rich("H", subscript("2"), "O ⇌ H", superscript("+"), " + OH", superscript("−")),
+)
+
 function QoverK(
         fig, panel_pos, result, m; scale = mol / dm^3, lw = LW_LINE,
-        xlabel = lab_time, legend_pos = nothing
+        xlabel = lab_time, legend_pos = nothing, use_activity = false,
+        ylabel = use_activity ? lab_qoverk_act : lab_qoverk_conc
     )
     bulk = m.bulk
-    electrolyte = m.elydata
-
-    times = result.tsol.t
-    nt = length(times)
-
-    # Equilibrium Constant
-    EqK_hco3 = (electrolyte.c_bulk[ihco3] * electrolyte.c_bulk[iohminus]) /
-        electrolyte.c_bulk[ico3]
-    EqK_co3 = (electrolyte.c_bulk[ico2] * electrolyte.c_bulk[iohminus]) /
-        electrolyte.c_bulk[ihco3]
-
-    # reaction quotient Q(t)
-    cco3 = [result.tsol[ico3, 1, t] for t in 1:nt]
-    cohm = [result.tsol[iohminus, 1, t] for t in 1:nt]
-    chco3 = [result.tsol[ihco3, 1, t] for t in 1:nt]
-    cco2 = [result.tsol[ico2, 1, t] for t in 1:nt]
-
-    Qt_hco3 = (chco3 .* cohm) ./ cco3
-    Qt_co3 = (cco2 .* cohm) ./ chco3
+    q = qoverk_series(result, m; use_activity)
+    times = q.times
 
     ax = Axis(
         panel_pos;
         xlabel = xlabel,
-        ylabel = rich(
-            "Reaction Quotient\n",
-            rich("Q", font = :bold_italic), " / ", rich("K", font = :bold_italic)
-        ),
+        # The label follows the basis, so a concentration figure and an activity figure of
+        # the same run cannot be mistaken for each other.
+        ylabel = ylabel,
         yscale = log10,
         yticks = (
             10.0 .^ (-6:3:6),
@@ -3382,28 +3953,143 @@ function QoverK(
     )
     hlines!(ax, [1.0e0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
 
-    l1 = lines!(
-        ax, times, max.(Qt_hco3 ./ EqK_hco3, eps(Float64));
-        color = "#2980B9", linewidth = lw
-    )
-    l2 = lines!(
-        ax, times, max.(Qt_co3 ./ EqK_co3, eps(Float64));
-        color = "#E67E22", linewidth = lw
-    )
-
+    l1 = lines!(ax, times, max.(q.hco3, eps(Float64)); color = QK_COLORS[1], linewidth = lw)
+    l2 = lines!(ax, times, max.(q.co2, eps(Float64)); color = QK_COLORS[2], linewidth = lw)
+    l3 = lines!(ax, times, max.(q.water, eps(Float64)); color = QK_COLORS[3], linewidth = lw)
     ylims!(ax, low = 1.0e-7, high = 1.0e7)
 
-    leg = Legend(
-        legend_pos,
-        [l1, l2],
-        [
-            rich("HCO", subscript("3"), superscript("-"), " ⇌ CO", subscript("3"), superscript("2-")),
-            rich("CO", subscript("2"), " ⇌ HCO", subscript("3"), superscript("-")),
-        ],
-        framevisible = false
-    )
+    # Skipped when the caller shares one key across several panels — see `panel_conc_time!`.
+    leg = if legend_pos === nothing
+        nothing
+    else
+        Legend(legend_pos, [l1, l2, l3], collect(QK_LABELS), framevisible = false)
+    end
 
     return ax, leg
+end
+
+"""
+    plot_qoverk_over_scanrate(scanrates, results, m; kwargs...)
+
+`Q/K` against time, one panel per scan rate, all three buffer reactions in each.
+
+Each panel is a [`QoverK`](@ref) axis, so the quotients are the same ones the five-panel
+summary plots. Only the leftmost keeps its y decorations — the rows are linked, so repeating
+the ticks would say nothing — and the legend is drawn once at the right.
+
+Time is **not** normalised and the panels are **not** linked in x: the cycles differ in
+duration by whatever the scan rates differ by, and stretching them onto a common axis would
+hide the very thing the figure is about — that the buffer has less time at higher rates.
+Each panel spans its own cycle, so a departure that keeps the same *shape* while the axis
+shrinks is a departure that is following the sweep, and one that grows is a departure that
+is losing to it.
+"""
+function plot_qoverk_over_scanrate(
+        scanrates, results, m;
+        lw = LW_LINE,
+        fig_size = nothing,
+        xtick_count = 3,
+        use_activity = false,
+        title_fmt = v -> @sprintf("%g V s⁻¹", v),
+    )
+    n = length(results)
+    n == length(scanrates) || error(
+        "got $(n) results for $(length(scanrates)) scan rates"
+    )
+
+    fig = Figure(size = fig_size === nothing ? (300 * n + 260, 420) : fig_size)
+    axs = Axis[]
+    for k in 1:n
+        ax, _ = QoverK(
+            fig, fig[1, k], results[k], m;
+            lw = lw, use_activity = use_activity,
+            legend_pos = k == n ? fig[1, n + 1] : nothing,
+        )
+        ax.title = title_fmt(scanrates[k])
+        ax.xticks = LinearTicks(xtick_count)
+        k == 1 || hideydecorations!(ax; grid = false, ticks = false)
+        push!(axs, ax)
+    end
+    n > 1 && linkyaxes!(axs...)
+    colgap!(fig.layout, 12)
+    return (fig = fig, axs = axs)
+end
+
+"""
+    qoverk_vs_scanrate_table(scanrates, results, m)
+
+How far each buffer reaction is driven from equilibrium, against scan rate.
+
+Returns `DataFrame(scanrate, hco3, co2, water)` where each column is
+`max |log₁₀(Q/K)|` over the cycle — the largest excursion, in decades, that the reaction
+reached at the electrode.
+
+The absolute value matters: a reaction driven a decade *below* equilibrium is as far off as
+one driven a decade above, and the two happen at different points of the same sweep. Taking
+the maximum of the magnitude answers "did this reaction keep up", which is the question a
+scan-rate series is asking.
+"""
+function qoverk_vs_scanrate_table(scanrates, results, m)
+    length(scanrates) == length(results) || error(
+        "got $(length(results)) results for $(length(scanrates)) scan rates"
+    )
+    dev(s) = maximum(abs.(log10.(max.(s, eps(Float64)))))
+    qs = [qoverk_series(r, m) for r in results]
+    return DataFrame(
+        scanrate = collect(scanrates),
+        hco3 = [dev(q.hco3) for q in qs],
+        co2 = [dev(q.co2) for q in qs],
+        water = [dev(q.water) for q in qs],
+    )
+end
+
+"""
+    plot_qoverk_vs_scanrate(scanrates, results, m; kwargs...)
+
+Maximum buffer disequilibrium against scan rate, one line per reaction.
+
+The direct test of whether the carbonate buffer keeps up with the electrode. A reaction that
+stays at equilibrium sits on the dashed zero line whatever the sweep does; one that is
+outrun climbs, and the scan rate at which it lifts off is the timescale at which the buffer
+stops being fast compared with the sweep.
+
+`x` is logarithmic because a scan-rate series spans decades; `y` is in decades of `Q/K`, so
+a value of 1 means the quotient reached ten times its equilibrium value at some point in the
+cycle.
+
+Read it against the voltammograms: the rate where a curve here lifts off should be the rate
+where the CV changes character. If it is not, whatever the CV is doing is not the buffer.
+"""
+function plot_qoverk_vs_scanrate(
+        scanrates, results, m;
+        lw = LW_LINE,
+        markersize = 14,
+        fig_size = (620, 460),
+        showlegend = true,
+    )
+    tbl = qoverk_vs_scanrate_table(scanrates, results, m)
+
+    fig = Figure(size = fig_size)
+    ax = Axis(
+        fig[1, 1];
+        xlabel = lab_scanrate, ylabel = lab_qk_deviation,
+        xscale = log10, limits = (nothing, (0, nothing)),
+    )
+    hlines!(ax, [0.0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+
+    plots = [
+        scatterlines!(
+            ax, tbl.scanrate, tbl[!, col];
+            color = QK_COLORS[i], linewidth = lw, markersize = markersize,
+        )
+        for (i, col) in enumerate((:hco3, :co2, :water))
+    ]
+    showlegend && axislegend(
+        ax, plots, collect(QK_LABELS);
+        position = :lt, framevisible = false, labelsize = FS_LEGEND,
+    )
+
+    return (fig = fig, table = tbl, ax = ax)
 end
 
 # ── moved from cell f506e83f (plot_cv_total_current)  [ely = elydata_Gold_odr → ely = model] ──
