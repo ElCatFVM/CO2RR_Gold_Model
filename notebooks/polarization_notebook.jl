@@ -35,6 +35,9 @@ begin
     end
 end;
 
+# ╔═╡ 3f39502e-c147-47cb-84a4-005e64acba2b
+Pkg.status()
+
 # ╔═╡ 0a5f93b7-4f7c-4049-8a27-dceddc40da97
 begin
 	const Γ_we 		= 1
@@ -194,6 +197,7 @@ end
 
 # ╔═╡ Cell order:
 # ╠═68e52c7a-6922-11f1-8634-f109a9649529
+# ╠═3f39502e-c147-47cb-84a4-005e64acba2b
 # ╠═0a5f93b7-4f7c-4049-8a27-dceddc40da97
 # ╠═7f013b2a-9ab4-4ab4-8129-28c365a7a13d
 # ╠═0cc0e806-7a04-4254-9ecb-831df5ae7328

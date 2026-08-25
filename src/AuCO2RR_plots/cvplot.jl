@@ -2834,16 +2834,43 @@ function panel_co2_log_contour!(
 end
 
 # ── moved from cell 13a0e5da (panel_time_ph!) ──
+"""
+    panel_time_ph!(fig, panel_pos, result; m = nothing, kwargs...)
+
+Surface pH against time.
+
+pH is defined on the **activity** of H⁺, not its concentration — `pH = -log₁₀ a_H⁺` — and in
+the space-charge region the two part company by whatever γ does there, which is the whole
+content of the DGML/Stefan model. Pass `m` and the panel uses the electrolyte's own
+`actcoeff!`; omit it and the panel falls back to concentration and marks the axis `pH_c` so a
+figure cannot claim to show pH when it shows something else.
+
+This is the same distinction that separates [`qoverk_series`](@ref)'s two bases, and it bites
+here for the same reason: the quantity that the kinetics and the definition both refer to is
+the activity.
+"""
 function panel_time_ph!(
-        fig, panel_pos, result; ihplus = 2, scale = mol / dm^3, lw = LW_LINE,
+        fig, panel_pos, result; m = nothing, ihplus = 2, scale = mol / dm^3, lw = LW_LINE,
+        use_activity = m !== nothing,
         xlabel = lab_time, color = parse(Colorant, "#7BB661")
     )
     times = result.tsol.t
     nt = length(times)
-    cH = [result.tsol[ihplus, 1, t] / scale for t in 1:nt]   # surface (node 1) H⁺ concentration (M)
-    pH = -log10.(max.(cH, eps(Float64)))
-    # pH is upright by convention — it is not a variable symbol, so it takes no italic
-    ax = Axis(panel_pos; xlabel = xlabel, ylabel = rich("Surface pH"))
+    use_activity && m === nothing && error("`use_activity = true` needs `m` for the γ")
+
+    # surface (node 1) H⁺, in molar
+    aH = [result.tsol[ihplus, 1, t] / scale for t in 1:nt]
+    if use_activity
+        aH .*= [_gamma_at_electrode(result, m, t)[ihplus] for t in 1:nt]
+    end
+    pH = -log10.(max.(aH, eps(Float64)))
+
+    # `pH` is upright by convention — it is not a variable symbol, so it takes no italic.
+    # The `c` subscript is descriptive and upright for the same reason.
+    ax = Axis(
+        panel_pos; xlabel = xlabel,
+        ylabel = use_activity ? rich("Surface pH") : rich("Surface pH", subscript("c")),
+    )
     lines!(ax, times, pH; color = color, linewidth = lw)
     return ax
 end
@@ -2987,7 +3014,7 @@ function plot_ircomp_compare(
         x_t = ulo + 0.68 * (uhi - ulo)
         text!(
             axes[:driving], x_t, x_t - ϕ_pzc;
-            text = rich(rich("C", font = :bold_italic), subscript("gap"), " → ∞"),
+            text = rich(rich("U", font = :bold_italic), subscript("PET"), " = 0"),
             align = (:left, :bottom), offset = (6, 6), rotation = pi/4,
             fontsize = labelsize, color = (:black, 0.6),
         )
@@ -3089,7 +3116,7 @@ function plot_cv_summary(
     ax2 = panel_time_current!(fig, fig[2, 2], result, m;
                               species, n_e, sgn, include_capacitive, xlabel = "")
     ax3 = panel_time_voltage!(fig, fig[3, 2], result; m, xlabel = "")
-    ax4 = panel_time_ph!(fig, fig[4, 2], result; xlabel = "")
+    ax4 = panel_time_ph!(fig, fig[4, 2], result; m, xlabel = "")
     ax5, _ = QoverK(fig, fig[5, 2], result, m; legend_pos = fig[5, 3])
 
     for (i, lab) in enumerate(panel_labels)
@@ -3284,6 +3311,10 @@ function plot_randles_sevcik(
         fit_color = :gray40,
         markersize = 14,
         fig_size = (560, 480),
+        # Both start at zero: the theory's line passes through the origin, and cropping the
+        # axis to the data hides whether it would.
+        limits = ((0, nothing), (0, nothing)),
+        yticks = Makie.automatic,
         kwargs...,
     )
     tbl = randles_sevcik_table(scanrates, results; window, kwargs...)
@@ -3293,7 +3324,7 @@ function plot_randles_sevcik(
     ax = Axis(
         fig[1, 1];
         xlabel = lab_sqrt_scanrate, ylabel = lab_peak_current,
-        limits = ((0, nothing), (0, nothing)),
+        limits = limits, yticks = yticks,
     )
 
     if show_fit
@@ -3315,6 +3346,484 @@ function plot_randles_sevcik(
     )
 
     return (fig = fig, table = tbl, fit = fit, ax = ax)
+end
+
+"""
+    anodic_peaks(result; npeaks = 2, window = nothing, forward_only = true, kwargs...)
+
+The `npeaks` largest local maxima of the anodic branch, returned in order of **potential**.
+
+Returns a vector of `(; I, U, index)`. Ordering by potential rather than by size is what
+makes "first" and "second" mean the same thing at every scan rate: the peaks change places
+in height as the sweep speeds up, but not in order along the axis.
+
+`forward_only` restricts the search to the part of the cycle where the potential is rising.
+The return branch crosses the same potentials and carries its own maxima, and including them
+turns one peak into two.
+
+**By default the peaks are tracked, not windowed.** `peak_windows = nothing` takes the
+`npeaks` largest local maxima and numbers them by potential. That is what this data needs:
+the anodic peaks move by some 0.3 V across a scan-rate series — at 5 V s⁻¹ they sit near 0.30
+and 0.55 V vs SHE, at 0.5 V s⁻¹ near 0.62 and 0.87 — so any fixed window captures one feature
+at one rate and the wrong one at another. Numbering by potential rather than by height keeps
+"first" and "second" stable even where the two swap in size.
+
+`min_rel_height` drops candidates below that fraction of the tallest maximum. At the slow
+rates only one peak exists, and without the filter the second-largest ripple would be
+promoted to "the second peak" and dragged onto the fit.
+
+Pass `peak_windows = ((lo, hi), …)` to assign by potential instead — the convention of
+Marcandalli et al., *Langmuir* **2021**, 37, 5707, whose peaks sit at +0.4 and +0.7 V vs RHE.
+Those are RHE; use [`rhe_to_she`](@ref) before writing them here. In that mode `interior`
+reports whether the window's maximum was a turning point or just its largest edge sample.
+
+!!! note "`order = :from_positive` is what keeps a series one feature"
+    Peaks are numbered from the **most positive** downward, so series 1 is the
+    high-potential peak, series 2 the next one in. On this model that is the difference
+    between a meaningful series and a mixture: the high-potential peak is present at every
+    scan rate and moves smoothly positive with it, while the low-potential peak only appears
+    above some threshold rate. Numbering upward gives the lone slow-rate peak index 1 and
+    then hands index 1 to the low-potential peak the moment it appears, so series 1 holds one
+    physical feature below the threshold and a different one above it. Use
+    `order = :from_negative` only if the always-present peak is the least positive one.
+
+A local maximum is a sample larger than both its neighbours, so a shoulder that never turns
+over is not found. If a peak the eye sees is missing, it is a shoulder — say so rather than
+lowering the bar until something is reported.
+"""
+function anodic_peaks(
+        result;
+        peak_windows = nothing,
+        npeaks = 2,
+        min_rel_height = 0.05,
+        order = :from_positive,
+        window = nothing,
+        forward_only = true,
+        species = ico,
+        n_e = 2,
+        sgn = 1,
+        include_capacitive = false,
+        abscissa = :applied,
+        scale = cm^2 / mA,
+    )
+    I = cv_current(result; species, n_e, sgn, include_capacitive) .* scale
+    U, _ = cv_abscissa(result; kind = abscissa)
+
+    keep = trues(length(I))
+    if window !== nothing
+        keep .&= window[1] .<= U .<= window[2]
+    end
+    if forward_only
+        rising = falses(length(U))
+        rising[2:end] .= diff(U) .> 0
+        keep .&= rising
+    end
+
+    out = NamedTuple[]
+
+    if peak_windows !== nothing
+        for w in peak_windows
+            idx = findall(k -> keep[k] && w[1] <= U[k] <= w[2], eachindex(U))
+            isempty(idx) && continue
+            k = idx[argmax(I[idx])]
+            I[k] > 0 || continue                    # anodic only
+            interior = k > firstindex(I) && k < lastindex(I) &&
+                k != first(idx) && k != last(idx) &&
+                I[k] > I[k - 1] && I[k] >= I[k + 1]
+            push!(out, (I = I[k], U = U[k], index = k, interior = interior))
+        end
+        return out
+    end
+
+    cand = Int[]
+    for k in 2:(length(I) - 1)
+        keep[k] || continue
+        I[k] > 0 || continue                       # anodic only
+        if I[k] > I[k - 1] && I[k] >= I[k + 1]
+            push!(cand, k)
+        end
+    end
+    isempty(cand) && return out
+
+    # Discard ripples. Below `min_rel_height` of the tallest maximum a candidate is not a
+    # feature, and at the slow scan rates — where only one peak exists — taking the two
+    # largest maxima regardless would promote a wiggle to "the second peak" and put it on the
+    # fit. The alternative, a fixed potential window, cannot work here at all: these peaks
+    # move by 0.3 V across the scan-rate series, so a window that captures one at 5 V s⁻¹
+    # captures the wrong thing at 0.5.
+    Imax = maximum(I[cand])
+    filter!(k -> I[k] >= min_rel_height * Imax, cand)
+
+    take = sort(cand; by = k -> I[k], rev = true)[1:min(npeaks, length(cand))]
+    # Number from the most positive peak, not the least. The feature that exists at *every*
+    # scan rate is the high-potential one; the low-potential peak only appears above some
+    # threshold rate. Numbering upward gives the lone slow-rate peak index 1 and then hands
+    # index 1 to the newly appeared low-potential peak once there are two, so one series ends
+    # up holding two different physical features — which is exactly what made the
+    # Randles-Sevcik plot non-monotonic at the rate where the second peak appears.
+    sort!(take; by = k -> U[k], rev = (order === :from_positive))
+    return [(I = I[k], U = U[k], index = k, interior = true) for k in take]
+end
+
+raw"""
+    rhe_to_she(E; pH = 6.8)
+    she_to_rhe(E; pH = 6.8)
+
+Convert a potential between the reversible and standard hydrogen scales,
+`E_SHE = E_RHE - 0.059 pH`.
+
+Everything here is on the SHE scale; the CO-reoxidation literature quotes RHE. At the pH 6.8
+of CO₂-saturated 0.1 M KHCO₃ the offset is 0.401 V, which is larger than the separation
+between the two anodic peaks — a window copied off an RHE figure lands on the wrong feature
+with nothing looking wrong. Marcandalli et al.'s peaks at +0.4 and +0.7 V vs RHE are ≈0.00
+and ≈0.30 V vs SHE.
+
+`pH` is the bulk value the reference was defined at, not the surface pH the simulation
+develops: the scale belongs to the reference electrode, not to the interface.
+"""
+rhe_to_she(E; pH = 6.8) = E - 0.059 * pH
+
+@doc (@doc rhe_to_she)
+she_to_rhe(E; pH = 6.8) = E + 0.059 * pH
+
+"""
+    randles_sevcik_anodic_table(scanrates, results; npeaks = 2, kwargs...)
+
+Anodic peak currents against scan rate, one row per peak per run.
+
+`DataFrame(scanrate, sqrt_scanrate, peak, I_p, U_p)`, where `peak` is 1 for the less positive
+of the two and 2 for the more positive — see [`anodic_peaks`](@ref) for why they are numbered
+by potential.
+
+A run in which fewer than `npeaks` maxima are found contributes fewer rows rather than
+erroring: the second peak genuinely does not exist at every scan rate, and a table that
+silently pads it with zeros or with the first peak's value would be worse than a short one.
+"""
+function randles_sevcik_anodic_table(scanrates, results; kwargs...)
+    length(scanrates) == length(results) || error(
+        "got $(length(results)) results for $(length(scanrates)) scan rates"
+    )
+    ν = Float64[]
+    idx = Int[]
+    Ip = Float64[]
+    Up = Float64[]
+    interior = Bool[]
+    for (v, r) in zip(scanrates, results)
+        for (j, p) in enumerate(anodic_peaks(r; kwargs...))
+            push!(ν, v); push!(idx, j); push!(Ip, p.I); push!(Up, p.U)
+            push!(interior, p.interior)
+        end
+    end
+    return DataFrame(
+        scanrate = ν, sqrt_scanrate = sqrt.(ν), peak = idx,
+        I_p = Ip, U_p = Up, interior = interior,
+    )
+end
+
+"""
+    qoverk_crossing(result, m; reaction = :co2, branch = :anodic, abscissa = :applied)
+
+Where one buffer reaction's quotient passes back through its bulk value —
+`log₁₀(Q/K) = 0` — or `nothing` if it never does on the requested branch.
+
+This is the potential at which the buffer stops being driven one way and starts being driven
+the other. Overlaid on the peak positions it answers whether the oxidation peaks are pinned
+to that turning point or move independently of it: a peak that tracks the crossing is being
+set by the buffer's state, one that does not is being set by the electrode's kinetics.
+
+`branch` restricts the search to the rising (`:anodic`) or falling (`:cathodic`) sweep — the
+quotient crosses zero once in each direction per cycle, and only the anodic crossing is
+comparable with an anodic peak. `reaction` is `:hco3`, `:co2` or `:water`, named as in
+[`qoverk_series`](@ref).
+
+Returns `(; time, potential, index)`. The **time** is what lets the same crossing be marked on
+a quotient-against-time panel, so that a point on the summary plot and a line on the raw trace
+are visibly the same event rather than two things the caption asserts are related.
+
+Both are linearly interpolated between the two straddling samples rather than reported as the
+nearer of them, so the resolution does not depend on how finely the sweep was stored.
+
+!!! warning "`min_excursion` is what makes this well defined"
+    A bare "first sign change" is not a measurement. Near equilibrium `log₁₀(Q/K)` sits on
+    zero, and arbitrarily small wiggles there cross it repeatedly — so which crossing is
+    found depends on sample spacing and on round-off, not on the chemistry. At slow scan
+    rates, where the buffer never departs far, that is the whole record.
+
+    `min_excursion` requires the quotient to have reached at least that many decades away
+    from equilibrium *before* a crossing counts, so the value returned always answers "where
+    did it come back, having been driven away" rather than "where did it first jitter across
+    zero". Raise it if the returned potentials look erratic across a scan-rate series; the
+    crossing that matters is the one after the excursion the figure actually shows.
+"""
+function qoverk_crossing(
+        result, m;
+        reaction = :co2, branch = :anodic, abscissa = :applied, use_activity = true,
+        min_excursion = 0.5,
+    )
+    q = qoverk_series(result, m; use_activity)
+    Q = getproperty(q, reaction)
+    U, _ = cv_abscissa(result; kind = abscissa)
+    t = q.times
+    # The stored solution can carry one sample more than the sweep has potentials.
+    n = min(length(U), length(Q))
+    L = log10.(max.(view(Q, 1:n), 1.0e-300))
+
+    keep = trues(n)
+    if branch !== :both
+        d = falses(n)
+        d[2:n] .= branch === :anodic ? (diff(view(U, 1:n)) .> 0) : (diff(view(U, 1:n)) .< 0)
+        keep .= d
+    end
+
+    # Running peak departure over the whole record, not just the requested branch: the
+    # excursion is driven on the cathodic sweep and the return is what we are looking for.
+    runmax = 0.0
+    for k in 2:n
+        runmax = max(runmax, abs(L[k]))
+        (keep[k] && keep[k - 1]) || continue
+        runmax >= min_excursion || continue
+        L[k - 1] * L[k] < 0 || continue
+        f = L[k - 1] / (L[k - 1] - L[k])
+        return (
+            time = t[k - 1] + f * (t[k] - t[k - 1]),
+            potential = U[k - 1] + f * (U[k] - U[k - 1]),
+            index = k,
+        )
+    end
+    return nothing
+end
+
+"""
+    qoverk_crossing_potential(result, m; kwargs...)
+
+The `potential` field of [`qoverk_crossing`](@ref), or `nothing` when there is no crossing.
+"""
+function qoverk_crossing_potential(result, m; kwargs...)
+    c = qoverk_crossing(result, m; kwargs...)
+    return c === nothing ? nothing : c.potential
+end
+
+"""
+    plot_randles_sevcik_anodic(scanrates, results; kwargs...)
+
+Randles–Ševčík plot of **both** anodic peaks, one series each.
+
+The comparison figure for Koper's Fig. 6B, where the two oxidation peaks are both linear in
+`√ν` — the evidence they used to argue that the anodic charge comes from CO arriving by
+diffusion rather than from a stripped adsorbed layer. A peak whose current is instead linear
+in `ν` is emptying a surface reservoir, so which of the two functional forms each peak
+follows is the mechanistic question this figure answers.
+
+Each series is fitted separately over `fit_range`; the returned `fits` holds both, and their
+slopes go through [`randles_sevcik_D`](@ref) the same way the cathodic one does.
+
+This figure says how *large* each peak is. [`plot_anodic_peak_potentials`](@ref) is its
+companion and says where each peak *sits*; the two together are what separate a peak set by
+the buffer's state from one set by the electrode's kinetics.
+"""
+function plot_randles_sevcik_anodic(
+        scanrates, results;
+        peak_windows = nothing,
+        fit_range = nothing,
+        through_origin = false,
+        fit_interior_only = true,
+        show_fit = true,
+        annotate = true,
+        colors = (colorant"#2F5D62", colorant"#93A099"),
+        fit_color = :gray40,
+        markersize = 14,
+        fig_size = (600, 500),
+        # Both start at zero: the theory's line passes through the origin, and cropping the
+        # axis to the data hides whether it would.
+        limits = ((0, nothing), (0, nothing)),
+        yticks = Makie.automatic,
+        # Named by where they sit, not by "1st"/"2nd": with `order = :from_positive` series 1
+        # is the high-potential peak, which is the one present at every scan rate. Calling it
+        # "1st" would invert the literature's naming, where 1st is the less positive.
+        peak_labels = ("high U", "low U"),
+        kwargs...,
+    )
+    tbl = randles_sevcik_anodic_table(scanrates, results; peak_windows, kwargs...)
+    nrow(tbl) == 0 && error("no anodic maxima found in any run")
+    npeaks = peak_windows === nothing ? maximum(tbl.peak) : length(peak_windows)
+
+    fig = Figure(size = fig_size)
+    ax = Axis(
+        fig[1, 1];
+        xlabel = lab_sqrt_scanrate, ylabel = lab_peak_current,
+        limits = limits, yticks = yticks,
+    )
+
+    xmax = maximum(tbl.sqrt_scanrate) * 1.05
+    fits = Dict{Int, Any}()
+    plots = Any[]
+    labels = String[]
+    for j in 1:npeaks
+        sub = tbl[tbl.peak .== j, :]
+        nrow(sub) == 0 && continue
+        col = colors[min(j, length(colors))]
+
+        # Fit only genuine turning points. A run with a single anodic feature still yields a
+        # "maximum" in the other window — the flank of that one feature — and those points
+        # are not peaks. Including them is what makes a slope that has no line to describe.
+        fitsub = fit_interior_only ? sub[sub.interior, :] : sub
+        if show_fit && nrow(fitsub) >= 2
+            f = randles_sevcik_fit(fitsub; fit_range, through_origin)
+            fits[j] = f
+            lines!(ax, [0.0, xmax], f.intercept .+ f.slope .* [0.0, xmax];
+                   color = col, linewidth = LW_DASH, linestyle = :dash)
+        end
+        p = scatter!(ax, sub.sqrt_scanrate, sub.I_p; color = col, markersize = markersize)
+        push!(plots, p)
+        push!(labels, @sprintf("%-7s s = %5.2f  (n = %2d)", peak_labels[min(j, length(peak_labels))] * ":", fits[j].slope, fits[j].n))
+    end
+
+   
+
+    isempty(plots) || axislegend(ax, plots, labels; position = :lt, framevisible = false,
+                                 labelsize = FS_LEGEND,)
+    return (fig = fig, table = tbl, fits = fits, ax = ax)
+end
+
+"""
+    plot_anodic_peak_potentials(scanrates, results; models = nothing, kwargs...)
+
+Where each anodic peak sits against scan rate, with the buffer's turning point overlaid.
+
+The companion to [`plot_randles_sevcik_anodic`](@ref), which gives the same peaks' *heights*.
+Height alone cannot say what a peak is: `√ν` scaling is consistent with diffusion but silent
+about what diffuses. Position is what discriminates — a peak that walks steadily with `ν` is
+under kinetic control, and one that stays with the carbonate turning point is being set by the
+buffer's state rather than by the electrode's.
+
+Given `models`, [`qoverk_crossing_potential`](@ref) is drawn as a third series: the potential
+at which `log₁₀(Q/K)` of `qk_reaction` passes back through zero on the anodic sweep, i.e.
+where the buffer stops being pushed one way and starts being pushed the other. `models` is
+one model shared by every run or one per run; without it the peaks are drawn alone.
+
+`x` is logarithmic by default because a scan-rate series spans decades and a linear axis
+crushes everything below the fastest run into the origin.
+
+The series are named on the curves themselves, each in its own colour. Move a label with
+`label_at` (the scan rate it anchors to) and `label_offsets` (added to the curve's value
+there, so the text tracks the curve); `label_mode = :legend` restores the box.
+
+[`panel_anodic_peak_potentials!`](@ref) is the same drawing into a supplied grid position.
+"""
+plot_anodic_peak_potentials(scanrates, results; fig_size = (620, 500), kwargs...) =
+    let fig = Figure(size = fig_size),
+        p = panel_anodic_peak_potentials!(fig, fig[1, 1], scanrates, results; kwargs...)
+        (fig = fig, table = p.table, ax = p.ax, crossings = p.crossings)
+    end
+
+"""
+    panel_anodic_peak_potentials!(fig, panel_pos, scanrates, results; kwargs...)
+
+[`plot_anodic_peak_potentials`](@ref) drawn into a supplied grid position.
+
+Takes every keyword the figure form does apart from `fig_size`. Returns
+`(; ax, table, crossings)`.
+"""
+function panel_anodic_peak_potentials!(
+        fig, panel_pos, scanrates, results;
+        models = nothing,
+        peak_windows = nothing,
+        colors = (colorant"#E2C799", colorant"#4A5568"),
+        qk_reaction = :co2,
+        qk_branch = :anodic,
+        qk_min_excursion = 0.5,
+        qk_color = colorant"#E67E22",
+        qk_label = "Q/K crossing",
+        peak_labels = ("high U", "low U"),
+        markersize = 14,
+        xscale = log10,
+        ylabel = lab_voltage,
+        # Named on the curves rather than in a box, as the pressure sweeps are. Three series
+        # over three decades leave a legend nowhere to sit that is not on top of one of them.
+        label_mode = :inline,
+        # Scan rate to anchor each label to, in the order high U, low U, Q/K crossing. Chosen
+        # where each curve has empty space beside it: the peaks are labelled out at the fast
+        # end where they separate, the crossing down on its slow-scan plateau.
+        label_at = (0.01, 5.0, 0.01),
+        label_offsets = (0.17, -0.15, -0.22),
+        label_aligns = ((:center, :bottom), (:right, :top), (:center, :top)),
+        labelsize = 22,
+        labelfont = :bold,
+        legend_position = :lt,
+        kwargs...,
+    )
+    tbl = randles_sevcik_anodic_table(scanrates, results; peak_windows, kwargs...)
+    nrow(tbl) == 0 && error("no anodic maxima found in any run")
+    npeaks = peak_windows === nothing ? maximum(tbl.peak) : length(peak_windows)
+
+    ax = Axis(panel_pos; xlabel = lab_scanrate, ylabel = ylabel, xscale = xscale)
+
+    plots = Any[]
+    names = String[]
+    # Kept alongside the plot objects so an inline label can be anchored to the curve's own
+    # value at a given scan rate, rather than to a coordinate guessed off the finished figure.
+    series = Any[]
+    for j in 1:npeaks
+        sub = tbl[tbl.peak .== j, :]
+        nrow(sub) == 0 && continue
+        col = colors[min(j, length(colors))]
+        p = scatterlines!(ax, sub.scanrate, sub.U_p;
+                          color = col, markersize = markersize, linewidth = LW_DASH)
+        push!(plots, p)
+        push!(names, peak_labels[min(j, length(peak_labels))])
+        push!(series, (x = sub.scanrate, y = sub.U_p, color = col))
+    end
+
+    crossings = nothing
+    if models !== nothing
+        # One model shared by every run, or one per run.
+        mods = models isa AbstractVector ? models : fill(models, length(results))
+        length(mods) == length(results) ||
+            error("got $(length(mods)) models for $(length(results)) results")
+        νq = Float64[]
+        Uq = Float64[]
+        tq = Float64[]
+        for (v, r, mm) in zip(scanrates, results, mods)
+            c = qoverk_crossing(r, mm; reaction = qk_reaction, branch = qk_branch,
+                                min_excursion = qk_min_excursion)
+            c === nothing && continue
+            push!(νq, v)
+            push!(Uq, c.potential)
+            push!(tq, c.time)
+        end
+        # `time` travels with the potential so a caller drawing the raw quotient traces can
+        # mark the same crossings there; see `plot_qoverk_scanrate_summary`.
+        crossings = (scanrate = νq, U = Uq, time = tq)
+        if isempty(νq)
+            @warn "no $(qk_branch) Q/K crossing found for reaction $(qk_reaction) in any run"
+        else
+            p = scatterlines!(ax, νq, Uq; color = qk_color, marker = :diamond,
+                              markersize = markersize, linewidth = LW_DASH,
+                              linestyle = :dash)
+            push!(plots, p)
+            push!(names, qk_label)
+            push!(series, (x = νq, y = Uq, color = qk_color))
+        end
+    end
+
+    if label_mode === :inline
+        for (i, sr) in enumerate(series)
+            isempty(sr.x) && continue
+            # Nearest available scan rate to the anchor: a series that does not reach it —
+            # the low-U peak exists only above 0.2 V s⁻¹ — is labelled at its own nearest end
+            # instead of silently going unlabelled.
+            k = argmin(abs.(log10.(sr.x) .- log10(label_at[min(i, length(label_at))])))
+            text!(ax, sr.x[k], sr.y[k] + label_offsets[min(i, length(label_offsets))];
+                  text = names[i], color = sr.color,
+                  fontsize = labelsize, font = labelfont,
+                  align = label_aligns[min(i, length(label_aligns))])
+        end
+    elseif label_mode === :legend
+        isempty(plots) || axislegend(ax, plots, names; position = legend_position,
+                                     framevisible = false, labelsize = FS_LEGEND)
+    end
+
+    return (ax = ax, table = tbl, crossings = crossings)
 end
 
 """
@@ -3351,22 +3860,42 @@ function plot_cv_summary_compare(
         # column titles and the shared time label. Raise `fig_size`'s height, not these, if
         # the panels need to be taller.
         data_row_height = 165,
+        # The CO₂ consumption split as a sixth row, beneath the quotients. It is what the
+        # disequilibrium in (e) costs, so it belongs at the end of the buffer block rather
+        # than up beside the current it is partly derived from. Needs the grid the runs were
+        # solved on; without both, the figure is the five rows it always was.
+        X_l = nothing,
+        X_r = nothing,
+        co2_split_basis = :flux,
+        # Below the other rows' `labelsize`: this is the only three-line label on the figure,
+        # and at 22 pt even its wrapped name overruns a `data_row_height` row.
+        co2_labelsize = 17,
+        co2_ylabel = nothing,
         labelsize = 22,
-        fig_size = (1500, 1260),
+        fig_size = nothing,
         # Makie's default 16 px leaves nothing for the column titles in row 0 or the time
         # label in row 6, both of which sit outside the axis block and were clipped.
         # Order is (left, right, bottom, top).
         figure_padding = (10, 20, 25, 25),
-        panel_labels = ["(a)", "(b)", "(c)", "(d)", "(e)"],
+        panel_labels = nothing,
         column_titles = ("Experimental conditions", "This work"),
         xtick_count = 4,
         link_x = false,
         link_y = true,
     )
-    fig = Figure(size = fig_size, figure_padding = figure_padding)
+    show_co2 = X_l !== nothing && X_r !== nothing
+    ndata = show_co2 ? 6 : 5
+    labs = something(panel_labels, [panel_letter(i) for i in 1:ndata])
+    # 350 + (ndata − 1) × 165, plus a gap of 15 between every pair of rows, plus 160 for the
+    # column titles and the shared time label.
+    fig = Figure(
+        size = something(fig_size,
+                         (1500, 350 + (ndata - 1) * data_row_height + ndata * 15 + 160)),
+        figure_padding = figure_padding,
+    )
 
     # columns: 1 panel letters | 2 left axes | 3 right axes | 4 legends
-    function column!(col, result, m; ylabels::Bool)
+    function column!(col, result, m, X; ylabels::Bool)
         blank = ylabels ? nothing : ""
         a1, _ = panel_conc_time!(
             fig, fig[1, col], result, m;
@@ -3375,18 +3904,35 @@ function plot_cv_summary_compare(
         a2 = panel_time_current!(fig, fig[2, col], result, m;
                                  species, n_e, sgn, include_capacitive, xlabel = "")
         a3 = panel_time_voltage!(fig, fig[3, col], result; m, xlabel = "")
-        a4 = panel_time_ph!(fig, fig[4, col], result; xlabel = "")
+        a4 = panel_time_ph!(fig, fig[4, col], result; m, xlabel = "")
         # No per-column time label: the two columns cover different spans but the *quantity*
         # is the same, so it is named once under the pair, as on the broken-axis figures.
         a5, _ = QoverK(fig, fig[5, col], result, m; xlabel = "",
                        legend_pos = col == 3 ? fig[5, 4] : nothing)
-        axs = (a1, a2, a3, a4, a5)
+        # The consumption split closes the buffer block: (d) and (e) say how far the carbonate
+        # equilibria are pushed, this says what that costs in CO₂.
+        # Three-line label at a reduced size: the one-line form is taller than a data row and
+        # climbs into (e). See `lab_co2_flux_stacked` for why the name is wrapped too.
+        a6 = show_co2 ?
+             panel_co2_consumption!(fig, fig[6, col], result, m, X;
+                                    basis = co2_split_basis, xlabel = "",
+                                    ylabel = something(
+                                        co2_ylabel,
+                                        co2_split_basis === :flux ? lab_co2_flux_stacked :
+                                                                    lab_co2_consumption_stacked,
+                                    ),
+                                    label_mode = col == 3 ? :legend : :none,
+                                    legend_pos = fig[6, 4]).ax :
+             nothing
+        axs = show_co2 ? (a1, a2, a3, a4, a5, a6) : (a1, a2, a3, a4, a5)
 
         for ax in axs
             ax.ylabelsize = labelsize
             ax.xlabelsize = labelsize
         end
-        for ax in (a1, a2, a3, a4)
+        # After the loop, or the blanket `labelsize` above would undo it.
+        show_co2 && (a6.ylabelsize = co2_labelsize)
+        for ax in axs[1:(end - 1)]
             hidexdecorations!(ax, grid = false)
         end
         # With the rows linked in y the right column's ticks would repeat the left's value
@@ -3403,16 +3949,16 @@ function plot_cv_summary_compare(
         # Few enough x ticks to survive a half-width column. The two runs cover different
         # time spans, so the tick *values* differ and each column needs its own labels —
         # `LinearTicks`' default count then collides in the narrower one.
-        a5.xticks = LinearTicks(xtick_count)
+        axs[end].xticks = LinearTicks(xtick_count)
         ylims!(a1, conc_limits...)
         linkxaxes!(axs...)
         return axs
     end
 
-    axs_l = column!(2, result_l, m_l; ylabels = true)
-    axs_r = column!(3, result_r, m_r; ylabels = false)
+    axs_l = column!(2, result_l, m_l, X_l; ylabels = true)
+    axs_r = column!(3, result_r, m_r, X_r; ylabels = false)
 
-    for (i, lab) in enumerate(panel_labels)
+    for (i, lab) in enumerate(labs)
         Label(fig[i, 1], lab; fontsize = FS_LABEL, font = :bold,
               valign = :top, padding = (0, -20, -10, 0))
     end
@@ -3420,7 +3966,7 @@ function plot_cv_summary_compare(
         Label(fig[0, col], ttl; fontsize = FS_TITLE, font = :bold, padding = (0, 0, 4, 0))
     end
     Label(
-        fig[6, 2:3], lab_time;
+        fig[ndata + 1, 2:3], lab_time;
         fontsize = FS_LABEL, font = :regular, padding = (0, 0, 0, 4),
     )
 
@@ -3448,10 +3994,45 @@ function plot_cv_summary_compare(
     # data rows is worse: an `Auto` row shrinks to its content's minimum rather than taking a
     # share, which collapses an axis to a sliver.
     rowsize!(fig.layout, 1, conc_row_height)
-    for r in 2:5
+    for r in 2:ndata
         rowsize!(fig.layout, r, data_row_height)
     end
     return fig
+end
+
+"""
+    panel_letter(i) -> String
+
+`1 → "(a)"`, `2 → "(b)"`, and so on, for figures that letter their panels in reading order.
+
+Past `z` it doubles the letter — `"(aa)"` — rather than running off the end of the alphabet
+into punctuation, which is what indexing a `Char` blindly would do.
+"""
+panel_letter(i::Integer) =
+    i <= 26 ? "(" * string(Char('a' + i - 1)) * ")" :
+              "(" * string(Char('a' + (i - 1) ÷ 26 - 1), Char('a' + (i - 1) % 26)) * ")"
+
+"""
+    panel_letter!(ax, i; fontsize, pos = (0.03, 0.97))
+
+Draw [`panel_letter`](@ref)`(i)` inside `ax`, in the corner given by `pos` in axis-relative
+coordinates.
+
+`space = :relative` is what makes one `pos` serve every panel: the corner of a log-scaled
+distance axis and of a linear voltage axis are the same point in relative space and wildly
+different points in data space.
+
+Black on a white halo, because the letter has to stay legible over whatever the panel drew
+under it — the fields here run from dark navy to dark red to near-white, and no single flat
+colour survives all three.
+"""
+function panel_letter!(ax, i; fontsize = FS_LABEL, pos = (0.03, 0.97))
+    text!(
+        ax, pos[1], pos[2];
+        text = panel_letter(i), space = :relative, align = (:left, :top),
+        fontsize = fontsize, font = :bold,
+        color = :black, strokecolor = :white, strokewidth = 2,
+    )
 end
 
 """
@@ -3497,7 +4078,16 @@ function plot_7species_contours(
         fig_size = nothing,
         show_potential = true,
         show_qoverk = false,
-        qk_row_fraction = 0.26,
+        # `:line` puts the three quotients on one spanning axis at the electrode node;
+        # `:contour` gives each its own panel over (t, x), on the grid the species use.
+        qoverk_mode = :line,
+        qk_use_activity = true,
+        qk_colorrange = nothing,
+        qk_colormap = :balance,
+        qk_num_levels = 21,
+        show_panel_labels = true,
+        panel_label_size = FS_LABEL,
+        qk_row_fraction = nothing,
         colgap_px = 20,
         rowgap_px = 8,
         max_time_samples = 400,
@@ -3560,17 +4150,50 @@ function plot_7species_contours(
     # something below them. Without counting it, the last panel of the top row is treated
     # as the bottom of its column and grows a tick row and an axis label, which is what
     # opens the band of white between the two rows.
-    has_potential = show_potential && npanel < nrow * ncol
-    nfilled = npanel + (has_potential ? 1 : 0)
+    if show_qoverk && !(qoverk_mode in (:line, :contour))
+        throw(ArgumentError("qoverk_mode must be :line or :contour, got $(repr(qoverk_mode))"))
+    end
+    qk_contour = show_qoverk && qoverk_mode === :contour
+    n_qk = 3   # one panel per buffer reaction, in the first three columns
 
-    fig = Figure(size = fig_size === nothing ? (1250, show_qoverk ? 720 : 520) : fig_size)
+    # With a `:contour` quotient row the protocol goes in *that* row's free cell rather than
+    # the species grid's. It is the reference for both blocks, and from the bottom row it sits
+    # on the same tick row as everything else it is read against. The species grid's last cell
+    # then falls to the colorbar, which is what it would otherwise need a whole column for.
+    potential_in_qk_row = show_potential && qk_contour
+    has_potential = show_potential && !potential_in_qk_row && npanel < nrow * ncol
+    nfilled = npanel + (has_potential ? 1 : 0)
+    # Columns of the last species row that hand their ticks down to the row beneath.
+    qk_row_cols = potential_in_qk_row ? n_qk + 1 : n_qk
+
+    # Letters run in reading order, which is not the order the panels are built in: with the
+    # protocol moved into the quotient row it comes *after* the quotients on the page even
+    # though it is drawn before them. Indexing off position rather than off code order is what
+    # keeps (k) at the end of the bottom row instead of in the middle of it.
+    n_qk_lab = qk_contour ? n_qk : (show_qoverk ? 1 : 0)
+    qk_first = npanel + (has_potential ? 2 : 1)
+    pot_idx = has_potential ? npanel + 1 : npanel + n_qk_lab + 1
+    # A contour row carries panel titles and a tick row of its own; the spanning line axis
+    # carries neither, so one default cannot serve both.
+    qk_frac = something(qk_row_fraction, qk_contour ? 0.32 : 0.26)
+
+    # A `:contour` quotient row carries its own ticks and titles, so it needs more than the
+    # spanning line axis does.
+    fig = Figure(size = fig_size === nothing ?
+                        (1250, qk_contour ? 820 : show_qoverk ? 720 : 520) : fig_size)
     axs = Axis[]
     local hm
 
     for (k, (sp_label, M)) in enumerate(panels)
         row, col = fldmod1(k, ncol)
-        # bottom of its column: nothing sits in the cell below it
-        is_bottom = (k + ncol > nfilled)
+        # Bottom of its column: nothing sits in the cell below it. A `:line` Q/K row does not
+        # count, even though its x axis is linked to these. It occupies `1:ncol` as a single
+        # cell, so its plotting area spans the column gaps too and its ticks land at different
+        # pixels than the same times inside a contour panel — linked in data, not aligned on
+        # screen. Reading a time off a contour therefore needs that panel's own tick row.
+        # A `:contour` Q/K row *is* aligned: one panel per column, so those columns can hand
+        # their ticks down to it and only the columns without a quotient beneath keep theirs.
+        is_bottom = (k + ncol > nfilled) && !(qk_contour && col <= qk_row_cols)
 
         ax = Axis(
             fig[row, col];
@@ -3588,13 +4211,15 @@ function plot_7species_contours(
         )
         is_bottom || hidexdecorations!(ax; grid = false)
         col == 1 || hideydecorations!(ax; grid = false, ticks = false)
-
         hm = heatmap!(
             ax, times, Xp .+ 1.0e-12, M';
             colorrange = crange,
             colormap = discrete_cmap,
             interpolate = false,
         )
+        # After the heatmap: the fill covers the panel edge to edge and would bury a letter
+        # drawn before it.
+        show_panel_labels && panel_letter!(ax, k; fontsize = panel_label_size)
         push!(axs, ax)
     end
 
@@ -3603,8 +4228,8 @@ function plot_7species_contours(
     # The free cell takes the potential protocol. Every contour panel is a field over time,
     # but none of them says where in the sweep a given time falls — with this panel present,
     # a feature at t = 22 s is read as "the cathodic vertex" instead of as a bare number.
-    if has_potential
-        prow, pcol = fldmod1(npanel + 1, ncol)
+    if has_potential || potential_in_qk_row
+        prow, pcol = potential_in_qk_row ? (nrow + 1, n_qk + 1) : fldmod1(npanel + 1, ncol)
         ax_u = Axis(
             fig[prow, pcol];
             ylabel = rich("Electrode Potential ", rich("U", font = :bold_italic),
@@ -3614,9 +4239,12 @@ function plot_7species_contours(
         )
         lines!(ax_u, result.times, electrode_potential(result, m);
                color = parse(Colorant, "#D7C2F0"), linewidth = LW_LINE)
+        # Keeps its ticks for the same reason the contour panels do: it sits at the bottom of
+        # its own column, and the Q/K row's ticks do not line up with it.
         # x only: the contour panels share a log-scaled distance axis, and `linkaxes!`
         # would drag this panel's volts onto it.
         isempty(axs) || linkxaxes!(axs[1], ax_u)
+        show_panel_labels && panel_letter!(ax_u, pot_idx; fontsize = panel_label_size)
     end
 
     # Shared colorbar. It may size its own column, but not one it shares with a panel: a
@@ -3625,7 +4253,11 @@ function plot_7species_contours(
     cbar_label = rich(
         "log", subscript("10"), "(", rich("c", font = :bold_italic), " / M)"
     )
-    if nfilled < nrow * ncol
+    # The free-cell placement buys nothing once the quotient row's colorbar has already opened
+    # column `ncol + 1`: that column exists either way, so tucking this one into the grid only
+    # splits the two colorbars across two places. With the protocol moved down, both stack in
+    # the same column instead.
+    if nfilled < nrow * ncol && !potential_in_qk_row
         crow, ccol = fldmod1(nfilled + 1, ncol)
         Colorbar(
             fig[crow, ccol], hm;
@@ -3644,13 +4276,73 @@ function plot_7species_contours(
     # gives the row its own column sizing, and the whole point is that a feature in Q/K lines
     # up vertically with the concentration field that produced it.
     ax_qk = nothing
-    if show_qoverk
+    if qk_contour
+        # One panel per reaction, in the species columns, on the species grid. This is the
+        # form the electrode-only series cannot give: it says how far into the electrolyte
+        # each disequilibrium reaches, not just how large it is at the wall.
+        qk = qoverk_field(result, X, m; use_activity = qk_use_activity,
+                          tidx = tidx, xidx = xidx)
+        qk_fields = (qk.hco3, qk.co2, qk.water)
+        # log of the quotient, floored away from zero: a negative iterate in a trace species
+        # would otherwise take the whole panel out with a DomainError.
+        qk_logs = [log10.(max.(Q, 1.0e-300)) for Q in qk_fields]
+
+        qk_range = if qk_colorrange === nothing
+            # Symmetric about 0 so the colour, not the reading, carries the direction: one
+            # side of the map is "products in excess", the other "reactants".
+            a = maximum(maximum(abs, L) for L in qk_logs)
+            a = isfinite(a) && a > 0 ? a : 1.0
+            (-a, a)
+        else
+            qk_colorrange
+        end
+        qk_cmap = cgrad(qk_colormap, qk_num_levels, categorical = true)
+
+        local hm_qk
+        for j in 1:n_qk
+            ax = Axis(
+                fig[nrow + 1, j];
+                ylabel = j == 1 ? rich(rich("x", font = :bold_italic), "  (m)") : "",
+                yscale = log10,
+                yminorticksvisible = true,
+                yminorticks = IntervalsBetween(9),
+                yticks = (
+                    10.0 .^ (floor_exp:3:(floor_exp + 6)),
+                    [powlab(floor_exp), powlab(floor_exp + 3), powlab(floor_exp + 6)],
+                ),
+                title = QK_LABELS[j],
+                titlesize = 16,
+            )
+            j == 1 || hideydecorations!(ax; grid = false, ticks = false)
+            hm_qk = heatmap!(
+                ax, qk.times, Xp .+ 1.0e-12, qk_logs[j]';
+                colorrange = qk_range, colormap = qk_cmap, interpolate = false,
+            )
+            isempty(axs) || linkaxes!(axs[1], ax)
+            ax_qk === nothing && (ax_qk = ax)
+            show_panel_labels &&
+                panel_letter!(ax, qk_first + j - 1; fontsize = panel_label_size)
+        end
+
+        Colorbar(
+            # Beside the protocol panel when that has moved into this row, in its cell if not.
+            fig[nrow + 1, potential_in_qk_row ? ncol + 1 : n_qk + 1], hm_qk;
+            label = rich("log", subscript("10"), "(", rich("Q", font = :bold_italic),
+                         subscript(qk_use_activity ? "a" : "c"), " / ",
+                         rich("K", font = :bold_italic), ")"),
+            vertical = true, width = 18, tellwidth = false, halign = :left,
+        )
+        rowsize!(fig.layout, nrow + 1, Relative(qk_frac))
+    elseif show_qoverk
+        # `xlabel = ""`: `QoverK` labels its own time axis by default, and the shared `Label`
+        # below would then be the second copy of it.
         ax_qk, _ = QoverK(
             fig, fig[nrow + 1, 1:ncol], result, m;
-            legend_pos = fig[nrow + 1, ncol + 1],
+            xlabel = "", legend_pos = fig[nrow + 1, ncol + 1],
         )
         isempty(axs) || linkxaxes!(axs[1], ax_qk)
-        rowsize!(fig.layout, nrow + 1, Relative(qk_row_fraction))
+        show_panel_labels && panel_letter!(ax_qk, qk_first; fontsize = panel_label_size)
+        rowsize!(fig.layout, nrow + 1, Relative(qk_frac))
     end
 
     # One time label for the whole figure, under whichever row ended up last.
@@ -3667,18 +4359,29 @@ end
 """
     plot_7species_contours_qk(result, X, m; kwargs...)
 
-[`plot_7species_contours`](@ref) with the buffer quotients added as a full-width row beneath
-the grid.
+[`plot_7species_contours`](@ref) with the buffer quotients added as a row beneath the grid.
 
-The contour panels say what every concentration did; [`QoverK`](@ref) says whether the
-carbonate equilibria kept up while it happened. Sharing one time axis is what makes the pair
-readable — a `Q/K` excursion sits directly under the field that caused it.
+The contour panels say what every concentration did; the quotients say whether the carbonate
+equilibria kept up while it happened. Sharing one time axis is what makes the pair readable —
+a `Q/K` excursion sits directly under the field that caused it.
 
-Identical to calling `plot_7species_contours(...; show_qoverk = true)`; the name exists so a
-notebook cell reads as what it produces.
+`qoverk_mode` decides what that row is:
+
+  - `:contour` (default) — one panel per reaction over `(t, x)`, on the same grid and the same
+    log-distance axis as the species above. The quotient is then a *field*, like everything
+    else on the figure, and the panel shows how far into the electrolyte the disequilibrium
+    penetrates as well as how large it is. Colour is `log₁₀(Q/K)` on a scale symmetric about
+    zero, so white is equilibrium and the two directions are distinguishable at a glance.
+  - `:line` — the electrode node only, as three curves on one spanning axis
+    ([`QoverK`](@ref)). Compact, and the right choice when the reading of interest is the
+    excursion's size against time rather than its depth.
+
+`:contour` is the default because the electrode-only row answers a different question from
+every other panel on the figure while sitting in the same coordinate frame, which invites the
+reader to compare an `x`-resolved field with a single-node trace.
 """
-plot_7species_contours_qk(result, X, m; kwargs...) =
-    plot_7species_contours(result, X, m; show_qoverk = true, kwargs...)
+plot_7species_contours_qk(result, X, m; qoverk_mode = :contour, kwargs...) =
+    plot_7species_contours(result, X, m; show_qoverk = true, qoverk_mode, kwargs...)
 
 """
     plot_species_contour_over_L(results, grid_dict, m; species = ico, kwargs...)
@@ -3829,6 +4532,229 @@ end
 
 # ── moved from cell 34857db0 (QoverK)  [+ electrolyte kwarg] ──
 """
+    node_volumes(X)
+
+Control-volume length of each node of a 1-D grid, so a volumetric source can be integrated
+over the domain. Per unit electrode area, so the result of `Σ R·nv` is already per cm².
+"""
+function node_volumes(X)
+    nv = similar(X)
+    n = length(X)
+    nv[1] = (X[2] - X[1]) / 2
+    nv[n] = (X[n] - X[n - 1]) / 2
+    for i in 2:(n - 1)
+        nv[i] = (X[i + 1] - X[i - 1]) / 2
+    end
+    return nv
+end
+
+raw"""
+    co2_consumption_split(result, m, X; n_e = 2, scale = cm^2 / mA)
+
+The two routes by which CO₂ disappears at the interface, both as equivalent current
+densities: `(; times, electrode, buffer, total)`.
+
+```math
+j_\mathrm{elec} = n_\mathrm{e} F N_{\ce{CO}}\big|_{x=0}, \qquad
+j_\mathrm{buffer} = n_\mathrm{e} F \int_0^L R_{\ce{CO2}}(x,t)\,\mathrm{d}x
+```
+
+`R_CO₂` is the net volumetric sink the homogeneous buffer applies to CO₂ — the two reactions
+it takes part in, `CO₂ + OH⁻ ⇌ HCO₃⁻` and `CO₂ + H₂O ⇌ HCO₃⁻ + H⁺`. It is read back by
+evaluating the model's own `reaction` closure on the stored solution, node by node, so no
+sweep is repeated and the number is exactly what the solver used. The closure ignores its
+`node` argument, which is what makes that possible.
+
+Both terms are **positive for consumption**: VoronoiFVM writes the volumetric reaction on the
+left-hand side, so a positive `f` is already a sink, and the electrode term is signed to
+match.
+
+!!! warning "The buffer term is not a current"
+    No charge moves in a homogeneous reaction. It is converted with the same `n_e F` as the
+    faradaic term purely so the two consumption routes can be read on one axis. Say so in any
+    caption, and state the stoichiometry the conversion assumes —
+    `CO₂ + H₂O + 2e⁻ → CO + 2OH⁻`, hence two electrons per CO₂.
+
+This is what turns "the buffer consumes an appreciable share of the CO₂" from an assertion
+into a number: the ratio `buffer / total` at the peak is the self-inhibition, measured
+directly rather than inferred from an apparent diffusion coefficient.
+"""
+function co2_consumption_split(result, m, X; n_e = 2, scale = cm^2 / mA)
+    e = m.elydata
+    F = e.F
+    nv = node_volumes(X)
+    nnode = length(X)
+    # `result.times`, not `result.tsol.t`: the stored solution usually carries one point more
+    # than the sweep has time values, and the electrode term below is built on `times`. Using
+    # the longer of the two here is what makes the sum fail to broadcast.
+    nt = length(result.times)
+
+    j_buffer = zeros(nt)
+    for k in 1:nt
+        u = result.tsol[k]
+        acc = 0.0
+        for i in 1:nnode
+            ui = u[:, i]
+            f = zeros(length(ui))
+            m.reaction(f, ui, nothing, e)
+            acc += f[ico2] * nv[i]
+        end
+        j_buffer[k] = n_e * F * acc
+    end
+
+    # The electrode consumes one CO₂ per CO produced, so the CO partial current is already
+    # the electrode's CO₂ consumption once the display sign is flipped to "consumption > 0".
+    j_elec = -cv_current(result; species = ico, n_e = n_e, sgn = 1)
+
+    return (
+        times = result.times,
+        electrode = j_elec .* scale,
+        buffer = j_buffer .* scale,
+        total = (j_elec .+ j_buffer) .* scale,
+    )
+end
+
+"""
+    plot_co2_consumption(result, m, X; kwargs...)
+
+The electrode's and the buffer's share of CO₂ consumption against time, on one axis.
+
+Both curves are equivalent current densities and both are positive for consumption — see
+[`co2_consumption_split`](@ref), including why the buffer term is not a current.
+
+`show_total` adds their sum, which is the CO₂ the interface removes altogether; the gap
+between it and the electrode curve is the share the homogeneous chemistry took. It is drawn
+thick and pale *behind* the two contributions, so it reads as their envelope rather than as
+a third competing curve.
+
+`basis` picks what the ordinate means:
+
+  - `:current` — an equivalent current density in mA cm⁻², so the split can be read straight
+    against the voltammogram. The `eq` subscript on the axis is not decoration: the buffer's
+    share moves no charge, and dropping it would put a rate's name on a current's unit.
+  - `:flux` — the areal molar flux in coherent SI, mol m⁻² s⁻¹, which is what a consumption
+    rate physically is. Same curves, divided by `n_e F`; no charge implied anywhere.
+    `1 mA cm⁻² ≡ 5.182 × 10⁻⁵ mol m⁻² s⁻¹` at `n_e = 2`.
+
+The series are labelled in place, each in its own colour, the way the pressure sweeps are —
+no legend box. Tune the placement with `label_times` (one time per series, in the order
+electrode, buffer, total) and `label_offsets` (added to the curve's own value there, so the
+text tracks the curve). `nothing` in either slot falls back to the automatic choice.
+
+[`panel_co2_consumption!`](@ref) is the same drawing into a supplied grid position.
+"""
+plot_co2_consumption(result, m, X; fig_size = (900, 460), kwargs...) =
+    let fig = Figure(size = fig_size),
+        p = panel_co2_consumption!(fig, fig[1, 1], result, m, X; kwargs...)
+        (fig = fig, split = p.split, ax = p.ax)
+    end
+
+"""
+    panel_co2_consumption!(fig, panel_pos, result, m, X; kwargs...)
+
+[`plot_co2_consumption`](@ref) drawn into a supplied grid position.
+
+Takes every keyword the figure form does, plus three a panel needs and a standalone figure
+does not: `yaxisposition`, for a panel on the right-hand edge of a grid; `ylabelsize`, for a
+column narrower than a figure; and `label_mode`.
+
+`label_mode` is `:inline` — each series named on its own curve, the default and what the
+standalone figure uses — or `:legend`, a compact box, since inline text does not survive a
+narrow panel, or `:none`.
+"""
+function panel_co2_consumption!(
+        fig, panel_pos, result, m, X;
+        n_e = 2,
+        basis = :current,
+        scale = nothing,
+        ylabel = nothing,
+        show_total = true,
+        colors = (colorant"#2980B9", colorant"#C0392B", colorant"#95A5A6"),
+        lw = LW_LINE,
+        lw_total = LW_LINE * 1.6,
+        xlabel = lab_time,
+        labels = ("electrode contribution", "buffer contribution", "total"),
+        label_mode = :inline,
+        label_times = (2.7, nothing, 5.2),
+        # In the units of the default `:flux` basis, mmol m⁻² s⁻¹, where the peak is near 1.4.
+        # These do not carry over to `basis = :current`, which runs a decade and a half higher.
+        label_offsets = (-0.3, nothing, 1.0),
+        labelsize = 22,
+        labelfont = :bold,
+        legend_position = :lb,
+        legend_pos = nothing,
+        yaxisposition = :left,
+        ylabelsize = nothing,
+    )
+    # `n_e * F` is exactly the factor `co2_consumption_split` puts in, so dividing it back
+    # out returns the underlying molar flux rather than approximating it.
+    basis in (:current, :flux) ||
+        throw(ArgumentError("basis must be :current or :flux, got $(repr(basis))"))
+    # Two name clashes with `@unitfactors` to step around here. `cs`, not `s`, for the split,
+    # because the second comes in as `s` and assigning it would make the unit factor a local
+    # read before assignment. And `ufac"m^2"`, not `m^2`, because `m` is the model argument.
+    sc = something(scale, basis === :current ? cm^2 / mA :
+                          ufac"m^2" * s / (1.0e-3 * mol) / (n_e * m.elydata.F))
+    ylab = something(ylabel, basis === :current ? lab_co2_consumption : lab_co2_flux)
+
+    cs = co2_consumption_split(result, m, X; n_e, scale = sc)
+    t = cs.times
+
+    ax = Axis(panel_pos; xlabel = xlabel, ylabel = ylab, yaxisposition = yaxisposition)
+    ylabelsize === nothing || (ax.ylabelsize = ylabelsize)
+    hlines!(ax, [0.0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
+
+    # The total goes down first so the two contributions draw on top of it.
+    p3 = show_total ?
+         lines!(ax, t, cs.total; color = colors[3], linewidth = lw_total) : nothing
+    p1 = lines!(ax, t, cs.electrode; color = colors[1], linewidth = lw)
+    p2 = lines!(ax, t, cs.buffer; color = colors[2], linewidth = lw)
+
+    if label_mode === :legend
+        plots = show_total ? [p1, p2, p3] : [p1, p2]
+        names = collect(labels)[1:length(plots)]
+        # A `legend_pos` puts the box in its own layout cell instead of on top of the data —
+        # which is what a panel in a grid wants, and what the other rows of the summary
+        # figure already do with their legends.
+        if legend_pos === nothing
+            axislegend(ax, plots, names; position = legend_position,
+                       framevisible = false, labelsize = FS_LEGEND)
+        else
+            Legend(legend_pos, plots, names; framevisible = false, labelsize = FS_LEGEND)
+        end
+        return (ax = ax, split = cs)
+    elseif label_mode === :none
+        return (ax = ax, split = cs)
+    end
+
+    span = t[end] - t[1]
+    yspan = maximum(cs.total) - min(0.0, minimum(cs.total))
+    # Defaults chosen from where each curve is least crowded: the electrode just past its
+    # spike, the buffer out in its slow tail where the electrode has already died, the total
+    # at its own maximum.
+    auto_t = (
+        t[argmax(cs.electrode)] + 0.10 * span,
+        t[1] + 0.45 * span,
+        t[argmax(cs.total)],
+    )
+    auto_dy = (0.06 * yspan, 0.08 * yspan, 0.05 * yspan)
+    series = (cs.electrode, cs.buffer, cs.total)
+    aligns = ((:left, :center), (:left, :bottom), (:center, :bottom))
+
+    for i in 1:(show_total ? 3 : 2)
+        tx = something(label_times[i], auto_t[i])
+        dy = something(label_offsets[i], auto_dy[i])
+        # Anchor to the curve's own value at `tx` so the text follows the line it names.
+        k = argmin(abs.(t .- tx))
+        text!(ax, tx, series[i][k] + dy; text = labels[i], color = colors[i],
+              fontsize = labelsize, font = labelfont,
+              align = aligns[i])
+    end
+
+    return (ax = ax, split = cs)
+end
+
+"""
     qoverk_series(result, m; use_activity = false)
 
 Reaction quotient over equilibrium constant at the electrode, against time, for the three
@@ -3857,7 +4783,7 @@ despite their very different absolute constants.
 Shared by [`QoverK`](@ref) and [`plot_qoverk_vs_scanrate`](@ref) so the two cannot disagree
 about what the quotient is.
 """
-function qoverk_series(result, m; use_activity = false)
+function qoverk_series(result, m; use_activity = true)
     e = m.elydata
     nt = length(result.tsol.t)
 
@@ -3899,6 +4825,60 @@ function qoverk_series(result, m; use_activity = false)
     )
 end
 
+"""
+    qoverk_field(result, X, m; use_activity = true, tidx = nothing, xidx = nothing)
+
+[`qoverk_series`](@ref) over the whole domain instead of the electrode node alone:
+`(; times, x, hco3, co2, water)`, each quotient an `nx × nt` matrix.
+
+Same quotients, same bulk-referenced `K`, so a value of 1 still means "as far from
+equilibrium as the bulk is" — and the far boundary now shows that explicitly, which the
+electrode-only series cannot. Where the electrode series answers *how far* the interface is
+driven, this answers *how deep* the disturbance reaches.
+
+`tidx`/`xidx` restrict the evaluation to a subset of stored times and nodes. Pass the same
+ranges the contour panels are decimated onto: with `use_activity` the electrolyte's
+`actcoeff!` runs once per node per time, so the full grid is tens of times more work than
+the samples a panel can actually show.
+"""
+function qoverk_field(result, X, m; use_activity = true, tidx = nothing, xidx = nothing)
+    e = m.elydata
+    nc = e.nc
+    ip = LiquidElectrolytes.pressure_index(e)
+    ti = tidx === nothing ? (1:length(result.tsol.t)) : tidx
+    xi = xidx === nothing ? (1:length(X)) : xidx
+
+    # Same bulk reference as `qoverk_series`, so the two agree wherever they overlap.
+    γb = use_activity ? _gamma_bulk(m) : ones(nc)
+    cb = e.c_bulk .* γb
+    K_hco3 = (cb[ihco3] * cb[iohminus]) / cb[ico3]
+    K_co2 = (cb[ico2] * cb[iohminus]) / cb[ihco3]
+    K_water = cb[ihplus] * cb[iohminus]
+
+    nx, nt = length(xi), length(ti)
+    Qh = zeros(nx, nt)
+    Qc = zeros(nx, nt)
+    Qw = zeros(nx, nt)
+    γ = ones(nc)
+
+    for (jt, t) in enumerate(ti)
+        u = result.tsol[t]
+        for (jx, i) in enumerate(xi)
+            use_activity && e.actcoeff!(γ, view(u, 1:nc, i), u[ip, i], e)
+            a_co3 = u[ico3, i] * γ[ico3]
+            a_oh = u[iohminus, i] * γ[iohminus]
+            a_hco3 = u[ihco3, i] * γ[ihco3]
+            a_co2 = u[ico2, i] * γ[ico2]
+            a_h = u[ihplus, i] * γ[ihplus]
+            Qh[jx, jt] = (a_hco3 * a_oh) / a_co3 / K_hco3
+            Qc[jx, jt] = (a_co2 * a_oh) / a_hco3 / K_co2
+            Qw[jx, jt] = (a_h * a_oh) / K_water
+        end
+    end
+
+    return (times = result.tsol.t[ti], x = X[xi], hco3 = Qh, co2 = Qc, water = Qw)
+end
+
 "Activity coefficients at the electrode node, at stored time index `k`."
 function _gamma_at_electrode(result, m, k)
     e = m.elydata
@@ -3921,21 +4901,63 @@ end
 "Colours of the three buffer reactions, shared by every Q/K figure."
 const QK_COLORS = ("#2980B9", "#E67E22", "#27AE60")
 
-"Labels of the three buffer reactions, in the order [`qoverk_series`](@ref) returns them."
+"""
+Labels of the three buffer reactions, in the order [`qoverk_series`](@ref) returns them.
+
+**Each is written in the direction its quotient is computed** — `Q` is products over
+reactants, so whatever sits in the numerator there belongs on the right here. All three come
+out as dissociations releasing OH⁻, which is also what makes them comparable on one axis.
+
+`buffer_system` writes the first two the other way round, as associations. Copying that
+direction into a label without inverting the quotient would put "above 1" and "below 1" the
+wrong way round in every reading of the figure, and nothing about the plot would look wrong.
+
+Minus signs are U+2212 throughout, not the ASCII hyphen: at this size the two are
+distinguishable, and a charge written with a hyphen sits too high and too short.
+"""
 const QK_LABELS = (
-    rich("HCO", subscript("3"), superscript("-"), " ⇌ CO", subscript("3"), superscript("2-")),
-    rich("CO", subscript("2"), " ⇌ HCO", subscript("3"), superscript("-")),
+    rich("CO", subscript("3"), superscript("2−"), " ⇌ HCO", subscript("3"), superscript("−"), " + OH", superscript("−")),
+    rich("HCO", subscript("3"), superscript("−"), " ⇌ CO", subscript("2"), " + OH", superscript("−")),
     rich("H", subscript("2"), "O ⇌ H", superscript("+"), " + OH", superscript("−")),
 )
 
+"""
+Field names of [`qoverk_series`](@ref), in the order [`QK_COLORS`](@ref) and
+[`QK_LABELS`](@ref) are indexed.
+
+Lets a caller name the reactions it wants by symbol and still get the colour and label the
+rest of the figures give them, rather than by remembering that `2` is the CO₂ step.
+"""
+const QK_FIELDS = (:hco3, :co2, :water)
+
 function QoverK(
         fig, panel_pos, result, m; scale = mol / dm^3, lw = LW_LINE,
-        xlabel = lab_time, legend_pos = nothing, use_activity = false,
+        # `:time` reads the lag directly — how long the quotient stays away. `:voltage` makes
+        # the trace a loop, since a cycle visits each potential twice, but puts every scan rate
+        # on one common axis and lets a crossing be read off as a potential.
+        abscissa = :time,
+        xlabel = abscissa === :time ? lab_time : lab_voltage,
+        # Which of the three to draw, named as in `QK_FIELDS`. Each keeps the colour and label
+        # it has everywhere else, so a panel showing one reaction cannot recolour it.
+        reactions = QK_FIELDS,
+        legend_pos = nothing,
+        # Splatted into `Legend`. Pass `tellwidth`/`tellheight` false plus an alignment to
+        # float the box inside a panel instead of giving it a cell of its own.
+        legend_opts = (;),
+        use_activity = true,
         ylabel = use_activity ? lab_qoverk_act : lab_qoverk_conc
     )
     bulk = m.bulk
     q = qoverk_series(result, m; use_activity)
-    times = q.times
+    if abscissa === :time
+        x = q.times
+        n = length(x)
+    else
+        U, _ = cv_abscissa(result; kind = abscissa === :voltage ? :applied : abscissa)
+        # The stored solution can carry one sample more than the sweep has potentials.
+        n = min(length(U), length(q.times))
+        x = U[1:n]
+    end
 
     ax = Axis(
         panel_pos;
@@ -3953,16 +4975,24 @@ function QoverK(
     )
     hlines!(ax, [1.0e0]; color = :black, linestyle = :dash, linewidth = LW_GUIDE)
 
-    l1 = lines!(ax, times, max.(q.hco3, eps(Float64)); color = QK_COLORS[1], linewidth = lw)
-    l2 = lines!(ax, times, max.(q.co2, eps(Float64)); color = QK_COLORS[2], linewidth = lw)
-    l3 = lines!(ax, times, max.(q.water, eps(Float64)); color = QK_COLORS[3], linewidth = lw)
+    lns = Any[]
+    lbls = Any[]
+    for r in reactions
+        i = findfirst(==(r), QK_FIELDS)
+        i === nothing && throw(ArgumentError(
+            "unknown reaction $(repr(r)); expected one of $(QK_FIELDS)"
+        ))
+        push!(lns, lines!(ax, x, max.(view(getproperty(q, r), 1:n), eps(Float64));
+                          color = QK_COLORS[i], linewidth = lw))
+        push!(lbls, QK_LABELS[i])
+    end
     ylims!(ax, low = 1.0e-7, high = 1.0e7)
 
     # Skipped when the caller shares one key across several panels — see `panel_conc_time!`.
-    leg = if legend_pos === nothing
+    leg = if legend_pos === nothing || isempty(lns)
         nothing
     else
-        Legend(legend_pos, [l1, l2, l3], collect(QK_LABELS), framevisible = false)
+        Legend(legend_pos, lns, lbls; framevisible = false, legend_opts...)
     end
 
     return ax, leg
@@ -4013,6 +5043,134 @@ function plot_qoverk_over_scanrate(
     n > 1 && linkyaxes!(axs...)
     colgap!(fig.layout, 12)
     return (fig = fig, axs = axs)
+end
+
+"""
+    plot_qoverk_scanrate_summary(scanrates, results, m; kwargs...)
+
+The buffer's disequilibrium at four scan rates, and what it distils to, in one figure.
+
+A 2×2 block of quotient traces on the left — the raw evidence — and on the right, spanning
+both rows, the anodic peak positions against scan rate with the quotient's crossing potential
+overlaid ([`panel_anodic_peak_potentials!`](@ref)).
+
+**The dashed vertical in each trace panel is the same event as the corresponding marker on the
+right.** Without it the two halves would share no axis and the reader would have to take the
+caption's word that they are related; with it, the crossing is visible where it happens and
+again where it is summarised. That marker is the reason to combine these rather than print
+them separately.
+
+`abscissa = :voltage` (the default here) is what closes that loop: the trace panels then run
+over the same quantity the summary's ordinate carries, so the vertical in a panel and the
+marker on the right are at the same *number*, not merely at corresponding moments. The cost is
+that a cycle visits each potential twice and the traces double back on themselves. Pass
+`:time` for the unlooped reading, where the lag shows as a duration instead.
+
+The 2×2 rather than a 1×4 strip: four panels in a row plus a full-width summary underneath
+makes the summary very wide and short, and a 2 V ordinate flattens into it. Squaring the block
+also fits a two-column page, which a four-across strip does not.
+
+`panel_reactions` is which quotients the trace panels draw, `(:co2,)` by default — the one the
+summary is about. The other two sit on equilibrium here, so drawing them adds two flat lines
+whose entire content is "not this one".
+
+`panel_idx` picks which runs get a trace panel — by default four spread evenly across the
+series. Every run is used for the summary regardless, so the panels are exemplars, not the
+sample.
+"""
+function plot_qoverk_scanrate_summary(
+        scanrates, results, m;
+        panel_idx = nothing,
+        use_activity = true,
+        qk_reaction = :co2,
+        qk_branch = :anodic,
+        qk_min_excursion = 0.5,
+        qk_color = colorant"#E67E22",
+        # Thin: it is a reference mark, not a fourth data series, and it sits directly on the
+        # curve it marks.
+        qk_marker_lw = LW_GUIDE,
+        # Only the reaction the summary is about. The other two sit on equilibrium here and
+        # would be two flat lines whose whole content is "not this one" — which the caption
+        # can say in four words and the Q/K contour figure already shows.
+        panel_reactions = (:co2,),
+        abscissa = :voltage,
+        # Floated inside the last trace panel rather than given a row of its own: with a single
+        # reaction drawn it is one entry, and a whole layout row for one entry is what pushed
+        # the panels down. `tellwidth`/`tellheight` false is what lets it share that cell.
+        legend_pos = nothing,
+        legend_opts = (tellwidth = false, tellheight = false,
+                       halign = :right, valign = :top),
+        lw = LW_LINE,
+        xtick_count = 3,
+        fig_size = (1560, 760),
+        title_fmt = v -> @sprintf("%g V s⁻¹", v),
+        panel_width = 0.24,
+        show_panel_labels = true,
+        panel_label_size = FS_LABEL,
+        kwargs...,
+    )
+    n = length(results)
+    n == length(scanrates) ||
+        error("got $(n) results for $(length(scanrates)) scan rates")
+
+    idx = panel_idx === nothing ?
+          unique(round.(Int, range(1, n, length = min(4, n)))) : collect(panel_idx)
+
+    fig = Figure(size = fig_size)
+
+    axs = Axis[]
+    for (i, k) in enumerate(idx)
+        row, col = fldmod1(i, 2)
+        ax, _ = QoverK(
+            fig, fig[row, col], results[k], m;
+            lw = lw, use_activity = use_activity, abscissa = abscissa,
+            reactions = panel_reactions,
+            # One legend for the block, inside the last panel, rather than one per panel.
+            legend_pos = i == length(idx) ? something(legend_pos, fig[2, 2]) : nothing,
+            legend_opts = legend_opts,
+        )
+        ax.title = title_fmt(scanrates[k])
+        ax.xticks = LinearTicks(xtick_count)
+        col == 1 || hideydecorations!(ax; grid = false, ticks = false)
+        # On a voltage abscissa every panel covers the same sweep, so the top row hands its
+        # ticks to the bottom. On time they cannot: the cycles differ in duration by whatever
+        # the scan rates differ by, and each panel needs its own numbers.
+        if abscissa === :time
+            row == 1 && (ax.xlabel = "")
+        elseif row == 1
+            hidexdecorations!(ax; grid = false)
+        end
+
+        # The crossing, marked where it happens — on the same quantity the summary plots it
+        # against, so the vertical here and the marker there are one event seen twice.
+        c = qoverk_crossing(results[k], m; reaction = qk_reaction, branch = qk_branch,
+                            use_activity = use_activity, min_excursion = qk_min_excursion)
+        c === nothing || vlines!(
+            ax, [abscissa === :time ? c.time : c.potential];
+            color = qk_color, linestyle = :dash, linewidth = qk_marker_lw,
+        )
+
+        show_panel_labels && panel_letter!(ax, i; fontsize = panel_label_size)
+        push!(axs, ax)
+    end
+    length(axs) > 1 && linkyaxes!(axs...)
+    abscissa === :time || length(axs) < 2 || linkxaxes!(axs...)
+
+
+    p = panel_anodic_peak_potentials!(
+        fig, fig[1:2, 3], scanrates, results;
+        models = m, qk_reaction, qk_branch, qk_min_excursion, qk_color, kwargs...,
+    )
+    show_panel_labels && panel_letter!(p.ax, length(idx) + 1; fontsize = panel_label_size)
+
+    # The trace panels are pinned so the summary cannot squeeze them: it carries a legend-free
+    # but wide log axis and would otherwise take the room four narrow panels need.
+    colsize!(fig.layout, 1, Relative(panel_width))
+    colsize!(fig.layout, 2, Relative(panel_width))
+    colgap!(fig.layout, 14)
+    rowgap!(fig.layout, 10)
+    return (fig = fig, axs = axs, ax_summary = p.ax, table = p.table,
+            crossings = p.crossings)
 end
 
 """

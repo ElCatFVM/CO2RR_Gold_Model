@@ -30,8 +30,18 @@ export faradaic_current, capacitive_current, cv_current, cv_abscissa, pressure_v
 export split_axis_pair!, split_series!, annotate_split!, split_widths!, reaction_plane_potential, electrode_potential, compensation_potential, driving_force, double_layer_capacitance, plot_ircomp_compare, plot_cv_summary, plot_cv_summary_compare
 # Randles–Ševčík analysis of the cathodic peak
 export cathodic_peak, randles_sevcik_table, randles_sevcik_fit, randles_sevcik_D, plot_randles_sevcik, lab_sqrt_scanrate, lab_peak_current
+export anodic_peaks, randles_sevcik_anodic_table, plot_randles_sevcik_anodic
+export qoverk_crossing, qoverk_crossing_potential, lab_peak_potential
+export plot_anodic_peak_potentials, panel_anodic_peak_potentials!, plot_qoverk_scanrate_summary
+export rhe_to_she, she_to_rhe
+# CO2 consumption split: electrode versus homogeneous buffer
+export node_volumes, co2_consumption_split, plot_co2_consumption, panel_co2_consumption!, lab_co2_consumption, lab_co2_flux, lab_co2_flux_short, lab_co2_consumption_short, lab_co2_flux_stacked, lab_co2_consumption_stacked
+# per-species variants of the surface labels, for panels that carry only one species
+export lab_conc_surface_of, lab_conc_surface_co, lab_activity_surface_of
+export rhe_to_she, she_to_rhe
 # buffer disequilibrium against scan rate
-export qoverk_series, qoverk_vs_scanrate_table, plot_qoverk_vs_scanrate, plot_qoverk_over_scanrate, QK_COLORS, QK_LABELS, lab_qk_deviation, lab_qoverk_conc, lab_qoverk_act, panel_time_current_diff!, lab_time, lab_voltage, lab_current, lab_current_co, lab_pressure, lab_scanrate, lab_current_F, lab_current_C, lab_current_tot, lab_current_abs, lab_distance, lab_conc_surface, lab_activity_surface, lab_capacitance, SPECIES_COLORS
+export qoverk_field, panel_letter, panel_letter!
+export qoverk_series, qoverk_vs_scanrate_table, plot_qoverk_vs_scanrate, plot_qoverk_over_scanrate, QK_COLORS, QK_LABELS, QK_FIELDS, lab_qk_deviation, lab_qoverk_conc, lab_qoverk_act, panel_time_current_diff!, lab_time, lab_voltage, lab_current, lab_current_co, lab_pressure, lab_scanrate, lab_current_F, lab_current_C, lab_current_tot, lab_current_abs, lab_distance, lab_conc_surface, lab_activity_surface, lab_capacitance, SPECIES_COLORS
 # CSV-driven polarization panels
 export species_columns, panel_polarization!, panel_species_vs_voltage!, panel_dlcap!, plot_iv_summary, plot_iv_summary_from_result, species_rich, species_table, polarization_table, surface_conc_table, surface_activity_table, lab_time_short, lab_voltage_short, lab_current_short
 

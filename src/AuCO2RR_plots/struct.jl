@@ -313,6 +313,51 @@ const lab_conc_surface = rich(
     subscript("α", font = :italic), superscript("‡"), "\n(M)"
 )
 
+"""
+    lab_conc_surface_of(sp)
+
+[`lab_conc_surface`](@ref) narrowed to one named species: `Surface Concentration c_<sp>‡ (M)`.
+
+For panels that carry a single species, where the running index `α` would be a promise of
+generality the axis does not keep. `sp` may be a plain string or rich text, e.g.
+`rich("CO", subscript("2"))` for a formula that needs its own subscript.
+
+The subscript is **upright**, unlike the `α` of the general label: `α` is a variable and takes
+italic, a chemical formula is an entity's name and does not.
+"""
+lab_conc_surface_of(sp) = rich(
+    "Surface Concentration ", rich("c", font = :bold_italic),
+    subscript(sp), superscript("‡"), "\n(M)"
+)
+
+"Surface concentration of CO. Built by [`lab_conc_surface_of`](@ref)."
+const lab_conc_surface_co = lab_conc_surface_of("CO")
+
+"""
+    lab_activity_surface_of(sp)
+
+[`lab_activity_surface`](@ref) narrowed to one named species, `Surface Activity a_<sp>‡`.
+
+The concentration twin is [`lab_conc_surface_of`](@ref); the two are kept in step because the
+same panel is often drawn on both bases.
+"""
+lab_activity_surface_of(sp) = rich(
+    "Surface Activity ", rich("a", font = :bold_italic),
+    subscript(sp), superscript("‡")
+)
+
+"""
+Potential at which a voltammetric peak sits, `Peak Potential U_p (V vs. SHE)`.
+
+The ordinate of the peak-position-against-scan-rate panel, where an irreversible peak walks
+with `ν` and a reversible one does not — the reading that says whether a peak is under
+kinetic or thermodynamic control.
+"""
+const lab_peak_potential = rich(
+    "Peak Potential ", rich("U", font = :bold_italic), subscript("p"),
+    "\n(V vs. SHE)"
+)
+
 "Differential double-layer capacitance: `Differential Capacitance C_dl (μF cm⁻²)`."
 const lab_capacitance = rich(
     "Differential Capacitance ", rich("C", font = :bold_italic), subscript("dl"),
@@ -402,8 +447,9 @@ Square root of the scan rate, the abscissa of a Randles–Ševčík plot.
 line through the origin. Plotting against `ν` curves the diffusion-limited case and makes a
 departure from it impossible to see by eye.
 """
+
 const lab_sqrt_scanrate = rich(
-    "Square Root of Scan Rate ", rich("v", font = :bold_italic), superscript("1/2"),
+    "Square Root of Scan Rate ", rich("ν", font = :bold_italic), superscript("1/2"),
     "\n((V s", superscript("−1"), ")", superscript("1/2"), ")"
 )
 
@@ -442,15 +488,40 @@ const lab_qk_deviation = rich(
     rich("Q", font = :bold_italic), " / ", rich("K", font = :bold_italic), ")|"
 )
 
+"""
+CO₂ consumption expressed as a current density, for comparing the electrode and the buffer.
+
+`Equivalent` is doing real work in this label: the homogeneous term moves no charge, and is
+converted with the reaction's `n_e F` only so the two routes share an axis. Dropping the word
+would claim a current that does not exist.
+"""
+# Two bases for the same quantity. The subscripted `eq` on the current one is load-bearing:
+# a bare `j` beside the words "CO₂ Consumption" would put a rate's name on a current's unit,
+# and the buffer's share moves no charge at all — it is converted with `n_e F` only so the
+# two contributions can share a scale with the voltammogram.
+const lab_co2_consumption = rich(
+    "CO", subscript("2"), " Consumption ", rich("j", font = :bold_italic), subscript("eq"),
+    "\n(mA cm", superscript("−2"), ")"
+)
+
+# The same split on its own physical footing: an areal molar flux, no charge implied.
+# Prefixed rather than coherent SI: in mol m⁻² s⁻¹ the values run around 1e−3 and Makie lifts
+# the decade onto the axis as a separate factor, which a reader has to multiply back in. The
+# milli- prefix puts the peak near 1.4 and keeps the axis literal.
+const lab_co2_flux = rich(
+    "CO", subscript("2"), " Consumption Rate ", rich("N", font = :bold_italic),
+    "\n(mmol m", superscript("−2"), " s", superscript("−1"), ")"
+)
+
 "Peak current magnitude: `Peak Current |i_p| (mA cm⁻²)`."
 const lab_peak_current = rich(
-    "Peak Current |", rich("i", font = :bold_italic), subscript("p"),
+    "Peak Current |", rich("I", font = :bold_italic), subscript("p"),
     "|\n(mA cm", superscript("−2"), ")"
 )
 
 "Scan rate: `Scan Rate v (V s⁻¹)`. Unit as a product of powers, not `V/s`."
 const lab_scanrate = rich(
-    "Scan Rate\n", rich("v", font = :bold_italic), " (V s", superscript("−1"), ")"
+    "Scan Rate\n", rich("ν", font = :bold_italic), " (V s", superscript("−1"), ")"
 )
 
 # --------------------------------------------------------------------------
@@ -473,6 +544,42 @@ const lab_voltage_short = rich(rich("U", font = :bold_italic), "\n(V vs. SHE)")
 
 "Current-density axis, symbol only."
 const lab_current_short = rich(rich("I", font = :bold_italic), "\n(mA cm", superscript("−2"), ")")
+
+"""
+CO₂ consumption rate, symbol only — the short form of [`lab_co2_flux`](@ref).
+
+A rotated y label's *height* is its text length, so the full name needs more than a 165 px
+summary row has and spills into the panel above. The name moves to the caption instead.
+"""
+const lab_co2_flux_short = rich(
+    rich("N", font = :bold_italic),
+    "\n(mmol m", superscript("−2"), " s", superscript("−1"), ")"
+)
+
+"CO₂ consumption as an equivalent current density, symbol only. See [`lab_co2_consumption`](@ref)."
+const lab_co2_consumption_short = rich(
+    rich("j", font = :bold_italic), subscript("eq"),
+    "\n(mA cm", superscript("−2"), ")"
+)
+
+"""
+CO₂ consumption rate over three lines: name, symbol, unit.
+
+Keeps the name that [`lab_co2_flux_short`](@ref) drops, for a row too short for the one-line
+form. A rotated label's height is its **longest line**, not its total length, so the name is
+wrapped as well — `"CO₂ Consumption Rate"` alone still overruns a 165 px row. Pair it with a
+reduced `ylabelsize`; at the summary figure's 22 pt even the wrapped form is marginal.
+"""
+const lab_co2_flux_stacked = rich(
+    "CO", subscript("2"), " Consumption\nRate ", rich("N", font = :bold_italic),
+    "\n(mmol m", superscript("−2"), " s", superscript("−1"), ")"
+)
+
+"Three-line form of [`lab_co2_consumption`](@ref). See [`lab_co2_flux_stacked`](@ref)."
+const lab_co2_consumption_stacked = rich(
+    "CO", subscript("2"), " Consumption\n", rich("j", font = :bold_italic), subscript("eq"),
+    "\n(mA cm", superscript("−2"), ")"
+)
 
 "Apply the electrochemistry style globally. Called from `__init__`; reset with `set_theme!()`."
 apply_electrochemistry_style!() = set_theme!(electrochemistry_theme())
