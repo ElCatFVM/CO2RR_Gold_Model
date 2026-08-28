@@ -9,6 +9,8 @@ using DataFrames
 using Printf
 using LessUnitful
 using DelimitedFiles
+# `datadir`, for the reference measurements the peak-position panel overlays.
+using DrWatson
 using CairoMakie, Colors
 using LinearAlgebra
 # `panel_time_current_diff!` resamples one sweep onto the other's time grid: two adaptive
@@ -33,6 +35,7 @@ export cathodic_peak, randles_sevcik_table, randles_sevcik_fit, randles_sevcik_D
 export anodic_peaks, randles_sevcik_anodic_table, plot_randles_sevcik_anodic
 export qoverk_crossing, qoverk_crossing_potential, lab_peak_potential
 export plot_anodic_peak_potentials, panel_anodic_peak_potentials!, plot_qoverk_scanrate_summary
+export axis_figure_x, experimental_anodic_peaks, shade_ramp, shade_gradient, scanrate_shades
 export rhe_to_she, she_to_rhe
 # CO2 consumption split: electrode versus homogeneous buffer
 export node_volumes, co2_consumption_split, plot_co2_consumption, panel_co2_consumption!, lab_co2_consumption, lab_co2_flux, lab_co2_flux_short, lab_co2_consumption_short, lab_co2_flux_stacked, lab_co2_consumption_stacked
@@ -56,6 +59,8 @@ export electrode_activity_vs_voltage, activity_vs_voltage_axis
 
 include("struct.jl")
 export electrochemistry_theme
+# Shared colour sequences, so a caller can hand one back in as a `colormap` keyword.
+export CMAP_SCANRATE, CMAP_PRESSURE, CMAP_PRESSURE_EXP, CMAP_IRCOMP
 # Revise does not re-run `__init__`, so this has to be callable by hand after a style edit.
 export apply_electrochemistry_style!
 

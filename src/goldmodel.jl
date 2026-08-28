@@ -173,6 +173,10 @@ elydata_NaF() = ElectrolyteData(
 
 Assemble the `ElectrolyteData` for the gold cell from the species list, the activity model
 `γ`, the constants in `reactiondata` and the chosen IR-compensation mode.
+
+`rlog`/`rexp` stay at the bare `log`/`exp`. `LiquidElectrolytes` ships `RLog`/`RExp`, but
+switching them in did not rescue the slow-scan run, so the negative iterates there are the
+discretization's, not the logarithm's — pick a scan rate that converges instead.
 """
 elydata_Au(bulk, γ, specieslayout, reactiondata, ircompensation) = ElectrolyteData(;
     nc = size(bulk)[1],
@@ -263,6 +267,28 @@ function make_eneutral(
     a *= 1.0e-1 * ufac"nm"
     c_bulk = -mapreduce(x -> x.c_bulk * x.z, +, bulk_species) / z
     return BulkSpecies(name, z, D, c_bulk, κ, a, v, M, color)
+end
+
+"""
+    without_faradaic(reactiondata = ReactionData()) -> ReactionData
+
+The same parameters with the electrode reaction switched off, for the counterfactual run.
+
+`S`, the catalytic site density, multiplies every faradaic flux the surface returns —
+`f[ico2]`, `f[ico]` and the OH⁻ term — and is never divided by, so `S = 0` removes the
+electrode reaction exactly while leaving transport, the double layer and the homogeneous
+buffer untouched. The voltammogram that comes back is the purely capacitive one.
+
+That is the control the species contours need: the fields under a sweep *with* current and
+under the same sweep *without* it differ only by what the electrode did, so the difference
+between the two figures is the electrode's own footprint rather than a change of conditions.
+
+Every other field is copied from `reactiondata`, so a customised set survives the switch.
+"""
+function without_faradaic(rd::ReactionData = ReactionData())
+    return ReactionData(;
+        (f => (f === :S ? 0.0 : getfield(rd, f)) for f in fieldnames(ReactionData))...
+    )
 end
 
 raw"""

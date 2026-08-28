@@ -65,7 +65,15 @@ end
 # ╔═╡ d011050d-c66e-4e8a-a173-f55679403a90
 begin
 	sawtooth = SawTooth(
-	        scanrate = 0.3,
+	        scanrate = 0.005,
+#	        scanrate = 0.05,
+	        vmin     = -1.2, 
+	        vmax     = 1.2,
+	        scanup   = false,
+			vstart = 0.0; tstart = 0.0
+	    )
+	sawtooth_Low_sr = SawTooth(
+	        scanrate = 5,
 #	        scanrate = 0.05,
 	        vmin     = -1.2, 
 	        vmax     = 1.2,
@@ -76,7 +84,7 @@ begin
 	sawtooth_exp = SawTooth(
 	        scanrate = 0.05,
 	        vmin     = -1.2, 
-	        vmax     = 0.8,
+	        vmax     = 1.2,
 	        scanup   = false,
 			vstart = 0.0; tstart = 0.0
 	    )
@@ -137,6 +145,9 @@ begin
     elystruct_odr
 end
 
+# ╔═╡ 843be025-22e8-4a07-adfa-63a0153b53e1
+m02 = GoldModel.create_model(; p_CO2 = 0.2, use_md_hydrated = false, γ_select = "Stefan", ircompensation)
+
 # ╔═╡ a6561efa-29d5-498d-a66f-b8fffe1bc293
 begin
     elystruct_irc = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan", ircompensation = PseudoPotentiostat())
@@ -172,14 +183,26 @@ cv_odr = sweep(elystruct_odr, grid, sawtooth; nperiods)
 # ╔═╡ a88af951-1a46-4eda-a8fa-dd59cd869a66
 cv_exp = sweep(elystruct_odr, grid, sawtooth_exp; nperiods)
 
+# ╔═╡ b9d31cc5-d7d3-41b9-a0a2-0a96e70ea93d
+cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods)
+
+# ╔═╡ f38053db-4d01-4f99-9c91-ca5c2b55ac63
+cv_unc_low_sr = sweep(elystruct_unc, grid, sawtooth_Low_sr; nperiods)
+
 # ╔═╡ 7bf09e84-8ad2-4b3b-92bd-8627d2c0dedc
 Δt_cv = 0.05
 
 # ╔═╡ 47515ef3-b6aa-49d0-b4fc-b471cb947aa1
+# ╠═╡ disabled = true
+#=╠═╡
 cv_unc = sweep(elystruct_unc, grid, sawtooth; nperiods)
+  ╠═╡ =#
 
 # ╔═╡ ba48cb67-a7af-4d65-b65f-b55d9c29f54c
+# ╠═╡ disabled = true
+#=╠═╡
 cv_irc = sweep(elystruct_irc, grid, sawtooth; nperiods)
+  ╠═╡ =#
 
 # ╔═╡ f77ec140-e091-46c1-8bc6-1c00f3880e83
 AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
@@ -193,15 +216,31 @@ Base.functionloc(AuCO2RR_plots.qoverk_series)
 
 # ╔═╡ 3ad8349a-f95f-4ba8-98c4-b404f98137aa
 plot_7species_contours_qk(cv_odr, X, elystruct_odr;
-    panel_label_size = 32)   # 안쪽이라 FS_LABEL이 크면 줄여
+    panel_label_strokewidth = 0)    # field와 무관하게 강제
+
+
+# ╔═╡ 93463782-a8e8-4c6f-bd83-82680aa0b2ae
+plot_7species_contours_qk(cv_unc_low_sr, X, elystruct_unc;
+    panel_label_strokewidth = 0)    # field와 무관하게 강제
+
+
+# ╔═╡ c8da62de-8784-4ed4-82e9-d9e2985806c2
 
 
 # ╔═╡ 36238c29-eea8-47b4-b5a3-17905b3483a8
 extrema(currents(cv_odr, 7) ./ currents(cv_odr, 5))   # CO / CO₂
 
 # ╔═╡ c40c801c-11dc-4a4b-a151-2f5fb11c322a
+#=╠═╡
+plot_cv_summary_compare(cv_exp, elystruct_odr, cv_odr, elystruct_odr; X_l = X, X_r = X,
+                        column_titles = ("Lower scan Rate (0.05 V s⁻¹)", "Higher scan rate (0.3 V s⁻¹)"), link_y = true)
+  ╠═╡ =#
+
+# ╔═╡ eba076cd-7400-4de8-8a89-e215b7c2a1fc
+#=╠═╡
 plot_cv_summary_compare(cv_odr, elystruct_odr, cv_unc, elystruct_unc; X_l = X, X_r = X,
-                        column_titles = ("iR Compensated", "iR Drop(Uncompensated)"), link_y = true)
+                        column_titles = ("With iR compensation", "Without iR compensation"), link_y = true)
+  ╠═╡ =#
 
 # ╔═╡ 786576ee-9f14-49b0-b118-4983d7581f20
 #=╠═╡
@@ -212,6 +251,7 @@ end
   ╠═╡ =#
 
 # ╔═╡ 96eb220e-d88c-4f3c-872e-174938b19a8c
+#=╠═╡
 let
     fig = with_theme(electrochemistry_theme()) do
         f = Figure(size = (800, 400))
@@ -227,6 +267,7 @@ let
     end
     fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 5412784d-68b9-4ac1-bc87-0051e1da0ce8
 tsol = (; Δt_min = 0.05, Δt_max = 0.05,   # 적응 제어 무력화 → 같은 격자
@@ -240,6 +281,8 @@ md"""
 """
 
 # ╔═╡ 01f688a7-3265-4bc5-9b74-6eedfc36476d
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	grid_dict = Dict{Float64, Any}()
 	for Lv in [100, 500, 1000, 2500] .* μm
@@ -248,8 +291,10 @@ begin
 	end
 	grid_dict
 end
+  ╠═╡ =#
 
 # ╔═╡ 806f2c98-bea6-48fe-b943-41ce568c9361
+#=╠═╡
 begin
 	results_contour = cvsweep_odr_over_L(
 	    elystruct_odr.elydata,       
@@ -264,8 +309,10 @@ begin
 		damp_initial=0.5
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 94caa5ed-72bf-4c15-99ad-b64b7ef55444
+#=╠═╡
 begin
     f = Figure(size = (800, 450))
     ax = Axis(f[1,1]; xlabel = lab_time, ylabel = lab_conc_surface_co, yscale = log10,
@@ -280,13 +327,16 @@ begin
     axislegend(ax; position = :lt)
     f
 end
+  ╠═╡ =#
 
 # ╔═╡ cde50813-1b3e-40f0-b81f-5a2745fa5f79
+#=╠═╡
 AuCO2RR_plots.plot_species_contour_over_L(
     results_contour, grid_dict, elystruct_odr;
     species = 5,
     ylimits = (1.0e-12, 1.0e-2),
 )
+  ╠═╡ =#
 
 # ╔═╡ cf4713e6-706c-484f-b398-8ba6cc33561b
 # ╠═╡ disabled = true
@@ -358,12 +408,16 @@ end
   ╠═╡ =#
 
 # ╔═╡ 6301f323-16d8-4805-bbcf-4a055bca2d59
+#=╠═╡
 blthickness(grid, elystruct_unc.elydata, cv_unc.tsol; species = 5) / μm
+  ╠═╡ =#
 
 # ╔═╡ 6f56453e-384b-4be6-9298-8101d12d8b79
 blthickness(grid, elystruct_odr.elydata, cv_odr.tsol; species = 5) / μm
 
 # ╔═╡ 69bcb95c-69a5-4daf-9646-2313c8452018
+# ╠═╡ disabled = true
+#=╠═╡
 begin
     factors = [0.0, 0.1, 0.5, 0.9]
 
@@ -381,13 +435,16 @@ begin
     end
     splitruns
 end
+  ╠═╡ =#
 
 # ╔═╡ bb8cd305-1bb7-4d4e-8158-014a290e2325
+#=╠═╡
 plot_ircomp_compare(splitruns, elystruct_odr;
                                   reference = cv_unc_fixed,
                                   reference_model = elystruct_unc,
                                   panels = (:driving, :ircomp, :cv, :metal_time),
                                   layout = (2, 2))
+  ╠═╡ =#
 
 # ╔═╡ 68527236-79a2-4064-ace0-ddd046401c13
 
@@ -398,58 +455,106 @@ md"""
 """
 
 # ╔═╡ 535e8412-7e45-4be2-9533-b1ee1245d3e1
+# ╠═╡ disabled = true
+#=╠═╡
 begin
     scanrates = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 5.0]
     SR_vec = [sweep(elystruct_odr, grid,
                     SawTooth(scanrate = sr, vmin = -1.2, vmax = 1.2,
                              scanup = false, vstart = 0.0; tstart = 0.0);
-                    nperiods,
-                    Δu_opt = 0.01,
-                    abstol = 1.0e-12, reltol = 1.0e-12) for sr in scanrates]
+                    nperiods) for sr in scanrates]
 end
 
+  ╠═╡ =#
+
+# ╔═╡ 3d6d44c2-a410-422d-b3a1-bef156f64309
+        scanrates_SR_02 = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0, 2.0, 5.0, 10]
+
+
+# ╔═╡ 36bf877e-9889-45b7-a9c8-4d228bb8bb6f
+# ╠═╡ disabled = true
+#=╠═╡
+SR_02 = scanrate_varied_sweep(m02.elydata, sawtooth, grid, m02.bcondition, m02.reaction;
+                              scanrates = scanrates_SR_02)
+  ╠═╡ =#
 
 # ╔═╡ 325e78e8-1f92-4c83-a28e-5bbb3729f481
+#=╠═╡
 plot_qoverk_scanrate_summary(scanrates, SR_vec, elystruct_odr;
-    panel_idx = (3, 6, 10, 11),        # 0.005, 0.05, 0.5, 5.0
-    panel_width = 0.26,               # 왼쪽 블록 폭 (열당 비율)
-    label_at = (0.01, 5.0, 0.01),     # 요약 패널의 인라인 라벨은 그대로 통과
-    label_offsets = (0.17, -0.15, -0.22)).fig
+    panel_scanrates    = (0.005, 0.1, 0.3),
+    summary_row_height = Relative(0.45),   # (a) 높이 비율
+    show_connectors    = true,
+    connector_linestyle = :solid,
+    connector_color    = colorant"#E67E22").fig
+  ╠═╡ =#
 
+# ╔═╡ 6f9b67e5-95b0-4c9f-a934-b563969f91da
+#=╠═╡
+begin
+    plot_qoverk_scanrate_summary(scanrates_SR_02, SR_02.sweeps, m02;
+        panel_scanrates = (0.005, 0.1, 1), title_mode = :inline,
+        reference = true).fig
+end
+  ╠═╡ =#
+
+# ╔═╡ 67abf543-f209-4c67-b7f3-edff6f46cd33
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+    ν_pair = [0.001, 0.1]
+    Xg     = vec(grid[Coordinates])
+
+    m_off = GoldModel.create_model(;
+        reactiondata   = GoldModel.without_faradaic(),
+        p_CO2          = 1.0,
+        ircompensation = NoIRCompensation()
+                                  )
+
+    figs = Dict()
+    for (tag, mm) in (("on", elystruct_odr), ("off", m_off))
+        sw = scanrate_varied_sweep(mm.elydata, sawtooth, grid,
+                                   mm.bcondition, mm.reaction;
+                                   scanrates = ν_pair,
+                                   Δt_max = 1.0)
+        for (j, ν) in enumerate(ν_pair)
+            f = plot_7species_contours_qk(sw.sweeps[j], Xg, mm)
+            figs[(tag, ν)] = f
+            CairoMakie.save("contours_$(tag)_nu$(ν).png", f)
+        end
+    end
+    #figs
+end
+
+  ╠═╡ =#
+
+# ╔═╡ e675fcb2-20fe-4c92-badc-ecee20e11c25
+#=╠═╡
+m_off
+  ╠═╡ =#
 
 # ╔═╡ 88b7c7d7-1373-4d5a-b989-0383693f0561
+#=╠═╡
 out = plot_anodic_peak_potentials(scanrates, SR_vec; models = elystruct_odr).fig
-
-# ╔═╡ 97a4ff63-db3c-4c6f-901f-02a875f96b42
-begin
-    rd0 = GoldModel.ReactionData()
-    rd_frozen = GoldModel.ReactionData(kbf1 = rd0.kbf1 * 1e-6, kaf1 = rd0.kaf1 * 1e-6)
-    m_frozen  = GoldModel.create_model(; reactiondata = rd_frozen,
-                                         p_CO2 = 1.0,
-                                         ircompensation = ircompensation)
-    
-end
-
-# ╔═╡ 45bf24da-5f79-42cd-8c48-6dc54f58e83b
-begin
-    scanrates_frozen = [0.001,0.01,0.1,0.5, 5.0]
-    SR_vec_forzen = [sweep(m_frozen, grid,
-                    SawTooth(scanrate = sr, vmin = -1.2, vmax = 1.2,
-                             scanup = false, vstart = 0.0; tstart = 0.0);
-                    nperiods,
-                    Δu_opt = 0.01,
-                    abstol = 1.0e-12, reltol = 1.0e-12) for sr in scanrates]
-end
+  ╠═╡ =#
 
 # ╔═╡ 581c00db-1633-41e0-8462-f94be2e4e40a
+#=╠═╡
 begin 
 	rsa = plot_randles_sevcik_anodic(scanrates, SR_vec; fit_range = (0.0, 0.5), min_rel_height  = 0.002, colors = (colorant"#E2C799", colorant"#4A5568"), limits = ((0, nothing), (0, 10)))
 	rsa.fig
 end
+  ╠═╡ =#
 
 # ╔═╡ 4c520a35-1109-472d-a800-d42133a7ef94
-plot_scanrate_sweeps_split(SR_vec, scanrates; ured = (-1.3, -0.6),
-        uox = (-0.2, 1.5), annotate_offsets = Dict("5.0" => (-0.75, 2.45), "0.5" => (-0.45, 2.2), "0.05" => (-0.12, 0), "0.005" => (-0.12, 0)))
+#=╠═╡
+plot_scanrate_sweeps_split(SR_02.sweeps, scanrates_SR_02;
+    select = (0.005, 0.1, 1.0),
+    ured = (-1.3, -0.6), uox = (-0.2, 1.5),
+    annotate_offsets = Dict("1.0" => (-0.4, 0.06), "0.1" => (-0.15, 0.0),
+                            "0.005" => (-0.12, 0))
+)
+
+  ╠═╡ =#
 
 # ╔═╡ ff940e8f-be87-4e5e-a61d-a0632ef9adfd
 #=╠═╡
@@ -462,6 +567,8 @@ md"""
 """
 
 # ╔═╡ 2333ae9c-0f59-4a87-90ed-bc5e8fba9f76
+# ╠═╡ disabled = true
+#=╠═╡
 begin
     cvfun = ely -> LiquidElectrolytes.cvsweep(
         PNPSystem(grid; bcondition = elystruct_odr.bcondition,
@@ -473,12 +580,17 @@ begin
     P_recs = pressure_varied_sweep(elystruct_odr.elydata, cvfun;
                                    Pvec = [0.1, 0.5, 1.0], ispec = 5)
 end
+  ╠═╡ =#
 
 # ╔═╡ bde0975f-957f-4e8c-8c15-59e7f1a09400
+#=╠═╡
 pressure_varied_cvsweep(P_recs)
+  ╠═╡ =#
 
 # ╔═╡ ad3c4119-cd97-4933-820f-84eee96cbc07
+#=╠═╡
 pressure_varied_cvsweep_split(P_recs)
+  ╠═╡ =#
 
 # ╔═╡ 46f1c6f3-d36e-442b-9936-3dd4dec397b3
 #=╠═╡
@@ -491,6 +603,7 @@ plot_cv_summary(rec, elystruct_odr)
   ╠═╡ =#
 
 # ╔═╡ 6f9c5c46-eae8-48a2-9df6-84a09cea7ef8
+#=╠═╡
 for (p, r) in P_recs
     U, _ = cv_abscissa(r)
     I = cv_current(r) .* (cm^2/mA)
@@ -501,9 +614,12 @@ for (p, r) in P_recs
         "  I_ox_max=", round(maximum(I), digits = 3),
         "  CO@vertex=", r.tsol[5, 1, k])
 end
+  ╠═╡ =#
 
 # ╔═╡ 391ca4a1-e709-454d-979d-5246c5f2b1d0
+#=╠═╡
 plot_randles_sevcik_anodic(SR_vec, RESULTS; models = elystruct_odr).fig
+  ╠═╡ =#
 
 # ╔═╡ 7620826e-c562-41e2-aa2b-e717843f9187
 #=╠═╡
@@ -562,6 +678,7 @@ plot_cv_scanrate_grid(SR_01, elystruct_odr; scanrates = [0.01, 0.05, 0.2])
 # ╟─2fe95a9f-202e-418a-b422-cef1ef013c9d
 # ╠═8626e977-a77f-4646-be99-33e713dbf593
 # ╠═0963720a-e310-45b2-92a5-a9e5bc3e6888
+# ╠═843be025-22e8-4a07-adfa-63a0153b53e1
 # ╠═a6561efa-29d5-498d-a66f-b8fffe1bc293
 # ╠═f4f59329-e817-495a-9e83-1ab53e7738a9
 # ╠═590a17bd-c98d-4b23-9139-04b550c95efe
@@ -569,6 +686,8 @@ plot_cv_scanrate_grid(SR_01, elystruct_odr; scanrates = [0.01, 0.05, 0.2])
 # ╠═57b5d6b5-cf65-4997-903d-f8b08e983b8b
 # ╠═e2eb4160-550a-4a07-b4c8-66863aaab46f
 # ╠═a88af951-1a46-4eda-a8fa-dd59cd869a66
+# ╠═b9d31cc5-d7d3-41b9-a0a2-0a96e70ea93d
+# ╠═f38053db-4d01-4f99-9c91-ca5c2b55ac63
 # ╠═7bf09e84-8ad2-4b3b-92bd-8627d2c0dedc
 # ╠═47515ef3-b6aa-49d0-b4fc-b471cb947aa1
 # ╠═ba48cb67-a7af-4d65-b65f-b55d9c29f54c
@@ -576,8 +695,11 @@ plot_cv_scanrate_grid(SR_01, elystruct_odr; scanrates = [0.01, 0.05, 0.2])
 # ╠═bd9b5c58-0375-4ce2-aa55-c74b921aa050
 # ╠═75ed6b82-0b0f-42d2-8043-017acb34db7a
 # ╠═3ad8349a-f95f-4ba8-98c4-b404f98137aa
+# ╠═93463782-a8e8-4c6f-bd83-82680aa0b2ae
+# ╠═c8da62de-8784-4ed4-82e9-d9e2985806c2
 # ╠═36238c29-eea8-47b4-b5a3-17905b3483a8
 # ╠═c40c801c-11dc-4a4b-a151-2f5fb11c322a
+# ╠═eba076cd-7400-4de8-8a89-e215b7c2a1fc
 # ╠═786576ee-9f14-49b0-b118-4983d7581f20
 # ╠═96eb220e-d88c-4f3c-872e-174938b19a8c
 # ╠═5412784d-68b9-4ac1-bc87-0051e1da0ce8
@@ -601,10 +723,13 @@ plot_cv_scanrate_grid(SR_01, elystruct_odr; scanrates = [0.01, 0.05, 0.2])
 # ╠═68527236-79a2-4064-ace0-ddd046401c13
 # ╠═743e985e-1fa3-426f-b2c0-cdb52517443d
 # ╠═535e8412-7e45-4be2-9533-b1ee1245d3e1
+# ╠═3d6d44c2-a410-422d-b3a1-bef156f64309
+# ╠═36bf877e-9889-45b7-a9c8-4d228bb8bb6f
 # ╠═325e78e8-1f92-4c83-a28e-5bbb3729f481
+# ╠═6f9b67e5-95b0-4c9f-a934-b563969f91da
+# ╠═e675fcb2-20fe-4c92-badc-ecee20e11c25
+# ╠═67abf543-f209-4c67-b7f3-edff6f46cd33
 # ╠═88b7c7d7-1373-4d5a-b989-0383693f0561
-# ╠═97a4ff63-db3c-4c6f-901f-02a875f96b42
-# ╠═45bf24da-5f79-42cd-8c48-6dc54f58e83b
 # ╠═581c00db-1633-41e0-8462-f94be2e4e40a
 # ╠═4c520a35-1109-472d-a800-d42133a7ef94
 # ╠═ff940e8f-be87-4e5e-a61d-a0632ef9adfd

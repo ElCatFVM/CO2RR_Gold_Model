@@ -1,6 +1,6 @@
 name = "AuCO2RR"
 uuid = "8247d918-047f-4de2-b6aa-6a39254548b4"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Sumin Choi <sm990106sm@korea.ac.kr>"]
 
 [deps]

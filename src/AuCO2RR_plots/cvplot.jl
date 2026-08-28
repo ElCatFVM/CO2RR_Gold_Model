@@ -493,12 +493,26 @@ function plot_scanrate_sweeps(
         abscissa = :applied,
         fig_size = (800, 400),
         scale = cm^2 / mA,
-        legend_title = "Scan Rates (V/s)",
+        legend_title = lab_scanrate,
+        # `:direct` writes each scan rate in its own curve's colour beside that curve, `:box`
+        # is the boxed legend this used to have unconditionally, `:none` neither. Same three
+        # names, and the same annotation keywords, as `pressure_varied_cvsweep_split`.
+        legend_mode = :direct,
+        # Potential the direct labels sit at, on the anodic branch. Default is the sweep's
+        # most positive point, where the curves have already separated.
+        annotate_x = nothing,
+        annotate_fontsize = 22,
+        # `Dict(label => (dx, dy))` in data units, for curves whose labels collide.
+        annotate_offsets = nothing,
+        label_fmt = sr -> string(sr),
         highlight_index = nothing,
         highlight_color = RGB(1, 0.2, 0.2),
         highlight_lw = LW_HIGHLIGHT,
         default_lw = LW_LINE,
     )
+    legend_mode in (:direct, :box, :none) || throw(ArgumentError(
+        "legend_mode must be :direct, :box or :none, got $(repr(legend_mode))"
+    ))
     fig = Figure(size = fig_size)
 
     # axis label follows the abscissa choice, so it always names what it shows
@@ -510,9 +524,10 @@ function plot_scanrate_sweeps(
 
     plot_objs = Any[]
     labels = String[]
+    curves = Any[]
 
     for (j, rec) in enumerate(sweep_vec)
-        push!(labels, "$(scanrates[j])\t\t ")
+        push!(labels, label_fmt(scanrates[j]))
 
         color_j = cols[j]
         lw_j = default_lw
@@ -526,9 +541,28 @@ function plot_scanrate_sweeps(
         U, _ = cv_abscissa(rec; kind = abscissa)
         line = lines!(ax, U, I; linewidth = lw_j, color = color_j)
         push!(plot_objs, line)
+        push!(curves, (U = U, I = I, color = color_j))
     end
 
-    Legend(fig[1, 2], plot_objs, labels, legend_title; framevisible = true)
+    if legend_mode === :box
+        Legend(fig[1, 2], plot_objs, labels, legend_title; framevisible = true)
+    elseif legend_mode === :direct && !isempty(curves)
+        xa = something(annotate_x, maximum(maximum(c.U) for c in curves))
+        for (j, c) in enumerate(curves)
+            # Anodic branch only. The sweep visits `xa` twice and the two visits are far apart
+            # in current; picking the nearer sample without that restriction would put a
+            # label on whichever branch happened to be sampled closer, run by run.
+            rising = falses(length(c.U))
+            rising[2:end] .= diff(c.U) .> 0
+            idxs = findall(rising)
+            isempty(idxs) && (idxs = eachindex(c.U))
+            k = idxs[argmin(abs.(view(c.U, idxs) .- xa))]
+            dx, dy = annotate_offsets === nothing ? (0.0, 0.0) :
+                     get(annotate_offsets, labels[j], (0.0, 0.0))
+            text!(ax, c.U[k] + dx, c.I[k] + dy; text = " " * labels[j], color = c.color,
+                  fontsize = annotate_fontsize, font = :bold, align = (:left, :center))
+        end
+    end
     return fig
 end
 
@@ -1145,11 +1179,16 @@ function pressure_varied_cvsweep_split(
         # anodic vertex current and their direct labels collide.
         annotate_offsets = nothing,
         colormap = CMAP_PRESSURE,
+        # One colour per record, overriding `colormap`. The default spreads the ramp over
+        # *what is drawn*, so a subset re-uses the whole ramp and the same member changes
+        # colour between figures; pass colours computed against the full series to stop that.
+        colors = nothing,
         xticks_red = LinearTicks(3),
         xticks_ox = LinearTicks(3),
     )
     n = length(P_recs)
-    cols_sim = [colormap[t] for t in range(0, 1, length = max(n, 1))]
+    cols_sim = something(colors, [colormap[t] for t in range(0, 1, length = max(n, 1))])
+    length(cols_sim) == n || error("got $(length(cols_sim)) colors for $(n) records")
 
     xlab = isempty(P_recs) ? lab_voltage : cv_abscissa(P_recs[1][2]; kind = abscissa)[2]
     ox_title = anodic_gain == 1 ? "oxidation" : @sprintf("oxidation  (×%g)", anodic_gain)
@@ -1389,15 +1428,48 @@ end
 Broken-axis version of [`plot_scanrate_sweeps`](@ref), with the same reduction/oxidation
 split as [`pressure_varied_cvsweep_split`](@ref) — which is the shared implementation;
 only the legend labelling differs. All of its keywords apply here too.
+
+`select` draws a subset: scan rates (matched to the nearest run in `log ν`) or, if integers,
+positions in `scanrates`. Ten curves on one broken axis is more than the eye separates, and
+`annotate_offsets` has to be tuned per curve, so a figure usually wants four or five.
+
+`ref_scanrates` is the series the colours are normalised against. Selecting a subset sets it to
+the full `scanrates` by default, so a run keeps the colour it has in the whole series — the
+same rule [`scanrate_shades`](@ref) applies, which is what makes this figure colour-match
+[`plot_qoverk_scanrate_summary`](@ref). Without it the ramp is spread over *what is drawn* and
+the slowest run selected always takes the first colour, whichever run that happens to be.
+
+The normalisation is in `log ν`, not in position: a scan-rate series is geometric, and even
+spacing by index would put the same colour distance between 0.001 and 0.002 as between 1 and 5.
 """
-plot_scanrate_sweeps_split(sweep_vec, scanrates; colormap = CMAP_SCANRATE, kwargs...) =
-    pressure_varied_cvsweep_split(
-    collect(zip(scanrates, sweep_vec));
-    legend_title = lab_scanrate,
-    label_fmt = sr -> string(sr),
-    colormap = colormap,
-    kwargs...
-)
+function plot_scanrate_sweeps_split(
+        sweep_vec, scanrates;
+        select = nothing,
+        ref_scanrates = select === nothing ? nothing : scanrates,
+        colormap = CMAP_SCANRATE,
+        kwargs...
+    )
+    idx = if select === nothing
+        eachindex(scanrates)
+    elseif eltype(select) <: Integer
+        collect(select)
+    else
+        # Nearest in log: the series is geometric, so nearest in the raw number would snap
+        # every request below 1 onto the same run.
+        [argmin(abs.(log10.(scanrates) .- log10(v))) for v in select]
+    end
+    colors = ref_scanrates === nothing ? nothing :
+             scanrate_shades(first(colormap), scanrates[idx];
+                             ref = ref_scanrates, colormap = colormap)
+    return pressure_varied_cvsweep_split(
+        collect(zip(scanrates[idx], sweep_vec[idx]));
+        legend_title = lab_scanrate,
+        label_fmt = sr -> string(sr),
+        colormap = colormap,
+        colors = colors,
+        kwargs...
+    )
+end
 
 
 # =====================================================================
@@ -2765,8 +2837,7 @@ function panel_time_voltage!(
     )
     ax = Axis(
         panel_pos; xlabel = xlabel,
-        ylabel = rich("Electrode Potential ", rich("U", font = :bold_italic),
-                      subscript("M"), "\n(V vs. SHE)")
+        ylabel = lab_voltage
     )
     U = m === nothing ? result.voltages : electrode_potential(result, m)
     # the protocol is the reference the curve is read against; the gap between them is
@@ -2955,18 +3026,20 @@ function plot_ircomp_compare(
     U_we = results[first(ks)].sawtooth
 
     # y-value and axis decoration per panel kind, so the layout below is just bookkeeping
-    lab_UM = rich("Electrode Potential ", rich("U", font = :bold_italic), subscript("M"), "\n(V vs. SHE)")
+    # Bare `U` for the metal potential, as `lab_voltage` has it: an `M` subscript only earns
+    # its place where a second potential is in play, and the one place that happens — the
+    # driving force — names the other one explicitly.
     ylabel_of = Dict(
         :driving => rich("Driving Force ",
-                         rich("U", font = :bold_italic), subscript("M"), " − ",
+                         rich("U", font = :bold_italic), " − ",
                          rich("U", font = :bold_italic), subscript("PET"), "\n(V)"),
-        :metal => lab_UM,
+        :metal => lab_voltage,
         # subscript "DROP", not "DL": U_dl is already the double-layer voltage that
         # `cv_abscissa(:dl)` returns, and the two are unrelated quantities
         :ircomp => rich("Recovered IR Drop ",
                         rich("U", font = :bold_italic), subscript("DROP"), "\n(V)"),
         :cv => lab_current_co,
-        :metal_time => lab_UM,
+        :metal_time => lab_voltage,
         :rp_time => rich("Reaction-Plane Potential ",
                          rich("U", font = :bold_italic), subscript("PET"), "\n(V vs. SHE)"),
     )
@@ -3487,6 +3560,49 @@ rhe_to_she(E; pH = 6.8) = E - 0.059 * pH
 she_to_rhe(E; pH = 6.8) = E + 0.059 * pH
 
 """
+    experimental_anodic_peaks(; dir, pH = 6.8, files = ...)
+
+Marcandalli et al.'s measured anodic peak positions, on this package's scale and numbering.
+
+Returns `DataFrame(scanrate, U_p, I_p, peak)` ready to overlay on
+[`panel_anodic_peak_potentials!`](@ref). Two conversions happen here and nowhere else:
+
+  - **mV s⁻¹ → V s⁻¹.** The files carry the scan rate as the paper prints it.
+  - **RHE → SHE**, via [`rhe_to_she`](@ref). At pH 6.8 that is 0.401 V, larger than the gap
+    between the two peaks, so an overlay that skips it lands a peak on top of the wrong one
+    with nothing looking wrong.
+
+!!! warning "The peak numbering is inverted on purpose"
+    The paper calls the **less** positive feature the 1st peak. This package orders
+    `:from_positive`, so its series 1 is the **most** positive — the one present at every scan
+    rate. Loading `RHE_1st_peak.csv` as `peak = 1` would therefore plot the paper's first peak
+    against our second, in the same colour, and the figure would look consistent while
+    comparing different features. `files` maps each file to the series it belongs to here.
+"""
+function experimental_anodic_peaks(;
+        dir = datadir("Langmuir_CV_data"),
+        pH = 6.8,
+        files = ("RHE_2nd_peak.csv" => 1, "RHE_1st_peak.csv" => 2),
+    )
+    ν = Float64[]
+    U = Float64[]
+    I = Float64[]
+    pk = Int[]
+    for (fname, series) in files
+        path = joinpath(dir, fname)
+        isfile(path) || (@warn "missing $(path); skipping"; continue)
+        df = CSV.read(path, DataFrame)
+        for r in eachrow(df)
+            push!(ν, r.Scan_Rate / 1000)            # mV s⁻¹ as printed → V s⁻¹
+            push!(U, rhe_to_she(r[Symbol("V vs RHE")]; pH))
+            push!(I, r.Current)
+            push!(pk, series)
+        end
+    end
+    return sort!(DataFrame(scanrate = ν, U_p = U, I_p = I, peak = pk), [:peak, :scanrate])
+end
+
+"""
     randles_sevcik_anodic_table(scanrates, results; npeaks = 2, kwargs...)
 
 Anodic peak currents against scan rate, one row per peak per run.
@@ -3733,11 +3849,49 @@ function panel_anodic_peak_potentials!(
         qk_branch = :anodic,
         qk_min_excursion = 0.5,
         qk_color = colorant"#E67E22",
+        # One shade per run, from `scanrate_shades`. `crossing_colors` forces particular
+        # colours; `crossing_colormap` swaps the ramp they are drawn from.
+        crossing_colors = nothing,
+        crossing_colormap = nothing,
         qk_label = "Q/K crossing",
         peak_labels = ("high U", "low U"),
-        markersize = 14,
+        # The line only guides the eye between runs — it is not a fit — while every marker is a
+        # datum, so the marker carries the weight. Both sit above the theme defaults: this
+        # panel is printed small and a 2 pt line with 14 pt marks disappears on the page.
+        # A diamond and a circle are only distinguishable once the marks are this large.
+        markersize = 30,
+        linewidth = LW_DASH,
         xscale = log10,
+        xaxisposition = :bottom,
         ylabel = lab_voltage,
+        # Shading for where the second anodic peak exists and where it does not. The boundary
+        # is taken from the data — the geometric mean of the fastest run without a second peak
+        # and the slowest run with one — rather than set by hand, so it cannot drift from the
+        # table it describes.
+        # Measured peaks drawn behind the simulated ones. A `DataFrame` shaped like
+        # `experimental_anodic_peaks()`; `true` loads that. Open markers, no connecting line,
+        # so the two sources are told apart by mark rather than by colour — colour is already
+        # carrying which peak it is.
+        reference = nothing,
+        # A square, not a circle: the simulated peaks are already round and the crossing is a
+        # diamond, and an open circle beside a filled one reads as the same mark at small size.
+        # Three distinguishable outlines beat three sizes of the same outline.
+        reference_marker = :rect,
+        reference_strokewidth = 3,
+        show_peak_regions = true,
+        region_colors = ((colorant"#4A5568", 0.07), (colorant"#E67E22", 0.11)),
+        region_labels = ("single peak", "double peak"),
+        # Above the inline series names: these label whole regions of the axis rather than one
+        # curve, so they read as a level up in the figure's hierarchy.
+        region_labelsize = 26,
+        region_label_y = 0.97,
+        region_label_margin = 0.02,
+        region_pad = 1.4,
+        # Empty strip above the data for the region names to sit in. Without it they land on
+        # whatever the topmost series is doing there — the inline "high U" label in
+        # particular, which is anchored to its curve and cannot be moved out of the way
+        # without moving it off the curve it names.
+        region_headroom = 0.22,
         # Named on the curves rather than in a box, as the pressure sweeps are. Three series
         # over three decades leave a legend nowhere to sit that is not on top of one of them.
         label_mode = :inline,
@@ -3756,7 +3910,61 @@ function panel_anodic_peak_potentials!(
     nrow(tbl) == 0 && error("no anodic maxima found in any run")
     npeaks = peak_windows === nothing ? maximum(tbl.peak) : length(peak_windows)
 
-    ax = Axis(panel_pos; xlabel = lab_scanrate, ylabel = ylabel, xscale = xscale)
+    ax = Axis(panel_pos; xlabel = lab_scanrate, ylabel = ylabel, xscale = xscale,
+              xaxisposition = xaxisposition)
+
+    # Before any series, so the shading sits behind the data rather than over it.
+    ν_split = nothing
+    if show_peak_regions
+        allν = sort(unique(tbl.scanrate))
+        xlo, xhi = first(allν) / region_pad, last(allν) * region_pad
+        sub2 = tbl[(tbl.peak .== 2) .& tbl.interior, :]
+        if nrow(sub2) > 0
+            ν2 = minimum(sub2.scanrate)
+            below = filter(<(ν2), allν)
+            ν_split = isempty(below) ? xlo : sqrt(maximum(below) * ν2)
+            vspan!(ax, xlo, ν_split; color = region_colors[1])
+            vspan!(ax, ν_split, xhi; color = region_colors[2])
+            # Relative x, computed in the decade the axis actually shows: on a log abscissa the
+            # midpoint of a region is its geometric mean, not its arithmetic one.
+            relx(v) = (log10(v) - log10(xlo)) / (log10(xhi) - log10(xlo))
+            for (txt, ctr, al) in zip(
+                    region_labels,
+                    (sqrt(xlo * ν_split), sqrt(ν_split * xhi)),
+                    ((:center, :top), (:center, :top)),
+                )
+                # Clamped, and pinned to the frame edge once clamped: a region whose centre
+                # sits near the axis edge would otherwise have half its name outside the
+                # figure, which is what happens to "double peak" when the fast end is short.
+                rx = relx(ctr)
+                a = rx < region_label_margin ? (:left, al[2]) :
+                    rx > 1 - region_label_margin ? (:right, al[2]) : al
+                text!(ax, clamp(rx, region_label_margin, 1 - region_label_margin),
+                      region_label_y; text = txt, space = :relative,
+                      align = a, fontsize = region_labelsize,
+                      font = :bold, color = colorant"#4A5568")
+            end
+        end
+        xlims!(ax, xlo, xhi)
+    end
+
+    # Behind the simulated series, so a measured point never hides a computed one.
+    ref = reference === true ? experimental_anodic_peaks() : reference
+    if ref !== nothing && nrow(ref) > 0
+        # The measured runs reach 1 V s⁻¹ where ours reach 5, so let them widen the axis.
+        show_peak_regions && xlims!(ax,
+            min(minimum(tbl.scanrate) / region_pad, minimum(ref.scanrate) / region_pad),
+            max(maximum(tbl.scanrate) * region_pad, maximum(ref.scanrate) * region_pad))
+        for j in sort(unique(ref.peak))
+            sub = ref[ref.peak .== j, :]
+            nrow(sub) == 0 && continue
+            scatter!(ax, sub.scanrate, sub.U_p;
+                     marker = reference_marker, markersize = markersize,
+                     color = :transparent,
+                     strokecolor = colors[min(j, length(colors))],
+                     strokewidth = reference_strokewidth)
+        end
+    end
 
     plots = Any[]
     names = String[]
@@ -3768,7 +3976,7 @@ function panel_anodic_peak_potentials!(
         nrow(sub) == 0 && continue
         col = colors[min(j, length(colors))]
         p = scatterlines!(ax, sub.scanrate, sub.U_p;
-                          color = col, markersize = markersize, linewidth = LW_DASH)
+                          color = col, markersize = markersize, linewidth = linewidth)
         push!(plots, p)
         push!(names, peak_labels[min(j, length(peak_labels))])
         push!(series, (x = sub.scanrate, y = sub.U_p, color = col))
@@ -3797,13 +4005,30 @@ function panel_anodic_peak_potentials!(
         if isempty(νq)
             @warn "no $(qk_branch) Q/K crossing found for reaction $(qk_reaction) in any run"
         else
-            p = scatterlines!(ax, νq, Uq; color = qk_color, marker = :diamond,
-                              markersize = markersize, linewidth = LW_DASH,
-                              linestyle = :dash)
+            # Line in the middle of the ramp, markers shaded by scan rate. The line is the
+            # trend and belongs to no single run, so it takes the ramp's centre rather than
+            # either end; each marker is one run, in the same shade as the panel expanding it.
+            linecol = crossing_colormap === nothing ? qk_color : crossing_colormap[0.5]
+            lines!(ax, νq, Uq; color = linecol, linewidth = linewidth, linestyle = :dash)
+            p = scatter!(ax, νq, Uq; marker = :diamond, markersize = markersize,
+                         color = something(
+                             crossing_colors,
+                             scanrate_shades(qk_color, νq; ref = scanrates,
+                                             colormap = crossing_colormap)),
+                         strokecolor = :white, strokewidth = 1.0)
             push!(plots, p)
             push!(names, qk_label)
-            push!(series, (x = νq, y = Uq, color = qk_color))
+            # The inline label follows the trend line, not any one marker's shade.
+            push!(series, (x = νq, y = Uq, color = linecol))
         end
+    end
+
+    # After the series, so the data range is known, and before the inline labels, so they are
+    # placed against the final limits rather than against ones that shift under them.
+    if show_peak_regions && region_headroom > 0 && !isempty(series)
+        ys = reduce(vcat, [collect(s.y) for s in series])
+        lo, hi = minimum(ys), maximum(ys)
+        ylims!(ax, lo - 0.04 * (hi - lo), hi + region_headroom * (hi - lo))
     end
 
     if label_mode === :inline
@@ -4013,7 +4238,7 @@ panel_letter(i::Integer) =
               "(" * string(Char('a' + (i - 1) ÷ 26 - 1), Char('a' + (i - 1) % 26)) * ")"
 
 """
-    panel_letter!(ax, i; fontsize, pos = (0.03, 0.97))
+    panel_letter!(ax, i; fontsize, pos = (0.025, 0.98), strokewidth = 0)
 
 Draw [`panel_letter`](@ref)`(i)` inside `ax`, in the corner given by `pos` in axis-relative
 coordinates.
@@ -4022,23 +4247,30 @@ coordinates.
 distance axis and of a linear voltage axis are the same point in relative space and wildly
 different points in data space.
 
-Black on a white halo, because the letter has to stay legible over whatever the panel drew
-under it — the fields here run from dark navy to dark red to near-white, and no single flat
-colour survives all three.
+Plain black by default. `strokewidth` adds a white halo, which is only needed where the letter
+lands on a dark fill — a sequential map's low end, say. On a diverging map the neutral colour
+sits at the pale middle, so the corners are light and a halo is just weight.
 """
-function panel_letter!(ax, i; fontsize = FS_LABEL, pos = (0.03, 0.97))
+function panel_letter!(ax, i; fontsize = FS_LABEL + 5, pos = (0.025, 0.98),
+                       strokewidth = 0)
     text!(
         ax, pos[1], pos[2];
         text = panel_letter(i), space = :relative, align = (:left, :top),
         fontsize = fontsize, font = :bold,
-        color = :black, strokecolor = :white, strokewidth = 2,
+        color = :black, strokecolor = :white, strokewidth = strokewidth,
     )
 end
 
 """
     plot_7species_contours(result, X, m; layout = (2, 4), colorrange = nothing, ...)
 
-log₁₀ concentration of every transported species over distance and time, one panel each.
+Every transported species' departure from its bulk value, over distance and time, one panel
+each.
+
+`field` chooses what "departure" means; the default `:ratio` is `log₁₀(c/c_bulk)`, which is
+zero at bulk and signed. That is what lets the species panels and the quotient row share one
+diverging colorbar and have the midpoint mean the same thing on both — undisturbed. Pass
+`field = :logc` for the absolute `log₁₀(c)` field on a sequential map instead.
 
 Laid out as `layout = (rows, cols)` with the leftover cell taken by a **shared** colorbar.
 Seven species in a 2×4 grid leaves exactly one free slot, which is why that is the default:
@@ -4070,10 +4302,28 @@ also absorbs the zeros and any negative excursion.
 function plot_7species_contours(
         result, X, m;
         scale = mol / dm^3,
-        num_levels = 24,
+        # Odd, and finer than the eye needs to count: with a range symmetric about zero an odd
+        # level count centres one band on zero, so "at bulk" is a colour rather than a boundary
+        # between two.
+        num_levels = 41,
         layout = (2, 4),
         colorrange = nothing,
         floor_exp = -12,
+        # What the species panels show.
+        #   `:ratio`  — log₁₀(c / c_bulk): zero at bulk, signed, and symmetric under
+        #               enrichment and depletion by the same factor. This is the default
+        #               because it is the only one of the three that can share the quotient
+        #               row's diverging colorbar and mean the same thing on it.
+        #   `:signed` — sign(c − c_b)·log₁₀(1 + |c − c_b| / linthresh), the difference form.
+        #               Also signed, but a difference is bounded below by −c_b while being
+        #               unbounded above, so depletion and enrichment do not occupy comparable
+        #               ranges and `linthresh` has to be chosen for each figure.
+        #   `:logc`   — log₁₀(c), the original absolute field on a sequential map.
+        field = :ratio,
+        linthresh = nothing,
+        # Diverging for the signed fields, so the midpoint is "at bulk"; the sequential map is
+        # only right for `:logc`, where there is no distinguished value to centre on.
+        colormap = nothing,
         # `nothing` so the height can follow `show_qoverk`; an explicit size still wins.
         fig_size = nothing,
         show_potential = true,
@@ -4084,9 +4334,11 @@ function plot_7species_contours(
         qk_use_activity = true,
         qk_colorrange = nothing,
         qk_colormap = :balance,
-        qk_num_levels = 21,
+        qk_num_levels = 41,
         show_panel_labels = true,
         panel_label_size = FS_LABEL,
+        # `nothing` follows the field: a halo where the map runs dark, none where it does not.
+        panel_label_strokewidth = nothing,
         qk_row_fraction = nothing,
         colgap_px = 20,
         rowgap_px = 8,
@@ -4104,7 +4356,8 @@ function plot_7species_contours(
         ("CO", rich("CO")),
     ]
     times_all = result.tsol.t
-    discrete_cmap = cgrad(:jet, num_levels, categorical = true)
+    discrete_cmap = cgrad(something(colormap, field === :logc ? :jet : qk_colormap),
+                          num_levels, categorical = true)
 
     # Decimate before plotting. A log-scaled y axis costs CairoMakie its fast path for
     # `heatmap!`: with unequal cell heights it cannot blit one image and instead emits one
@@ -4120,6 +4373,13 @@ function plot_7species_contours(
 
     # Build every log field first: a shared colour range cannot be known until all of
     # them exist.
+    field in (:ratio, :signed, :logc) ||
+        throw(ArgumentError("field must be :ratio, :signed or :logc, got $(repr(field))"))
+    floor_c = 10.0^floor_exp
+    # Only `:logc` puts a dark colour under the top-left corner; the diverging maps put their
+    # neutral, pale colour at the value the corners mostly hold.
+    label_sw = something(panel_label_strokewidth, field === :logc ? 3 : 0)
+
     panels = Any[]
     for (sp_name, sp_label) in target_species
         sp_idx = findfirst(s -> s.name == sp_name, bulk)
@@ -4128,20 +4388,39 @@ function plot_7species_contours(
             continue
         end
         @views c_matrix = result.tsol[sp_idx, 1:length(X), 1:length(times_all)] ./ scale
-        M = log10.(max.(c_matrix, 10.0^floor_exp))
-        replace!(M, Inf => float(floor_exp), -Inf => float(floor_exp), NaN => float(floor_exp))
+        # A product has no meaningful bulk value; floored, its panel simply reads as "above
+        # bulk everywhere", which is true and is what the field is for.
+        cb = max(bulk[sp_idx].c_bulk / scale, floor_c)
+        M = if field === :logc
+            log10.(max.(c_matrix, floor_c))
+        elseif field === :ratio
+            log10.(max.(c_matrix, floor_c) ./ cb)
+        else
+            lt = something(linthresh, cb)
+            Δ = c_matrix .- cb
+            sign.(Δ) .* log10.(1 .+ abs.(Δ) ./ lt)
+        end
+        fill_value = field === :logc ? float(floor_exp) : 0.0
+        replace!(M, Inf => fill_value, -Inf => fill_value, NaN => fill_value)
         # Clamp first, subsample second: the floor has to see every sample, or a spike
         # below it that happens to fall on a dropped column would come back as a hole.
         push!(panels, (sp_label, M[xidx, tidx]))
     end
     isempty(panels) && error("none of the target species were found in `m.bulk`")
 
-    crange = if colorrange === nothing
+    crange = if colorrange !== nothing
+        colorrange
+    elseif field === :logc
         lo = minimum(minimum(p[2]) for p in panels)
         hi = maximum(maximum(p[2]) for p in panels)
         lo == hi ? (lo - 0.5, hi + 0.5) : (lo, hi)
     else
-        colorrange
+        # Symmetric about zero, so "at bulk" is the midpoint of the map and the two directions
+        # are distinguishable by which side of it a cell falls on. An unsymmetric range would
+        # put the neutral colour somewhere arbitrary and the sign would stop being readable.
+        a = maximum(maximum(abs, p[2]) for p in panels)
+        a = isfinite(a) && a > 0 ? a : 1.0
+        (-a, a)
     end
 
     nrow, ncol = layout
@@ -4219,7 +4498,8 @@ function plot_7species_contours(
         )
         # After the heatmap: the fill covers the panel edge to edge and would bury a letter
         # drawn before it.
-        show_panel_labels && panel_letter!(ax, k; fontsize = panel_label_size)
+        show_panel_labels &&
+            panel_letter!(ax, k; fontsize = panel_label_size, strokewidth = label_sw)
         push!(axs, ax)
     end
 
@@ -4230,15 +4510,13 @@ function plot_7species_contours(
     # a feature at t = 22 s is read as "the cathodic vertex" instead of as a bare number.
     if has_potential || potential_in_qk_row
         prow, pcol = potential_in_qk_row ? (nrow + 1, n_qk + 1) : fldmod1(npanel + 1, ncol)
-        ax_u = Axis(
-            fig[prow, pcol];
-            ylabel = rich("Electrode Potential ", rich("U", font = :bold_italic),
-                          subscript("M"), "\n(V vs. SHE)"),
-            ylabelsize = 18,
-            yaxisposition = :right,
-        )
-        lines!(ax_u, result.times, electrode_potential(result, m);
-               color = parse(Colorant, "#D7C2F0"), linewidth = LW_LINE)
+        # `panel_time_voltage!`, the same call the summary figure's (c) makes, rather than a
+        # second hand-rolled potential axis: the two panels are the same quantity and the only
+        # way to keep them that way is for them to be the same code. It draws the metal
+        # potential over the applied protocol, so the gap between the two is the compensation.
+        ax_u = panel_time_voltage!(fig, fig[prow, pcol], result; m = m, xlabel = "")
+        ax_u.ylabelsize = 18
+        ax_u.yaxisposition = :right
         # Keeps its ticks for the same reason the contour panels do: it sits at the bottom of
         # its own column, and the Q/K row's ticks do not line up with it.
         # x only: the contour panels share a log-scaled distance axis, and `linkaxes!`
@@ -4250,9 +4528,16 @@ function plot_7species_contours(
     # Shared colorbar. It may size its own column, but not one it shares with a panel: a
     # colorbar reports its 18 px as the column's width requirement, which would collapse
     # the panel above it to a sliver.
-    cbar_label = rich(
-        "log", subscript("10"), "(", rich("c", font = :bold_italic), " / M)"
-    )
+    cbar_label = if field === :logc
+        rich("log", subscript("10"), "(", rich("c", font = :bold_italic), " / M)")
+    elseif field === :ratio
+        rich("log", subscript("10"), "(", rich("c", font = :bold_italic), " / ",
+             rich("c", font = :bold_italic), subscript("b"), ")")
+    else
+        rich("sgn(Δ", rich("c", font = :bold_italic), ") log", subscript("10"),
+             "(1 + |Δ", rich("c", font = :bold_italic), "| / ",
+             rich("c", font = :bold_italic), subscript("b"), ")")
+    end
     # The free-cell placement buys nothing once the quotient row's colorbar has already opened
     # column `ncol + 1`: that column exists either way, so tucking this one into the grid only
     # splits the two colorbars across two places. With the protocol moved down, both stack in
@@ -4321,14 +4606,16 @@ function plot_7species_contours(
             isempty(axs) || linkaxes!(axs[1], ax)
             ax_qk === nothing && (ax_qk = ax)
             show_panel_labels &&
-                panel_letter!(ax, qk_first + j - 1; fontsize = panel_label_size)
+                panel_letter!(ax, qk_first + j - 1; fontsize = panel_label_size,
+                              strokewidth = label_sw)
         end
 
         Colorbar(
             # Beside the protocol panel when that has moved into this row, in its cell if not.
             fig[nrow + 1, potential_in_qk_row ? ncol + 1 : n_qk + 1], hm_qk;
             label = rich("log", subscript("10"), "(", rich("Q", font = :bold_italic),
-                         subscript(qk_use_activity ? "a" : "c"), " / ",
+                         #subscript(qk_use_activity ? "a" : "c")
+                          " / ",
                          rich("K", font = :bold_italic), ")"),
             vertical = true, width = 18, tellwidth = false, halign = :left,
         )
@@ -4940,6 +5227,10 @@ function QoverK(
         # Which of the three to draw, named as in `QK_FIELDS`. Each keeps the colour and label
         # it has everywhere else, so a panel showing one reaction cannot recolour it.
         reactions = QK_FIELDS,
+        # Indexed like `QK_FIELDS`, so a caller overriding one reaction's colour still gets the
+        # shared colour for the others. Panels that encode something *else* in colour — a
+        # scan-rate family, say — pass the same value for every entry.
+        colors = QK_COLORS,
         legend_pos = nothing,
         # Splatted into `Legend`. Pass `tellwidth`/`tellheight` false plus an alignment to
         # float the box inside a panel instead of giving it a cell of its own.
@@ -4983,7 +5274,7 @@ function QoverK(
             "unknown reaction $(repr(r)); expected one of $(QK_FIELDS)"
         ))
         push!(lns, lines!(ax, x, max.(view(getproperty(q, r), 1:n), eps(Float64));
-                          color = QK_COLORS[i], linewidth = lw))
+                          color = colors[i], linewidth = lw))
         push!(lbls, QK_LABELS[i])
     end
     ylims!(ax, low = 1.0e-7, high = 1.0e7)
@@ -5046,129 +5337,276 @@ function plot_qoverk_over_scanrate(
 end
 
 """
+    axis_figure_x(ax, x) -> Float32
+
+Horizontal position of the data coordinate `x` on `ax`, in the **figure's** pixel space.
+
+For annotations that have to reach from one axis to another, which cannot be drawn in either
+axis's own data space. Applies the axis's transform first, so a log-scaled abscissa lands
+where it looks like it should rather than where its raw number would.
+
+The figure's layout must already be resolved — call `Makie.update_state_before_display!(fig)`
+first, or every axis still reports the placeholder viewport it was constructed with.
+"""
+function axis_figure_x(ax, x)
+    tf = ax.scene.transformation.transform_func[]
+    y0 = ax.finallimits[].origin[2]
+    p = Makie.project(ax.scene, Makie.apply_transform(tf, Point2f(x, y0)))
+    return p[1] + ax.scene.viewport[].origin[1]
+end
+
+"""
+    shade_ramp(c, n; darken = 0.32, lighten = 0.45)
+
+`n` shades of one colour, running dark → `c` → light, with `c` itself in the middle.
+
+For a family whose members are ordered — a scan-rate series, say — where hue is already
+carrying something else. Varying lightness alone keeps the family recognisable as one quantity
+while still telling its members apart, which a set of unrelated hues cannot do.
+
+With `n` even, no member lands exactly on `c`; the ramp still passes through it.
+"""
+function shade_ramp(c, n; kwargs...)
+    n == 1 && return [RGB(c)]
+    g = shade_gradient(c; kwargs...)
+    return [g[t] for t in range(0, 1, length = n)]
+end
+
+"""
+    shade_gradient(c; darken = 0.32, lighten = 0.45)
+
+The continuous form of [`shade_ramp`](@ref): dark → `c` → light as a `cgrad`.
+
+Use this when the positions to sample are not evenly spaced — a scan-rate series, where the
+colour has to follow `log ν` rather than the index.
+"""
+shade_gradient(c; darken = 0.32, lighten = 0.45) = cgrad([
+    weighted_color_mean(1 - darken, RGB(c), colorant"black"),
+    RGB(c),
+    weighted_color_mean(1 - lighten, RGB(c), colorant"white"),
+])
+
+"""
+    scanrate_shades(c, values; ref = values, colormap = nothing, kwargs...)
+
+One colour per entry of `values`, taken from a ramp laid over `log10.(ref)`.
+
+`ref` is the full scan-rate series, `values` the subset being coloured. Separating them is
+what lets two different plots agree: a panel that colours only the runs where a crossing was
+found, and a figure that colours the three runs it expands, both normalise over the same
+`ref` and therefore give the same scan rate the same colour.
+
+`colormap` overrides the default [`shade_gradient`](@ref) of `c` — pass
+[`CMAP_SCANRATE`](@ref) to borrow the sequence the other scan-rate families use, at the cost
+of the hue no longer saying which quantity this is.
+"""
+function scanrate_shades(c, values; ref = values, colormap = nothing, kwargs...)
+    g = something(colormap, shade_gradient(c; kwargs...))
+    L = log10.(collect(ref))
+    lo, hi = extrema(L)
+    return [g[hi > lo ? (log10(v) - lo) / (hi - lo) : 0.5] for v in values]
+end
+
+"""
     plot_qoverk_scanrate_summary(scanrates, results, m; kwargs...)
 
-The buffer's disequilibrium at four scan rates, and what it distils to, in one figure.
+Where the buffer's turning point sits across the whole scan-rate series, and what the quotient
+was doing at three of them, in one figure.
 
-A 2×2 block of quotient traces on the left — the raw evidence — and on the right, spanning
-both rows, the anodic peak positions against scan rate with the quotient's crossing potential
-overlaid ([`panel_anodic_peak_potentials!`](@ref)).
+**(a)**, full width, is [`panel_anodic_peak_potentials!`](@ref): both anodic peak positions
+against scan rate with the quotient's crossing potential overlaid. Beneath it, one quotient
+trace per selected run — the raw evidence the summary's orange series is distilled from.
 
-**The dashed vertical in each trace panel is the same event as the corresponding marker on the
-right.** Without it the two halves would share no axis and the reader would have to take the
-caption's word that they are related; with it, the crossing is visible where it happens and
-again where it is summarised. That marker is the reason to combine these rather than print
-them separately.
+**Leader lines run from each scan rate on (a) down to the panel that expands it.** Without
+them the reader has to match a number in a panel title against a position on a log axis; with
+them the correspondence is drawn. They are figure-space annotations ([`axis_figure_x`](@ref)),
+so the layout is resolved before they are placed.
 
-`abscissa = :voltage` (the default here) is what closes that loop: the trace panels then run
-over the same quantity the summary's ordinate carries, so the vertical in a panel and the
-marker on the right are at the same *number*, not merely at corresponding moments. The cost is
-that a cycle visits each potential twice and the traces double back on themselves. Pass
-`:time` for the unlooped reading, where the lag shows as a duration instead.
+**The dashed vertical in each trace panel is the same event as the corresponding marker on
+(a)** — `abscissa = :voltage` is what makes that literal rather than merely analogous, since
+the panels then run over the same quantity (a)'s ordinate carries. The cost is that a cycle
+visits each potential twice and the traces double back on themselves; pass `:time` for the
+unlooped reading, where the lag shows as a duration instead.
 
-The 2×2 rather than a 1×4 strip: four panels in a row plus a full-width summary underneath
-makes the summary very wide and short, and a 2 V ordinate flattens into it. Squaring the block
-also fits a two-column page, which a four-across strip does not.
+`panel_scanrates` selects the expanded runs by scan rate (nearest match), `panel_idx` by
+position. Every run is used for (a) regardless, so the panels are exemplars, not the sample.
 
 `panel_reactions` is which quotients the trace panels draw, `(:co2,)` by default — the one the
-summary is about. The other two sit on equilibrium here, so drawing them adds two flat lines
-whose entire content is "not this one".
-
-`panel_idx` picks which runs get a trace panel — by default four spread evenly across the
-series. Every run is used for the summary regardless, so the panels are exemplars, not the
-sample.
+summary is about. The other two sit on equilibrium here, so drawing them adds flat lines whose
+entire content is "not this one".
 """
 function plot_qoverk_scanrate_summary(
         scanrates, results, m;
         panel_idx = nothing,
+        panel_scanrates = nothing,
         use_activity = true,
         qk_reaction = :co2,
         qk_branch = :anodic,
         qk_min_excursion = 0.5,
         qk_color = colorant"#E67E22",
-        # Thin: it is a reference mark, not a fourth data series, and it sits directly on the
-        # curve it marks.
+        # Thin: it is a reference mark, not another data series, and it sits directly on the
+        # curve it marks. Neutral, too — the traces are now shades of `qk_color`, so a mark in
+        # that colour would vanish into the curve it is marking.
         qk_marker_lw = LW_GUIDE,
-        # Only the reaction the summary is about. The other two sit on equilibrium here and
-        # would be two flat lines whose whole content is "not this one" — which the caption
-        # can say in four words and the Q/K contour figure already shows.
+        # `nothing` takes the panel's own scan-rate colour, so the mark, the curve, the leader
+        # and the point on (a) are one colour across the whole chain. It stays legible against
+        # the curve on dash and weight rather than on hue. Supply a colour to override.
+        crossing_mark_color = nothing,
+        # The scan-rate sequence the rest of the package uses for swept families, so a reader
+        # who has seen another scan-rate figure already knows what the colour means. It costs
+        # the hue: teal no longer says "this is the crossing", which is why the trend line and
+        # the in-panel reference mark keep `qk_color`.
+        crossing_colormap = CMAP_SCANRATE,
+        panel_colors = nothing,
+        # Explicit rather than left to `kwargs...`: the restated crossing markers drawn with
+        # the leader lines have to match the ones (a) already drew.
+        markersize = 30,
         panel_reactions = (:co2,),
         abscissa = :voltage,
         # Floated inside the last trace panel rather than given a row of its own: with a single
-        # reaction drawn it is one entry, and a whole layout row for one entry is what pushed
-        # the panels down. `tellwidth`/`tellheight` false is what lets it share that cell.
+        # reaction drawn it is one entry, and a whole layout row for one entry is wasted height.
         legend_pos = nothing,
         legend_opts = (tellwidth = false, tellheight = false,
                        halign = :right, valign = :top),
         lw = LW_LINE,
         xtick_count = 3,
-        fig_size = (1560, 760),
+        fig_size = (1320, 940),
         title_fmt = v -> @sprintf("%g V s⁻¹", v),
-        panel_width = 0.24,
+        # `:inline` writes the scan rate inside the panel, in that panel's colour, so the value
+        # sits with the curve it belongs to instead of in a caption above it. It also clears
+        # the strip between the rows, which is where the leader lines run — as titles, these
+        # were being struck through by their own leaders.
+        title_mode = :inline,
+        title_at = (0.96, 0.06),
+        title_align = (:right, :bottom),
+        title_size = 24,
+        summary_row_height = Relative(0.52),
         show_panel_labels = true,
         panel_label_size = FS_LABEL,
+        show_connectors = true,
+        connector_color = colorant"#4A5568",
+        connector_lw = LW_GUIDE,
+        connector_linestyle = :dash,
         kwargs...,
     )
     n = length(results)
     n == length(scanrates) ||
         error("got $(n) results for $(length(scanrates)) scan rates")
 
-    idx = panel_idx === nothing ?
-          unique(round.(Int, range(1, n, length = min(4, n)))) : collect(panel_idx)
+    idx = if panel_idx !== nothing
+        collect(panel_idx)
+    elseif panel_scanrates !== nothing
+        # Nearest in log ν: the series is geometric, so nearest in the raw number would snap
+        # everything below 1 onto the same run.
+        [argmin(abs.(log10.(scanrates) .- log10(v))) for v in panel_scanrates]
+    else
+        unique(round.(Int, range(1, n, length = min(3, n))))
+    end
+    np = length(idx)
 
     fig = Figure(size = fig_size)
 
+    # (a) first, spanning every column the panels below will occupy.
+    p = panel_anodic_peak_potentials!(
+        fig, fig[1, 1:np], scanrates, results;
+        models = m, qk_reaction, qk_branch, qk_min_excursion, qk_color, markersize,
+        crossing_colormap, kwargs...,
+    )
+    show_panel_labels && panel_letter!(p.ax, 1; fontsize = panel_label_size)
+
+    # Same map, same reference series, as the crossing markers in (a) use — so a panel and the
+    # marker it expands are the same colour by construction rather than by matching two lists
+    # by hand.
+    shades = something(panel_colors,
+                       scanrate_shades(qk_color, scanrates[idx]; ref = scanrates,
+                                       colormap = crossing_colormap))
+    # The legend belongs in the panel drawn in the base colour: a swatch taken from the lightest
+    # or darkest panel would key the reaction to a shade it only has there.
+    legend_panel = cld(np, 2)
+
     axs = Axis[]
     for (i, k) in enumerate(idx)
-        row, col = fldmod1(i, 2)
         ax, _ = QoverK(
-            fig, fig[row, col], results[k], m;
+            fig, fig[2, i], results[k], m;
             lw = lw, use_activity = use_activity, abscissa = abscissa,
             reactions = panel_reactions,
-            # One legend for the block, inside the last panel, rather than one per panel.
-            legend_pos = i == length(idx) ? something(legend_pos, fig[2, 2]) : nothing,
+            # Every entry the same: only one reaction is drawn here and colour is carrying the
+            # scan rate, not which reaction.
+            colors = fill(shades[i], length(QK_FIELDS)),
+            legend_pos = i == legend_panel ?
+                         something(legend_pos, fig[2, legend_panel]) : nothing,
             legend_opts = legend_opts,
         )
-        ax.title = title_fmt(scanrates[k])
-        ax.xticks = LinearTicks(xtick_count)
-        col == 1 || hideydecorations!(ax; grid = false, ticks = false)
-        # On a voltage abscissa every panel covers the same sweep, so the top row hands its
-        # ticks to the bottom. On time they cannot: the cycles differ in duration by whatever
-        # the scan rates differ by, and each panel needs its own numbers.
-        if abscissa === :time
-            row == 1 && (ax.xlabel = "")
-        elseif row == 1
-            hidexdecorations!(ax; grid = false)
+        if title_mode === :title
+            ax.title = title_fmt(scanrates[k])
+        elseif title_mode === :inline
+            text!(ax, title_at[1], title_at[2]; text = title_fmt(scanrates[k]),
+                  space = :relative, align = title_align, color = shades[i],
+                  fontsize = title_size, font = :bold)
         end
+        ax.xticks = LinearTicks(xtick_count)
+        i == 1 || hideydecorations!(ax; grid = false, ticks = false)
 
-        # The crossing, marked where it happens — on the same quantity the summary plots it
-        # against, so the vertical here and the marker there are one event seen twice.
+        # The crossing, marked where it happens — on the same quantity (a) plots it against,
+        # so the vertical here and the marker up there are one event seen twice.
         c = qoverk_crossing(results[k], m; reaction = qk_reaction, branch = qk_branch,
                             use_activity = use_activity, min_excursion = qk_min_excursion)
         c === nothing || vlines!(
             ax, [abscissa === :time ? c.time : c.potential];
-            color = qk_color, linestyle = :dash, linewidth = qk_marker_lw,
+            color = something(crossing_mark_color, shades[i]),
+            linestyle = :dash, linewidth = qk_marker_lw,
         )
 
-        show_panel_labels && panel_letter!(ax, i; fontsize = panel_label_size)
+        show_panel_labels && panel_letter!(ax, i + 1; fontsize = panel_label_size)
         push!(axs, ax)
     end
     length(axs) > 1 && linkyaxes!(axs...)
     abscissa === :time || length(axs) < 2 || linkxaxes!(axs...)
 
-
-    p = panel_anodic_peak_potentials!(
-        fig, fig[1:2, 3], scanrates, results;
-        models = m, qk_reaction, qk_branch, qk_min_excursion, qk_color, kwargs...,
-    )
-    show_panel_labels && panel_letter!(p.ax, length(idx) + 1; fontsize = panel_label_size)
-
-    # The trace panels are pinned so the summary cannot squeeze them: it carries a legend-free
-    # but wide log axis and would otherwise take the room four narrow panels need.
-    colsize!(fig.layout, 1, Relative(panel_width))
-    colsize!(fig.layout, 2, Relative(panel_width))
+    rowsize!(fig.layout, 1, summary_row_height)
     colgap!(fig.layout, 14)
-    rowgap!(fig.layout, 10)
+    rowgap!(fig.layout, 26)
+
+    if show_connectors && !isempty(axs)
+        # After the sizing calls and after this: every axis reports a placeholder viewport
+        # until the layout has actually been solved, and the leader lines would all start
+        # from the same wrong place.
+        Makie.update_state_before_display!(fig)
+        top = p.ax.scene.viewport[]
+        ylo = p.ax.finallimits[].origin[2]
+        cx = p.crossings
+        for (i, k) in enumerate(idx)
+            # Inside (a): from the axis floor up to the marker this panel expands, so the
+            # leader starts at a datum rather than at an unmarked point on the frame. Drawn in
+            # (a)'s own data space — it stays inside the settled limits, so nothing reflows.
+            # Each leader in its own panel's shade, and the marker it starts from restated in
+            # that shade, so which panel expands which point is answered by colour as well as
+            # by the line — the lines converge near the fast end and cross there.
+            col = shades[i]
+            if cx !== nothing
+                j = findfirst(≈(scanrates[k]), cx.scanrate)
+                if j !== nothing
+                    lines!(p.ax, [scanrates[k], scanrates[k]], [ylo, cx.U[j]];
+                           color = col, linewidth = connector_lw,
+                           linestyle = connector_linestyle)
+                    scatter!(p.ax, [scanrates[k]], [cx.U[j]];
+                             color = col, marker = :diamond, markersize = markersize,
+                             strokecolor = :white, strokewidth = 1.5)
+                end
+            end
+            # Across the gap: figure space, since no axis contains both endpoints.
+            x1 = axis_figure_x(p.ax, scanrates[k])
+            r = axs[i].scene.viewport[]
+            lines!(
+                fig.scene,
+                [Point2f(x1, top.origin[2]),
+                 Point2f(r.origin[1] + r.widths[1] / 2, r.origin[2] + r.widths[2])];
+                color = col, linewidth = connector_lw,
+                linestyle = connector_linestyle,
+            )
+        end
+    end
+
     return (fig = fig, axs = axs, ax_summary = p.ax, table = p.table,
             crossings = p.crossings)
 end

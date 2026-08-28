@@ -471,7 +471,7 @@ const lab_qoverk_conc = rich(
 
 "Reaction quotient on an **activity** basis, `Q_a / K`. See [`lab_qoverk_conc`](@ref)."
 const lab_qoverk_act = rich(
-    "Reaction Quotient\n", rich("Q", font = :bold_italic), subscript("a"),
+    "Reaction Quotient\n", rich("Q", font = :bold_italic), 
     " / ", rich("K", font = :bold_italic)
 )
 
@@ -506,8 +506,9 @@ const lab_co2_consumption = rich(
 
 # The same split on its own physical footing: an areal molar flux, no charge implied.
 # Prefixed rather than coherent SI: in mol m⁻² s⁻¹ the values run around 1e−3 and Makie lifts
-# the decade onto the axis as a separate factor, which a reader has to multiply back in. The
-# milli- prefix puts the peak near 1.4 and keeps the axis literal.
+# the decade onto the axis as a separate factor, which a reader then has to multiply back in.
+# The milli- prefix puts the peak near 1.4 and keeps the axis literal. The three flux labels
+# below share one scale factor, so all three carry the same prefix or none of them do.
 const lab_co2_flux = rich(
     "CO", subscript("2"), " Consumption Rate ", rich("N", font = :bold_italic),
     "\n(mmol m", superscript("−2"), " s", superscript("−1"), ")"

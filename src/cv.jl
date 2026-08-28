@@ -86,7 +86,11 @@ function scanrate_varied_sweep(
         celldata.eneutral = eneutral
 
         pnpcell = PNPSystem(grid; bcondition = bcond, celldata = celldata, reaction = reaction)
-        sweep_vec[i] = cvsweep(pnpcell; voltages = saw, nperiods, store_solutions = true)
+        # `sweep_kwargs...` forwarded. It was collected and dropped, so solver settings —
+        # `Δt_max` above all — were accepted at the call site and silently had no effect.
+        sweep_vec[i] = cvsweep(
+            pnpcell; voltages = saw, nperiods, store_solutions = true, sweep_kwargs...
+        )
     end
 
     return (scanrates = scanrates, saws = saws, sweeps = sweep_vec)
