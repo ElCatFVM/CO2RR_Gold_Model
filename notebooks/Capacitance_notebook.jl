@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.25
+# v1.0.3
 
 using Markdown
 using InteractiveUtils
@@ -52,7 +52,7 @@ begin
 end
 
 # ╔═╡ 34573291-da44-4424-ba27-90d02bd4a151
-elystruct = AuCO2RR.GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = :none)
+elystruct = AuCO2RR.GoldModel.create_model(;use_md_hydrated = false, γ_select = "Stefan", ircompensation = NoIRCompensation())
 
 # ╔═╡ d34b83d6-1a18-4696-9600-9a42ef3d2f71
 begin	
