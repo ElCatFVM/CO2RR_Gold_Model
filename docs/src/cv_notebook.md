@@ -25,21 +25,40 @@ using AuCO2RR, LiquidElectrolytes, ExtendableGrids, LessUnitful, CairoMakie
 using AuCO2RR.AuCO2RR_plots
 @unitfactors μm
 
-L    = 1000 * μm
-X    = ExtendableGrids.geomspace(0, L, 1.0e-7 * μm, 0.01 * L)
+L    = 2500 * μm
+X    = ExtendableGrids.geomspace(0, L, 1.0e-6 * μm, 0.045 * L)
 grid = ExtendableGrids.simplexgrid(X)
 
-sawtooth = SawTooth(scanrate = 0.05, vmin = -1.2, vmax = 0.8,
-                    scanup = false, vstart = 0.0; tstart = 0.0)
+# The standard run, a slow one and the rate the measurements were taken at.
+sawtooth        = SawTooth(scanrate = 0.3,    vmin = -1.2, vmax = 1.2,
+                           scanup = false, vstart = 0.0; tstart = 0.0)
+sawtooth_Low_sr = SawTooth(scanrate = 0.0005, vmin = -1.2, vmax = 1.2,
+                           scanup = false, vstart = 0.0; tstart = 0.0)
+sawtooth_exp    = SawTooth(scanrate = 0.05,   vmin = -1.2, vmax = 1.2,
+                           scanup = false, vstart = 0.0; tstart = 0.0)
+nperiods = 1
 ```
 
 Two electrolytes are built, differing only in how the ohmic drop is treated. Every
 compensated-vs-uncompensated figure below compares these two:
 
 ```julia
-elystruct_unc = GoldModel.create_model(; ircompensation = NoIRCompensation())
-elystruct_odr = GoldModel.create_model(;
-    ircompensation = OhmicDropEstimation(Ru, ico, 2, factor))
+elystruct_unc = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan",
+                                       ircompensation = NoIRCompensation())
+
+σ = conductivity(elystruct_unc.elydata, elystruct_unc.elydata.c_bulk)
+ircompensation = OhmicDropEstimation(Ru = L / σ, species = 5, ne = 2, factor = 0.85)
+elystruct_odr = GoldModel.create_model(; use_md_hydrated = false, γ_select = "Stefan",
+                                       ircompensation)
+```
+
+The runs every figure below is drawn from:
+
+```julia
+cv_odr        = sweep(elystruct_odr, grid, sawtooth;        nperiods)  # 0.3 V s⁻¹, compensated
+cv_exp        = sweep(elystruct_odr, grid, sawtooth_exp;    nperiods)  # 0.05 V s⁻¹, compensated
+cv_unc        = sweep(elystruct_unc, grid, sawtooth;        nperiods)  # 0.3 V s⁻¹, uncompensated
+cv_unc_low_sr = sweep(elystruct_unc, grid, sawtooth_Low_sr; nperiods)  # 0.0005 V s⁻¹, uncompensated
 ```
 
 !!! warning "Style changes need an explicit call"
@@ -84,12 +103,13 @@ The standard single-run figure: everything measured at the electrode against tim
 on one time axis.
 
 ```julia
-plot_cv_summary(cv, elystruct_odr)
+plot_cv_summary(cv_odr, elystruct_odr)
 ```
 
 ![Five-panel CV summary](assets/cv_summary.png)
 
-*Caption placeholder — describe the run: scan rate, `L`, compensation mode, `Δt`.*
+*`cv_odr`: 0.3 V s⁻¹ from 0 V down to −1.2 V, up to 1.2 V and back, one period,
+`L = 2500 μm`, `OhmicDropEstimation` with `factor = 0.85`, adaptive time step.*
 
 Reading order, top to bottom:
 
@@ -107,6 +127,45 @@ Reading order, top to bottom:
     buffer-driven transport that is not current. See
     [Current and voltage definitions](plots.md#Current-and-voltage-definitions).
 
+### Surface concentrations alone
+
+Panel (a) at full height, when the species need to be read against each other rather than
+against the current:
+
+```julia
+AuCO2RR_plots.plot_conc_time_electrode(cv_odr, elystruct_odr)
+```
+
+![Surface concentrations against time](assets/conc_time_electrode.png)
+
+*`cv_odr`, as above.*
+
+## Species and reaction-quotient fields
+
+The summary reads everything at the electrode node. These show how far into the electrolyte
+each disturbance reaches: every transported species as `log₁₀(c / c_b)` over distance and
+time, with the three buffer reactions as `log₁₀(Q / K)` in the row beneath and the potential
+protocol in the last cell.
+
+```julia
+plot_7species_contours_qk(cv_odr, X, elystruct_odr; panel_label_strokewidth = 0)
+```
+
+![Species and Q/K fields, 0.3 V s⁻¹ compensated](assets/contours_qk_odr.png)
+
+*`cv_odr`: 0.3 V s⁻¹, compensated.*
+
+```julia
+plot_7species_contours_qk(cv_unc_low_sr, X, elystruct_unc; panel_label_strokewidth = 0)
+```
+
+![Species and Q/K fields, 0.0005 V s⁻¹ uncompensated](assets/contours_qk_unc_slow.png)
+
+*`cv_unc_low_sr`: 0.0005 V s⁻¹, uncompensated.*
+
+White is "at bulk" on both colour bars. The two scales are separate: species on the upper
+bar, quotients on the lower.
+
 ## IR compensation
 
 ### Compensated against uncompensated
@@ -119,6 +178,19 @@ plot_ircomp_compare(cv_odr, elystruct_odr;
 ![Driving force, electrode potential and ohmic drop](assets/ircomp_compare.png)
 
 *Caption placeholder — state `Ru`, the compensation factor and both electrolytes.*
+
+The same comparison as two five-panel summaries side by side, sharing their y axes:
+
+```julia
+plot_cv_summary_compare(cv_odr, elystruct_odr, cv_unc, elystruct_unc; X_l = X, X_r = X,
+                        column_titles = ("With iR compensation", "Without iR compensation"),
+                        link_y = true)
+```
+
+![Compensated and uncompensated summaries](assets/summary_compare_ircomp.png)
+
+*0.3 V s⁻¹; left `OhmicDropEstimation` (`Ru = L / σ`, `factor = 0.85`), right
+`NoIRCompensation`.*
 
 Panels are selected with `panels`; the default is `(:driving, :metal_time, :ircomp)`.
 
@@ -133,13 +205,17 @@ Panels are selected with `panels`; the default is `(:driving, :metal_time, :irco
 The two currents overlap almost everywhere, so the informative quantity is their difference:
 
 ```julia
-panel_time_current_diff!(f, f[1, 1], cv_odr, cv_unc, elystruct_odr;
-                         include_capacitive = false)
+fig = with_theme(electrochemistry_theme()) do
+    f = Figure(size = (800, 400))
+    panel_time_current_diff!(f, f[1, 1], cv_odr, cv_unc, elystruct_odr;
+                             include_capacitive = false, title = "IR Compensation Effect")
+    f
+end
 ```
 
 ![Faradaic current difference](assets/ircomp_diff.png)
 
-*Caption placeholder — note that this is the faradaic difference only.*
+*`cv_odr` minus `cv_unc` at 0.3 V s⁻¹ — the faradaic difference only.*
 
 `include_capacitive = false` is deliberate: the compensated run carries a capacitive term
 the uncompensated one effectively does not, so including it makes the difference mostly that
@@ -177,6 +253,21 @@ feature is one to two orders of magnitude below the reduction peak and is unread
 single axis.
 
 ### Scan rate
+
+Two rates on the same compensated model, as side-by-side summaries:
+
+```julia
+plot_cv_summary_compare(cv_exp, elystruct_odr, cv_odr, elystruct_odr; X_l = X, X_r = X,
+                        column_titles = ("Lower scan Rate (0.05 V s⁻¹)",
+                                         "Higher scan rate (0.3 V s⁻¹)"),
+                        link_y = true)
+```
+
+![Summaries at 0.05 and 0.3 V s⁻¹](assets/summary_compare_scanrate.png)
+
+*`cv_exp` (0.05 V s⁻¹) against `cv_odr` (0.3 V s⁻¹), both compensated.*
+
+The full family on the broken axis:
 
 ```julia
 plot_scanrate_sweeps_split(SR_vec, scanrates)
